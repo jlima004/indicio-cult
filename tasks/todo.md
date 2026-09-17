@@ -13,9 +13,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 **Descrição:** Criar `jlima004/indicio-cult` (público) no GitHub, apontar o remoto e publicar a `main` com a documentação existente.
 
 **Aceite:**
-- [ ] `gh repo view jlima004/indicio-cult` mostra repositório público com descrição "Arte para quem reconhece o indício. Vitrine headless (Next.js + Nuvemshop + Supabase)."
-- [ ] `git remote -v` aponta `origin` para o repositório; `git push -u origin main` concluído
-- [ ] Nenhum arquivo ignorado (`.agents/skills/`, `skills-lock.json`) foi publicado
+- [x] `gh repo view jlima004/indicio-cult` mostra repositório público com descrição "Arte para quem reconhece o indício. Vitrine headless (Next.js + Nuvemshop + Supabase)."
+- [x] `git remote -v` aponta `origin` para o repositório; `git push -u origin main` concluído
+- [x] Nenhum arquivo ignorado (`.agents/skills/`, `skills-lock.json`) foi publicado
 
 **Verificação:** `gh repo view --web`; `git status` limpo; `gh api repos/jlima004/indicio-cult/contents` não lista `.agents`.
 
