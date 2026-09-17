@@ -30,9 +30,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm ci && npm run check` (lint + format:check + typecheck) verde em máquina limpa
-- [ ] `npm run build` gera `.next/standalone`; `npm run dev` serve a página padrão em `:3000`
-- [ ] `package.json` fixa Next 16.3.x, React 19.3.x, TS 5.9.x, Tailwind 4.x, Zustand 5.x, `engines.node >=22`; `.env.example` existe (vazio, com cabeçalho)
+- [x] `npm ci && npm run check` (lint + format:check + typecheck) verde em máquina limpa
+- [x] `npm run build` gera `.next/standalone`; `npm run dev` serve a página padrão em `:3000`
+- [x] `package.json` fixa Next 16.3.x, React 19.3.x, TS 5.9.x, Tailwind 4.x, Zustand 5.x, `engines.node >=22`; `.env.example` existe (vazio, com cabeçalho)
 
 **Verificação:** `npm run check && npm run build`; `ls .next/standalone/server.js`.
 

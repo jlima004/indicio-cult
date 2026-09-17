@@ -36,22 +36,22 @@ Entregar o esqueleto executável sobre o qual todos os módulos do MVP são cons
 
 Versões fixadas no `package.json` com range `^` dentro da major indicada; o `package-lock.json` é a fonte exata. Upgrades de major são decisão explícita (ver Fronteiras).
 
-| Camada             | Escolha                                         | Versão            | Observação                                                                              |
-| ------------------ | ----------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
-| Runtime            | Node.js                                         | 22 LTS            | Imagem base `node:22-alpine`; `engines.node >=22`                                       |
-| Pacotes            | npm                                             | 10.x              | Único gerenciador; `package-lock.json` versionado; CI usa `npm ci`                      |
-| Framework          | Next.js (App Router)                            | 16.3.x            | `output: 'standalone'`, `cacheComponents: true`, `proxy.ts` (substitui `middleware.ts`) |
-| UI                 | React / React DOM                               | 19.3.x            | Server Components por padrão                                                            |
-| Linguagem          | TypeScript                                      | 5.9.x (`strict`)  | TS 7 (port nativo) avaliado após o MVP; não adotar agora                                |
-| Estilo             | Tailwind CSS                                    | 4.x               | Tokens em `@theme` via variáveis CSS; sem UI kit de terceiros                           |
-| Estado do carrinho | Zustand                                         | 5.x               | Instalado na fundação para fixar versão; store criada em `cart`                         |
-| Supabase           | `@supabase/supabase-js`, `@supabase/ssr`        | 2.x / 0.12.x      | Clientes servidor e navegador; Supabase CLI para migrações e tipos                      |
-| Testes             | Vitest + Testing Library                        | 5.x               | Unitário e componente (`jsdom`)                                                         |
-| E2E                | Playwright                                      | 1.63.x            | Smoke contra build de produção local                                                    |
-| Lint / format      | ESLint (flat) + `eslint-config-next` + Prettier | 10.x / 16.x / 3.x | Sem regras customizadas além do preset no início                                        |
-| Erros              | `@sentry/nextjs`                                | 10.x              | DSN via env; desabilitado quando ausente                                                |
-| Proxy TLS          | Caddy                                           | 2.x               | Container no mesmo `compose`; TLS automático (Let's Encrypt)                            |
-| CI/CD              | GitHub Actions + GHCR                           | —                 | Build multi-stage, push por SHA e `latest`, deploy via SSH                              |
+| Camada             | Escolha                                         | Versão           | Observação                                                                                                                                                               |
+| ------------------ | ----------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime            | Node.js                                         | 22 LTS           | Imagem base `node:22-alpine`; `engines.node >=22`                                                                                                                        |
+| Pacotes            | npm                                             | 10.x             | Único gerenciador; `package-lock.json` versionado; CI usa `npm ci`                                                                                                       |
+| Framework          | Next.js (App Router)                            | 16.3.x           | `output: 'standalone'`, `cacheComponents: true`, `proxy.ts` (substitui `middleware.ts`)                                                                                  |
+| UI                 | React / React DOM                               | 19.3.x           | Server Components por padrão                                                                                                                                             |
+| Linguagem          | TypeScript                                      | 5.9.x (`strict`) | TS 7 (port nativo) avaliado após o MVP; não adotar agora                                                                                                                 |
+| Estilo             | Tailwind CSS                                    | 4.x              | Tokens em `@theme` via variáveis CSS; sem UI kit de terceiros                                                                                                            |
+| Estado do carrinho | Zustand                                         | 5.x              | Instalado na fundação para fixar versão; store criada em `cart`                                                                                                          |
+| Supabase           | `@supabase/supabase-js`, `@supabase/ssr`        | 2.x / 0.12.x     | Clientes servidor e navegador; Supabase CLI para migrações e tipos                                                                                                       |
+| Testes             | Vitest + Testing Library                        | 5.x              | Unitário e componente (`jsdom`)                                                                                                                                          |
+| E2E                | Playwright                                      | 1.63.x           | Smoke contra build de produção local                                                                                                                                     |
+| Lint / format      | ESLint (flat) + `eslint-config-next` + Prettier | 9.x / 16.x / 3.x | Sem regras customizadas além do preset no início. ESLint 9 (não 10): `eslint-config-next` 16 depende de `eslint-plugin-react` 7.37, que quebra em ESLint 10 (2026-09-16) |
+| Erros              | `@sentry/nextjs`                                | 10.x             | DSN via env; desabilitado quando ausente                                                                                                                                 |
+| Proxy TLS          | Caddy                                           | 2.x              | Container no mesmo `compose`; TLS automático (Let's Encrypt)                                                                                                             |
+| CI/CD              | GitHub Actions + GHCR                           | —                | Build multi-stage, push por SHA e `latest`, deploy via SSH                                                                                                               |
 
 **Amendment ao ADR-001 §2.** O mecanismo de cache passa a ser `use cache` + `cacheTag` + `revalidateTag` (Cache Components), não `fetch` com `next.tags`. A estratégia (cache por tag, revalidação sob demanda por webhook/backoffice, tempo como rede de segurança) é a mesma. Nota registrada no ADR-001 em 2026-09-16.
 
