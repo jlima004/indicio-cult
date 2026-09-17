@@ -70,7 +70,7 @@ npm run lint                # eslint .
 npm run lint:fix            # eslint . --fix
 npm run format              # prettier --write .
 npm run format:check        # prettier --check .
-npm run typecheck           # tsc --noEmit
+npm run typecheck           # next typegen && tsc --noEmit (typegen emite os tipos globais de rota em .next/types)
 
 # Testes
 npm run test                # vitest run
