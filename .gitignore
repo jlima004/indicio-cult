@@ -1,0 +1,31 @@
+# Agent skills (instaladas localmente; reinstaláveis a partir de skills-lock.json)
+.agents/skills/
+skills-lock.json
+
+# Dependências
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Variáveis de ambiente (segredos Nuvemshop, Reserva Ink, Supabase)
+.env
+.env.*
+!.env.example
+
+# Logs e caches
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+*.tsbuildinfo
+
+# Sistema operacional e editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
