@@ -10,6 +10,9 @@ node_modules/
 out/
 next-env.d.ts
 
+# Testes
+coverage/
+
 # Variáveis de ambiente (segredos Nuvemshop, Reserva Ink, Supabase)
 .env
 .env.*
