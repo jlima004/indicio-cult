@@ -1,32 +1,34 @@
 # ADR-001: Stack do frontend, estratégia de cache, estado do carrinho e infraestrutura de deploy
 
 ## Status
+
 Aceito
 
 **Nota (2026-09-16, [SPEC-foundation](../specs/SPEC-foundation.md) §2).** Com Next.js 16, o mecanismo de cache do §2 passa a ser `use cache` + `cacheTag` + `revalidateTag` (Cache Components, `cacheComponents: true`) em vez de `fetch` com `next.tags`/`unstable_cache`. A estratégia decidida aqui — cache por tag, revalidação sob demanda por webhook e pelo backoffice, revalidação por tempo apenas como rede de segurança — permanece inalterada; muda só a API do framework. Leitura de dados por usuário continua fora do cache compartilhado (componentes dinâmicos sob `Suspense`, ou `use cache: private` quando inevitável).
 
 ## Data
+
 2026-09-16
 
 ## Contexto
 
-O [PRD](../PRD.md) e o [README](../../README.md) fixam a arquitetura de negócio da Indicio Cult como **Headless Commerce**: a vitrine é própria, enquanto catálogo, carrinho final, checkout, pagamento e pedidos são delegados à **Nuvemshop**; o fulfillment POD é da **Reserva Ink**; autenticação e banco da vitrine são do **Supabase**. Este ADR fecha a única decisão técnica que o README listava como pendente: *stack do frontend (framework, gerenciamento de estado, estratégia de cache) e infraestrutura de deploy*.
+O [PRD](../PRD.md) e o [README](../../README.md) fixam a arquitetura de negócio da Indicio Cult como **Headless Commerce**: a vitrine é própria, enquanto catálogo, carrinho final, checkout, pagamento e pedidos são delegados à **Nuvemshop**; o fulfillment POD é da **Reserva Ink**; autenticação e banco da vitrine são do **Supabase**. Este ADR fecha a única decisão técnica que o README listava como pendente: _stack do frontend (framework, gerenciamento de estado, estratégia de cache) e infraestrutura de deploy_.
 
 Restrições que a decisão precisa atender:
 
-| Origem | Restrição |
-|---|---|
-| PRD §14 Performance | Core Web Vitals "bom" em 75% das sessões mobile (LCP ≤ 2,5s, INP ≤ 200ms, CLS ≤ 0,1); Lighthouse ≥ 90 mobile na saída do MVP. |
-| PRD §14 Performance, RF-06 | Catálogo em cache com **revalidação por webhook** da Nuvemshop; preço e disponibilidade nunca desatualizados por mais de **1 minuto** após alteração. |
-| PRD §14 Disponibilidade | ≥ 99,5% mensal na vitrine. |
-| PRD §14 Segurança | Tokens Nuvemshop e Reserva Ink **só no servidor**, escopos mínimos; rate limit em login, rastreio, contato e simulação de frete. Nenhum dado de pagamento na vitrine. |
-| PRD §14 SEO | URLs estáveis, metadados, dados estruturados (Produto, Artigo, Organização, Breadcrumb), sitemap, canonical, Open Graph. |
-| PRD §14 Manutenibilidade | Conteúdo e curadoria alteráveis **sem deploy**. |
-| PRD §14 Responsividade / i18n | Mobile-first (≥ 70% do tráfego); PT-BR agora, estrutura pronta para EN na Fase 3. |
-| PRD §9.7, RF-04, RF-05 | Carrinho **local** para convidado, associado à conta ao logar (merge), com handoff ao checkout Nuvemshop e evento `begin_checkout` antes do redirecionamento. |
-| PRD §3 princípio 5, §5 P4 | Operação por **uma pessoa** em menos de 1h/dia; plano Reserva Ink de ~20 vendas/mês na fase de validação. Custo fixo de infraestrutura precisa ser baixo e previsível. |
-| PRD §16 | Recebimento de webhooks `product/updated`, `order/paid`, `order/fulfilled`, `order/cancelled` da Nuvemshop — exige endpoint HTTPS público sempre disponível. |
-| PRD §11 | Backoffice próprio em `/admin/*` com Supabase Auth (papel `admin`, 2FA), sob o mesmo domínio da vitrine. |
+| Origem                        | Restrição                                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD §14 Performance           | Core Web Vitals "bom" em 75% das sessões mobile (LCP ≤ 2,5s, INP ≤ 200ms, CLS ≤ 0,1); Lighthouse ≥ 90 mobile na saída do MVP.                                          |
+| PRD §14 Performance, RF-06    | Catálogo em cache com **revalidação por webhook** da Nuvemshop; preço e disponibilidade nunca desatualizados por mais de **1 minuto** após alteração.                  |
+| PRD §14 Disponibilidade       | ≥ 99,5% mensal na vitrine.                                                                                                                                             |
+| PRD §14 Segurança             | Tokens Nuvemshop e Reserva Ink **só no servidor**, escopos mínimos; rate limit em login, rastreio, contato e simulação de frete. Nenhum dado de pagamento na vitrine.  |
+| PRD §14 SEO                   | URLs estáveis, metadados, dados estruturados (Produto, Artigo, Organização, Breadcrumb), sitemap, canonical, Open Graph.                                               |
+| PRD §14 Manutenibilidade      | Conteúdo e curadoria alteráveis **sem deploy**.                                                                                                                        |
+| PRD §14 Responsividade / i18n | Mobile-first (≥ 70% do tráfego); PT-BR agora, estrutura pronta para EN na Fase 3.                                                                                      |
+| PRD §9.7, RF-04, RF-05        | Carrinho **local** para convidado, associado à conta ao logar (merge), com handoff ao checkout Nuvemshop e evento `begin_checkout` antes do redirecionamento.          |
+| PRD §3 princípio 5, §5 P4     | Operação por **uma pessoa** em menos de 1h/dia; plano Reserva Ink de ~20 vendas/mês na fase de validação. Custo fixo de infraestrutura precisa ser baixo e previsível. |
+| PRD §16                       | Recebimento de webhooks `product/updated`, `order/paid`, `order/fulfilled`, `order/cancelled` da Nuvemshop — exige endpoint HTTPS público sempre disponível.           |
+| PRD §11                       | Backoffice próprio em `/admin/*` com Supabase Auth (papel `admin`, 2FA), sob o mesmo domínio da vitrine.                                                               |
 
 ## Decisão
 
@@ -50,12 +52,12 @@ Adotar, em conjunto:
 
 Regras de cache por tipo de dado:
 
-| Dado | Fonte | Estratégia |
-|---|---|---|
-| Produtos, variantes, preço, disponibilidade, categorias | API Nuvemshop | `fetch` com `cache tags` (`product:{id}`, `category:{id}`, `catalog`). Revalidação sob demanda via `revalidateTag` disparada pelo route handler que recebe `product/updated`. **Revalidação por tempo como rede de segurança** (ordem de 1h) para o caso de webhook perdido. |
-| Séries (texto curatorial, capa, ordem, status), Home, Editorial, Manifesto, Ajuda | Supabase (backoffice) | Mesma mecânica: o backoffice, ao salvar/publicar, chama `revalidateTag`/`revalidatePath` do conteúdo afetado. Cumpre "alterável sem deploy". |
-| Simulação de frete por CEP | API Reserva Ink | Sem cache no Next; o cache de 1h por CEP é do próprio provedor (PRD §9.4). Rate limit no route handler. |
-| Área do cliente, carrinho, backoffice, rastreio | Supabase / Nuvemshop | **Dinâmico, sem cache** (`dynamic = 'force-dynamic'` ou leitura em Server Actions). Dados por usuário nunca entram no cache compartilhado. |
+| Dado                                                                              | Fonte                 | Estratégia                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Produtos, variantes, preço, disponibilidade, categorias                           | API Nuvemshop         | `fetch` com `cache tags` (`product:{id}`, `category:{id}`, `catalog`). Revalidação sob demanda via `revalidateTag` disparada pelo route handler que recebe `product/updated`. **Revalidação por tempo como rede de segurança** (ordem de 1h) para o caso de webhook perdido. |
+| Séries (texto curatorial, capa, ordem, status), Home, Editorial, Manifesto, Ajuda | Supabase (backoffice) | Mesma mecânica: o backoffice, ao salvar/publicar, chama `revalidateTag`/`revalidatePath` do conteúdo afetado. Cumpre "alterável sem deploy".                                                                                                                                 |
+| Simulação de frete por CEP                                                        | API Reserva Ink       | Sem cache no Next; o cache de 1h por CEP é do próprio provedor (PRD §9.4). Rate limit no route handler.                                                                                                                                                                      |
+| Área do cliente, carrinho, backoffice, rastreio                                   | Supabase / Nuvemshop  | **Dinâmico, sem cache** (`dynamic = 'force-dynamic'` ou leitura em Server Actions). Dados por usuário nunca entram no cache compartilhado.                                                                                                                                   |
 
 Requisitos do endpoint de webhook:
 
@@ -88,37 +90,44 @@ A janela real de desatualização passa a ser o tempo de propagação do webhook
 ### Framework
 
 **Remix / React Router v7 (framework mode)**
+
 - Prós: modelo de dados simples, boa performance, menos "mágica" de cache.
 - Contras: não oferece ISR nativo nem revalidação sob demanda por tag; a estratégia de cache do catálogo teria que ser construída à mão (CDN ou Redis).
 - Rejeitado: o requisito RF-06 é atendido nativamente pelo Next.js.
 
 **Astro (com ilhas React)**
+
 - Prós: excelente para conteúdo estático, JavaScript mínimo.
 - Contras: área do cliente, backoffice e carrinho interativo são grande parte do escopo; o modelo de ilhas fica desconfortável para aplicação autenticada com muitas mutações.
 - Rejeitado: a vitrine é metade conteúdo, metade aplicação.
 
 **Next.js com Pages Router**
+
 - Prós: mais maduro e documentado.
 - Contras: sem Server Components, sem revalidação por tag, sem `generateMetadata`; caminho de migração futuro.
 - Rejeitado: App Router é a direção do framework e resolve melhor os requisitos de performance e cache.
 
 **Frontend SPA (Vite + React) consumindo a Nuvemshop no cliente**
+
 - Contras: tokens exporiam-se ao navegador ou exigiriam um backend separado; SEO dependeria de pré-renderização; LCP no mobile penalizado.
 - Rejeitado: viola o requisito de segredos apenas no servidor e o de SEO.
 
 ### Estratégia de cache
 
 **SSR puro a cada requisição**
+
 - Prós: nunca desatualizado.
 - Contras: cada page view bate na API da Nuvemshop; latência e rate limit do provedor viram gargalo; LCP pior.
 - Rejeitado: o PRD pede cache com revalidação, não ausência de cache.
 
 **Site estático (`output: 'export'`) com rebuild por webhook**
+
 - Prós: hospedagem trivial.
 - Contras: rebuild completo a cada alteração de preço (minutos, não segundos); sem route handlers para webhooks, proxy de frete ou área do cliente.
 - Rejeitado: não atende o limite de 1 minuto nem as partes dinâmicas do produto.
 
 **ISR só por tempo (ex.: `revalidate: 60`)**
+
 - Prós: simples.
 - Contras: todo o catálogo é reconsultado periodicamente mesmo sem mudança; a janela de desatualização é sempre o valor máximo escolhido.
 - Rejeitado como estratégia principal; **mantido como rede de segurança** com intervalo longo.
@@ -126,40 +135,48 @@ A janela real de desatualização passa a ser o tempo de propagação do webhook
 ### Estado do carrinho
 
 **React Context + `useReducer`**
+
 - Prós: sem dependência.
 - Contras: re-renderizações amplas, persistência e merge manuais, seletores inexistentes.
 - Rejeitado: Zustand entrega o mesmo com menos código e sem custo relevante de bundle.
 
 **Redux Toolkit**
+
 - Prós: ferramental maduro.
 - Contras: boilerplate e peso desproporcionais para uma única store de carrinho.
 - Rejeitado: o escopo de estado global do projeto é pequeno por decisão.
 
 **Carrinho vivendo diretamente na Nuvemshop (server-side desde o primeiro item)**
+
 - Contras: cada "Adicionar ao arquivo" vira chamada de API; convidado exigiria identificar sessão remota; experiência de mini-carrinho fica dependente de rede.
 - Rejeitado: o PRD define o carrinho como local, com handoff no checkout.
 
 **TanStack Query para o carrinho**
+
 - Contras: é uma camada de cache de servidor, não um gerenciador de estado local persistido.
 - Rejeitado para o carrinho; pode ser adotado pontualmente em telas do backoffice com muita mutação, sem conflito com este ADR.
 
 ### Infraestrutura
 
 **Vercel**
+
 - Prós: integração nativa com Next.js, ISR e revalidação por tag funcionando sem configuração, região em São Paulo.
 - Contras: custo variável por uso e por assento; funções serverless limitam duração e tornam o comportamento do cache dependente do provedor; segredos e observabilidade ficam presos à plataforma.
 - Rejeitado: para uma operação de uma pessoa com ~20 vendas/mês, o custo fixo baixo e previsível do VPS pesa mais do que a conveniência. Permanece como alternativa viável de migração, já que o código não usa nada específico da Vercel.
 
 **Serverless self-hosted (OpenNext em AWS Lambda/CloudFront)**
+
 - Contras: complexidade operacional alta para uma pessoa; muitas partes móveis.
 - Rejeitado: contraria o princípio de operação enxuta.
 
 **PaaS (Railway, Render, Fly.io)**
+
 - Prós: deploy simples de container.
 - Contras: custo por uso menos previsível; algumas plataformas sem região no Brasil.
 - Rejeitado por custo e latência; segunda opção se o VPS se mostrar oneroso de operar.
 
 **Deploy direto no VPS sem Docker (PM2)**
+
 - Contras: ambiente do servidor vira estado a manter; rollback e reprodutibilidade piores.
 - Rejeitado: a imagem Docker torna o servidor descartável e o rollback trivial.
 
