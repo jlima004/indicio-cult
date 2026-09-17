@@ -118,7 +118,10 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   │   ├── ui/                        # primitivos sem regra de negócio (Button, Field, ...)
 │   │   └── brand/                     # Wordmark, Symbol (logo), EmptyState
 │   ├── lib/
-│   │   ├── env.ts                     # validação de variáveis de ambiente (zod) — servidor e público
+│   │   ├── env/
+│   │   │   ├── index.ts               # server-only: `env` (servidor) + re-export de `publicEnv`
+│   │   │   ├── public.ts              # `publicEnv` (NEXT_PUBLIC_*), importável em componentes cliente
+│   │   │   └── parse.ts               # safeParse + erro nomeando cada variável inválida
 │   │   ├── supabase/
 │   │   │   ├── server.ts              # createServerClient (cookies) — RSC, Route Handlers, Server Actions
 │   │   │   ├── client.ts              # createBrowserClient
@@ -128,12 +131,13 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   │   ├── rate-limit.ts              # limiter em memória com interface RateLimiter
 │   │   ├── http/                      # helpers de resposta/erro para Route Handlers
 │   │   └── copy.ts                    # strings de sistema (404, 500, manutenção, vazio)
-│   └── styles/
-│       ├── globals.css                # @import "tailwindcss"; @theme com tokens provisórios
-│       └── tokens.md                  # documentação dos tokens e regra de substituição
-├── proxy.ts                           # manutenção, proteção de (conta)/admin, cabeçalhos
-├── instrumentation.ts                 # Sentry (server/edge)
-├── instrumentation-client.ts          # Sentry (browser)
+│   ├── styles/
+│   │   ├── globals.css                # @import "tailwindcss"; @theme com tokens provisórios
+│   │   └── tokens.md                  # documentação dos tokens e regra de substituição
+│   ├── proxy.ts                       # manutenção, proteção de (conta)/admin, cabeçalhos
+│   ├── instrumentation.ts             # valida env de servidor na inicialização; Sentry (server/edge)
+│   └── instrumentation-client.ts      # Sentry (browser)
+│                                      # (com `src/`, o Next exige esses três arquivos dentro de `src/`)
 ├── supabase/
 │   ├── config.toml
 │   └── migrations/                    # vazio na fundação (README explicando convenção)
@@ -162,7 +166,7 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 
 Regras:
 
-- Tudo que toca segredo vive em `src/lib/**/server.ts`, `admin.ts` ou Route Handlers; nunca em componentes cliente. O ESLint bloqueia `import` de `src/lib/env.ts` (parte servidor) em arquivos com `'use client'` via `server-only`.
+- Tudo que toca segredo vive em `src/lib/**/server.ts`, `admin.ts` ou Route Handlers; nunca em componentes cliente. O build bloqueia `import` de `@/lib/env` (parte servidor) em arquivos com `'use client'` via `server-only`; cliente usa `@/lib/env/public`.
 - Cada módulo futuro adiciona rotas dentro do grupo correspondente e código em `src/modules/<id>/` (convenção a ser fixada no spec de `nuvemshop`, o primeiro módulo de código de negócio).
 - Testes espelham o caminho do arquivo testado.
 
@@ -171,33 +175,42 @@ Regras:
 ## 5. Estilo de código
 
 ```ts
-// src/lib/env.ts
-import 'server-only'
+// src/lib/env/public.ts — sem `server-only`: componentes cliente importam daqui.
 import { z } from 'zod'
+import { parseEnv } from './parse' // safeParse + Error listando cada variável inválida
 
-const serverSchema = z.object({
+export const publicSchema = z.object({
+  NEXT_PUBLIC_SITE_URL: z.url(),
+  NEXT_PUBLIC_SUPABASE_URL: z.url(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  NEXT_PUBLIC_SENTRY_DSN: z.url().optional(),
+})
+
+// Referências literais a process.env.NEXT_PUBLIC_* são obrigatórias para o inlining do Next.
+export const publicEnv = parseEnv(publicSchema, {
+  NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+  // ...
+})
+
+// src/lib/env/index.ts — servidor.
+import 'server-only'
+export { publicEnv, publicSchema } from './public'
+
+export const serverSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_VERSION: z.string().min(1).default('dev'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_DSN: z.url().optional(),
   MAINTENANCE_MODE: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
 })
 
-const publicSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  NEXT_PUBLIC_SITE_URL: z.string().url(),
-})
-
-export const env = serverSchema.parse(process.env)
-export const publicEnv = publicSchema.parse({
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
-})
+export const env = parseEnv(serverSchema, process.env)
 ```
+
+Onde a validação acontece: as variáveis **públicas** são inlinadas no bundle e precisam existir na CI — o layout raiz lê `publicEnv`, então `next build` falha nomeando a ausente. As de **servidor** só existem no VPS — `src/instrumentation.ts` importa `@/lib/env` em `register()` e, em falha, loga e `process.exit(1)` (o Next trataria a rejeição como `unhandledRejection` e manteria o processo vivo sem atender).
 
 ```tsx
 // src/app/not-found.tsx
@@ -250,8 +263,8 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 **Sempre**
 
 - Rodar `npm run check` antes de commitar; CI bloqueia merge se falhar.
-- Ler variáveis de ambiente somente via `src/lib/env.ts`; nunca `process.env` direto fora dele.
-- Manter `.env.example` sincronizado com o schema de `env.ts` (teste unitário compara as chaves).
+- Ler variáveis de ambiente somente via `src/lib/env/`; nunca `process.env` direto fora dele.
+- Manter `.env.example` sincronizado com os schemas de `src/lib/env/` (teste unitário compara as chaves).
 - Executar o container como usuário não-root, com `HEALTHCHECK` e `restart: unless-stopped`.
 - Escrever copy de sistema no tom do PRD §3 (sem exclamações, sem emoji, sem "Ops!").
 
@@ -297,17 +310,17 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.4 Variáveis de ambiente
 
-| Variável                               | Escopo             | Obrigatória    | Uso                                          |
-| -------------------------------------- | ------------------ | -------------- | -------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`                 | público            | sim            | canonical, Open Graph, sitemap               |
-| `NEXT_PUBLIC_SUPABASE_URL`             | público            | sim            | clientes Supabase                            |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`        | público            | sim            | clientes Supabase                            |
-| `SUPABASE_SERVICE_ROLE_KEY`            | servidor           | sim            | `admin.ts`                                   |
-| `SUPABASE_PROJECT_ID`                  | tooling            | sim (local/CI) | `db:types`, `db:migrate`                     |
-| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | servidor / público | não            | Sentry desligado se ausente                  |
-| `MAINTENANCE_MODE`                     | servidor           | não (`false`)  | `proxy.ts`                                   |
-| `SITE_HOST`                            | deploy             | sim            | Caddy (`<ip>.sslip.io` até haver domínio)    |
-| `APP_VERSION`                          | deploy             | sim            | git sha injetado no build; exposto no health |
+| Variável                               | Escopo             | Obrigatória                | Uso                                          |
+| -------------------------------------- | ------------------ | -------------------------- | -------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`                 | público            | sim                        | canonical, Open Graph, sitemap               |
+| `NEXT_PUBLIC_SUPABASE_URL`             | público            | sim                        | clientes Supabase                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`        | público            | sim                        | clientes Supabase                            |
+| `SUPABASE_SERVICE_ROLE_KEY`            | servidor           | sim                        | `admin.ts`                                   |
+| `SUPABASE_PROJECT_ID`                  | tooling            | sim (local/CI)             | `db:types`, `db:migrate`                     |
+| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | servidor / público | não                        | Sentry desligado se ausente                  |
+| `MAINTENANCE_MODE`                     | servidor           | não (`false`)              | `proxy.ts`                                   |
+| `SITE_HOST`                            | deploy             | sim                        | Caddy (`<ip>.sslip.io` até haver domínio)    |
+| `APP_VERSION`                          | deploy             | sim (`dev` fora da imagem) | git sha injetado no build; exposto no health |
 
 ### 8.5 Tokens de design provisórios
 
@@ -351,7 +364,8 @@ Interfaces que os demais módulos podem assumir como estáveis a partir da aprov
 
 | Export                  | Assinatura                                                                      | Uso previsto                        |
 | ----------------------- | ------------------------------------------------------------------------------- | ----------------------------------- |
-| `@/lib/env`             | `env`, `publicEnv` (tipados)                                                    | todo código de servidor / cliente   |
+| `@/lib/env`             | `env`, `publicEnv` (tipados; `server-only`)                                     | código de servidor                  |
+| `@/lib/env/public`      | `publicEnv` (tipado)                                                            | componentes cliente                 |
 | `@/lib/supabase/server` | `createClient(): Promise<SupabaseClient<Database>>`                             | RSC, Route Handlers, Server Actions |
 | `@/lib/supabase/client` | `createClient(): SupabaseClient<Database>`                                      | componentes cliente                 |
 | `@/lib/supabase/admin`  | `createAdminClient(): SupabaseClient<Database>`                                 | webhooks, jobs, backoffice          |

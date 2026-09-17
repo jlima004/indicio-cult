@@ -62,13 +62,13 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm run build` com `.env` sem `NEXT_PUBLIC_SUPABASE_URL` falha com mensagem nomeando a variável
-- [ ] Teste `env.test.ts` falha se uma chave for adicionada só no schema ou só no `.env.example`
-- [ ] `rg "process\.env" src --glob '!src/lib/env.ts'` vazio
+- [x] `npm run build` com `.env` sem `NEXT_PUBLIC_SUPABASE_URL` falha com mensagem nomeando a variável (e `npm run start` sem `SUPABASE_SERVICE_ROLE_KEY` termina com exit 1 nomeando-a — segredos de servidor não existem na CI, então são validados na inicialização, não no build)
+- [x] Teste `env.test.ts` falha se uma chave for adicionada só no schema ou só no `.env.example` (verificado por mutação nos dois sentidos)
+- [x] `rg "process\.env" src --glob '!src/lib/env/**'` vazio
 
 **Verificação:** `npm run test -- env`; simular env incompleta e rodar `npm run build`.
 
-**Dependências:** T3 · **Arquivos:** `src/lib/env.ts`, `.env.example`, `tests/unit/lib/env.test.ts`, `instrumentation.ts`, `package.json` (zod) · **Tamanho:** M
+**Dependências:** T3 · **Arquivos:** `src/lib/env/{index,public,parse}.ts` (diretório em vez de `env.ts`: `public.ts` sem `server-only` para componentes cliente), `.env.example`, `tests/unit/lib/env/{index,public}.test.ts`, `src/instrumentation.ts` (dentro de `src/`, exigência do Next com `src/`), `src/app/layout.tsx` (lê `publicEnv` → valida no build), `package.json` (zod, server-only) · **Tamanho:** M
 
 ---
 
