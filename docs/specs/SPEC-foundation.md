@@ -1,13 +1,13 @@
 # Spec: `foundation` — base técnica da vitrine Indicio Cult
 
-| Campo | Valor |
-|---|---|
-| Módulo | `foundation` (ver [mapa de capacidades](./CAPABILITY-MAP.md)) |
-| Depende de | — |
-| Consumido por | todos os demais módulos |
-| Origem | [PRD §8, §14](../PRD.md); [ADR-001](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md) |
-| Status | Aprovado (2026-09-16) |
-| Data | 2026-09-16 |
+| Campo         | Valor                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| Módulo        | `foundation` (ver [mapa de capacidades](./CAPABILITY-MAP.md))                                     |
+| Depende de    | —                                                                                                 |
+| Consumido por | todos os demais módulos                                                                           |
+| Origem        | [PRD §8, §14](../PRD.md); [ADR-001](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md) |
+| Status        | Aprovado (2026-09-16)                                                                             |
+| Data          | 2026-09-16                                                                                        |
 
 ---
 
@@ -36,22 +36,22 @@ Entregar o esqueleto executável sobre o qual todos os módulos do MVP são cons
 
 Versões fixadas no `package.json` com range `^` dentro da major indicada; o `package-lock.json` é a fonte exata. Upgrades de major são decisão explícita (ver Fronteiras).
 
-| Camada | Escolha | Versão | Observação |
-|---|---|---|---|
-| Runtime | Node.js | 22 LTS | Imagem base `node:22-alpine`; `engines.node >=22` |
-| Pacotes | npm | 10.x | Único gerenciador; `package-lock.json` versionado; CI usa `npm ci` |
-| Framework | Next.js (App Router) | 16.3.x | `output: 'standalone'`, `cacheComponents: true`, `proxy.ts` (substitui `middleware.ts`) |
-| UI | React / React DOM | 19.3.x | Server Components por padrão |
-| Linguagem | TypeScript | 5.9.x (`strict`) | TS 7 (port nativo) avaliado após o MVP; não adotar agora |
-| Estilo | Tailwind CSS | 4.x | Tokens em `@theme` via variáveis CSS; sem UI kit de terceiros |
-| Estado do carrinho | Zustand | 5.x | Instalado na fundação para fixar versão; store criada em `cart` |
-| Supabase | `@supabase/supabase-js`, `@supabase/ssr` | 2.x / 0.12.x | Clientes servidor e navegador; Supabase CLI para migrações e tipos |
-| Testes | Vitest + Testing Library | 5.x | Unitário e componente (`jsdom`) |
-| E2E | Playwright | 1.63.x | Smoke contra build de produção local |
-| Lint / format | ESLint (flat) + `eslint-config-next` + Prettier | 10.x / 16.x / 3.x | Sem regras customizadas além do preset no início |
-| Erros | `@sentry/nextjs` | 10.x | DSN via env; desabilitado quando ausente |
-| Proxy TLS | Caddy | 2.x | Container no mesmo `compose`; TLS automático (Let's Encrypt) |
-| CI/CD | GitHub Actions + GHCR | — | Build multi-stage, push por SHA e `latest`, deploy via SSH |
+| Camada             | Escolha                                         | Versão            | Observação                                                                              |
+| ------------------ | ----------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| Runtime            | Node.js                                         | 22 LTS            | Imagem base `node:22-alpine`; `engines.node >=22`                                       |
+| Pacotes            | npm                                             | 10.x              | Único gerenciador; `package-lock.json` versionado; CI usa `npm ci`                      |
+| Framework          | Next.js (App Router)                            | 16.3.x            | `output: 'standalone'`, `cacheComponents: true`, `proxy.ts` (substitui `middleware.ts`) |
+| UI                 | React / React DOM                               | 19.3.x            | Server Components por padrão                                                            |
+| Linguagem          | TypeScript                                      | 5.9.x (`strict`)  | TS 7 (port nativo) avaliado após o MVP; não adotar agora                                |
+| Estilo             | Tailwind CSS                                    | 4.x               | Tokens em `@theme` via variáveis CSS; sem UI kit de terceiros                           |
+| Estado do carrinho | Zustand                                         | 5.x               | Instalado na fundação para fixar versão; store criada em `cart`                         |
+| Supabase           | `@supabase/supabase-js`, `@supabase/ssr`        | 2.x / 0.12.x      | Clientes servidor e navegador; Supabase CLI para migrações e tipos                      |
+| Testes             | Vitest + Testing Library                        | 5.x               | Unitário e componente (`jsdom`)                                                         |
+| E2E                | Playwright                                      | 1.63.x            | Smoke contra build de produção local                                                    |
+| Lint / format      | ESLint (flat) + `eslint-config-next` + Prettier | 10.x / 16.x / 3.x | Sem regras customizadas além do preset no início                                        |
+| Erros              | `@sentry/nextjs`                                | 10.x              | DSN via env; desabilitado quando ausente                                                |
+| Proxy TLS          | Caddy                                           | 2.x               | Container no mesmo `compose`; TLS automático (Let's Encrypt)                            |
+| CI/CD              | GitHub Actions + GHCR                           | —                 | Build multi-stage, push por SHA e `latest`, deploy via SSH                              |
 
 **Amendment ao ADR-001 §2.** O mecanismo de cache passa a ser `use cache` + `cacheTag` + `revalidateTag` (Cache Components), não `fetch` com `next.tags`. A estratégia (cache por tag, revalidação sob demanda por webhook/backoffice, tempo como rede de segurança) é a mesma. Nota registrada no ADR-001 em 2026-09-16.
 
@@ -161,6 +161,7 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 ```
 
 Regras:
+
 - Tudo que toca segredo vive em `src/lib/**/server.ts`, `admin.ts` ou Route Handlers; nunca em componentes cliente. O ESLint bloqueia `import` de `src/lib/env.ts` (parte servidor) em arquivos com `'use client'` via `server-only`.
 - Cada módulo futuro adiciona rotas dentro do grupo correspondente e código em `src/modules/<id>/` (convenção a ser fixada no spec de `nuvemshop`, o primeiro módulo de código de negócio).
 - Testes espelham o caminho do arquivo testado.
@@ -218,6 +219,7 @@ export default function NotFound() {
 ```
 
 Convenções:
+
 - **Idioma:** código e identificadores em inglês; copy, comentários de domínio e documentação em PT-BR. Copy de sistema centralizada em `src/lib/copy.ts` (facilita a Fase 3 EN).
 - **Nomes:** componentes `PascalCase` em arquivos `PascalCase.tsx`; funções e variáveis `camelCase`; rotas e slugs `kebab-case` em PT-BR conforme PRD §8; variáveis de ambiente `SCREAMING_SNAKE_CASE` com prefixo `NEXT_PUBLIC_` apenas para o que pode ir ao navegador.
 - **Server first:** componente é Server Component salvo `'use client'` explícito no menor nó interativo possível.
@@ -230,12 +232,12 @@ Convenções:
 
 ## 6. Estratégia de testes
 
-| Nível | Ferramenta | O que cobre nesta fundação | Onde |
-|---|---|---|---|
-| Unitário | Vitest | `env.ts` (falha em env inválida), `rate-limit.ts` (janela, limite, reset), `track.ts` (no-op não lança), `copy.ts` (chaves obrigatórias) | `tests/unit/**` |
-| Componente | Vitest + Testing Library (`jsdom`) | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade | `tests/unit/**` |
-| Smoke E2E | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**` |
-| Contrato de infraestrutura | Shell na CI | Imagem constrói; container sobe; `HEALTHCHECK` passa em ≤ 30s; processo não roda como root | `deploy.yml` |
+| Nível                      | Ferramenta                                       | O que cobre nesta fundação                                                                                                                                                                                                 | Onde            |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Unitário                   | Vitest                                           | `env.ts` (falha em env inválida), `rate-limit.ts` (janela, limite, reset), `track.ts` (no-op não lança), `copy.ts` (chaves obrigatórias)                                                                                   | `tests/unit/**` |
+| Componente                 | Vitest + Testing Library (`jsdom`)               | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade                                                                                                                                      | `tests/unit/**` |
+| Smoke E2E                  | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**`  |
+| Contrato de infraestrutura | Shell na CI                                      | Imagem constrói; container sobe; `HEALTHCHECK` passa em ≤ 30s; processo não roda como root                                                                                                                                 | `deploy.yml`    |
 
 Cobertura: sem meta numérica na fundação (há pouco código); a meta será fixada em `CONSTRAINTS.md` quando `catalog` entrar. O que existe de lógica (env, rate limit) tem teste.
 
@@ -246,6 +248,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 ## 7. Fronteiras
 
 **Sempre**
+
 - Rodar `npm run check` antes de commitar; CI bloqueia merge se falhar.
 - Ler variáveis de ambiente somente via `src/lib/env.ts`; nunca `process.env` direto fora dele.
 - Manter `.env.example` sincronizado com o schema de `env.ts` (teste unitário compara as chaves).
@@ -253,6 +256,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 - Escrever copy de sistema no tom do PRD §3 (sem exclamações, sem emoji, sem "Ops!").
 
 **Perguntar antes**
+
 - Adicionar dependência de runtime (dev-deps de tooling podem entrar com justificativa no PR).
 - Alterar `next.config.ts` além do previsto aqui (`output`, `cacheComponents`, `images`).
 - Mudar o fluxo de deploy, o `Caddyfile` ou o `docker-compose.yml`.
@@ -260,6 +264,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 - Subir major de Next, React, TypeScript ou Tailwind.
 
 **Nunca**
+
 - Commitar `.env`, chaves, DSN ou tokens (inclusive em testes ou fixtures).
 - Expor `SUPABASE_SERVICE_ROLE_KEY` ou qualquer segredo em código com `'use client'` ou com prefixo `NEXT_PUBLIC_`.
 - Rodar a aplicação como root ou publicar a porta do Next diretamente (só o Caddy expõe 80/443).
@@ -271,17 +276,20 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 ## 8. Requisitos detalhados
 
 ### 8.1 Rotas e páginas
+
 - Grupos `(vitrine)`, `(conta)`, `admin` com layouts próprios; `(conta)` e `admin` só contêm `layout.tsx` com comentário indicando o módulo dono.
-- `/` (Home placeholder): wordmark empilhado, assinatura *"Arte para quem reconhece o indício."*, nada mais. Sem navegação funcional.
+- `/` (Home placeholder): wordmark empilhado, assinatura _"Arte para quem reconhece o indício."_, nada mais. Sem navegação funcional.
 - `not-found.tsx`: símbolo da marca, "Esse rastro não leva a lugar nenhum.", link para a Home.
 - `error.tsx` / `global-error.tsx`: copy neutra da marca, botão "Tentar de novo", reporte ao Sentry.
 - `/manutencao`: copy da marca; `proxy.ts` reescreve toda rota não-`/api/health` para ela com status 503 e `Retry-After` quando `MAINTENANCE_MODE=true`.
 - `robots.ts` e `sitemap.ts` mínimos; `metadata` padrão no `layout.tsx` (título, descrição, Open Graph com o logo, `lang="pt-BR"`).
 
 ### 8.2 Healthcheck
+
 - `GET /api/health` → `200 { status: 'ok', version: <git sha>, supabase: 'ok' }` quando um `select 1` via cliente servidor (anon key) responde em ≤ 2s; caso contrário `503 { status: 'degraded', supabase: 'error' }`. Sem cache (`connection()`/dinâmico). Usado pelo `HEALTHCHECK` do Docker, pelo Caddy e pelo monitor externo de uptime.
 
 ### 8.3 Supabase
+
 - `server.ts` usa `@supabase/ssr` com `cookies()` do Next (padrão `getAll`/`setAll`); `client.ts` usa `createBrowserClient`; `admin.ts` usa service role e importa `server-only`.
 - `proxy.ts` chama `supabase.auth.getClaims()` (não `getSession()`) para refrescar a sessão e proteger `(conta)`/`admin`; como ainda não há login, a proteção redireciona para `/` com um comentário `TODO(identity)`.
 - `supabase/config.toml` versionado; `supabase/migrations/` vazio com `README.md` explicando: um arquivo por mudança, nome `YYYYMMDDHHMMSS_<modulo>_<descricao>.sql`, RLS habilitado em toda tabela nova.
@@ -289,45 +297,51 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.4 Variáveis de ambiente
 
-| Variável | Escopo | Obrigatória | Uso |
-|---|---|---|---|
-| `NEXT_PUBLIC_SITE_URL` | público | sim | canonical, Open Graph, sitemap |
-| `NEXT_PUBLIC_SUPABASE_URL` | público | sim | clientes Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | público | sim | clientes Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | servidor | sim | `admin.ts` |
-| `SUPABASE_PROJECT_ID` | tooling | sim (local/CI) | `db:types`, `db:migrate` |
-| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | servidor / público | não | Sentry desligado se ausente |
-| `MAINTENANCE_MODE` | servidor | não (`false`) | `proxy.ts` |
-| `SITE_HOST` | deploy | sim | Caddy (`<ip>.sslip.io` até haver domínio) |
-| `APP_VERSION` | deploy | sim | git sha injetado no build; exposto no health |
+| Variável                               | Escopo             | Obrigatória    | Uso                                          |
+| -------------------------------------- | ------------------ | -------------- | -------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`                 | público            | sim            | canonical, Open Graph, sitemap               |
+| `NEXT_PUBLIC_SUPABASE_URL`             | público            | sim            | clientes Supabase                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`        | público            | sim            | clientes Supabase                            |
+| `SUPABASE_SERVICE_ROLE_KEY`            | servidor           | sim            | `admin.ts`                                   |
+| `SUPABASE_PROJECT_ID`                  | tooling            | sim (local/CI) | `db:types`, `db:migrate`                     |
+| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | servidor / público | não            | Sentry desligado se ausente                  |
+| `MAINTENANCE_MODE`                     | servidor           | não (`false`)  | `proxy.ts`                                   |
+| `SITE_HOST`                            | deploy             | sim            | Caddy (`<ip>.sslip.io` até haver domínio)    |
+| `APP_VERSION`                          | deploy             | sim            | git sha injetado no build; exposto no health |
 
 ### 8.5 Tokens de design provisórios
+
 - `globals.css` define em `@theme`: `--color-bg`, `--color-fg`, `--color-muted`, `--color-border`, `--color-accent` (todos neutros: branco, preto, três cinzas), `--font-sans` (fonte do sistema via `next/font` quando definida), escala de espaçamento padrão do Tailwind, `--radius-none` como padrão (a marca é reta).
 - `tokens.md` registra que a paleta final substitui apenas valores de variáveis; componentes não usam cores literais (`bg-white`, `text-black` proibidos por regra ESLint simples de string no CI: `rg` em `check`).
 
 ### 8.6 Observabilidade
+
 - Sentry: `instrumentation.ts` e `instrumentation-client.ts`; `tracesSampleRate` 0.1; `environment` = `production` | `development`; `release` = `APP_VERSION`; PII desligado. `error.tsx` reporta via `Sentry.captureException`.
 - `track(event, payload)`: assinatura tipada com o union dos eventos do PRD §14 (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, `sign_up`, `newsletter_subscribe`, `exchange_requested`); implementação no-op que loga em `development`. Provedor real é decisão futura (Questões abertas).
 - Logs de servidor em JSON de uma linha (`console.log` com objeto); Caddy loga acesso em JSON para o volume.
 
 ### 8.7 Rate limit
+
 - `RateLimiter` com `limit(key, { max, windowMs }) → { ok, remaining, resetAt }`; implementação `MemoryRateLimiter` (Map + limpeza preguiçosa). Sem uso na fundação além de `/api/health` (60/min por IP) para provar o contrato; `shipping`, `identity`, `orders`, `newsletter` consomem.
 
 ### 8.8 Docker e proxy
+
 - `Dockerfile` multi-stage: `deps` (npm ci) → `build` (next build, `NEXT_TELEMETRY_DISABLED=1`, `APP_VERSION` como build arg) → `runner` (`node:22-alpine`, copia `.next/standalone`, `.next/static`, `public`; `USER node`; `EXPOSE 3000`; `HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1`).
 - `docker-compose.yml`: serviços `app` (imagem `ghcr.io/jlima004/indicio-cult:<sha>`, `env_file: .env`, volume `next_cache:/app/.next/cache`, sem `ports`) e `caddy` (`caddy:2`, portas 80/443, volumes `caddy_data`, `caddy_config`, `./Caddyfile`); rede interna; `restart: unless-stopped` em ambos.
 - `Caddyfile`: `{$SITE_HOST}` → `reverse_proxy app:3000`; `encode zstd gzip`; cabeçalhos `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` restritivo; `-Server`. CSP fica para quando houver scripts de terceiros (Questões abertas).
 - `deploy/README.md`: provisionamento único do VPS (usuário não-root com sudo, Docker Engine + Compose, firewall 22/80/443, `fail2ban`, chave SSH da CI, pasta `/srv/indicio-cult` com `.env` e `docker-compose.yml`, `SITE_HOST`).
 
 ### 8.9 CI/CD (GitHub Actions)
+
 - `ci.yml` em PR e push: `npm ci` → `npm run check` → `npm run build` → `npm run test:e2e`; `db:types` + `git diff --exit-code`; cache do npm e do Playwright.
 - `deploy.yml` em push na `main` (após `ci.yml` verde, via `workflow_run` ou job dependente): build da imagem com `APP_VERSION=${{ github.sha }}`, push para GHCR com tags `sha` e `latest`; SSH no VPS (`appleboy/ssh-action` ou `ssh` puro com chave em secret); `docker compose pull && docker compose up -d --remove-orphans`; espera `GET https://$SITE_HOST/api/health` responder 200 em ≤ 90s, senão o job falha (o deploy anterior continua rodando porque `up -d` só troca o container se a imagem nova subir; rollback documentado = `docker compose up -d` com a tag anterior).
 - Aquecimento pós-deploy (ADR-001): `curl` na Home após health ok.
 - Secrets no GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SITE_HOST`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_PROJECT_ID`, `SUPABASE_ACCESS_TOKEN` (CLI). O `.env` de produção vive **só no VPS**; a CI não o conhece.
 
 ### 8.10 Repositório
+
 - Criar repositório **público** `jlima004/indicio-cult` no GitHub (`gh repo create --public`), `main` protegida: PR obrigatório, `ci.yml` obrigatório, sem force-push. Por ser público: a imagem no GHCR fica pública (sem credencial de pull no VPS), nenhum segredo entra em workflow logs (`::add-mask::` para valores derivados) e a varredura de segredos do critério 10 é obrigatória desde o primeiro commit.
-- Commits em PT-BR no formato *Conventional Commits* (`feat(foundation): ...`); `README.md` ganha seção "Como rodar" e link para este spec.
+- Commits em PT-BR no formato _Conventional Commits_ (`feat(foundation): ...`); `README.md` ganha seção "Como rodar" e link para este spec.
 
 ---
 
@@ -335,19 +349,19 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 Interfaces que os demais módulos podem assumir como estáveis a partir da aprovação deste spec:
 
-| Export | Assinatura | Uso previsto |
-|---|---|---|
-| `@/lib/env` | `env`, `publicEnv` (tipados) | todo código de servidor / cliente |
-| `@/lib/supabase/server` | `createClient(): Promise<SupabaseClient<Database>>` | RSC, Route Handlers, Server Actions |
-| `@/lib/supabase/client` | `createClient(): SupabaseClient<Database>` | componentes cliente |
-| `@/lib/supabase/admin` | `createAdminClient(): SupabaseClient<Database>` | webhooks, jobs, backoffice |
-| `@/lib/analytics/track` | `track<E extends AnalyticsEvent>(event: E, payload: AnalyticsPayload[E]): void` | eventos do funil |
-| `@/lib/rate-limit` | `RateLimiter`, `memoryRateLimiter`, `clientIp(req)` | route handlers públicos |
-| `@/lib/http` | `json(data, init?)`, `problem(status, title, detail?)` | respostas padronizadas (RFC 9457) |
-| `@/lib/copy` | `copy.system.*` | telas de sistema |
-| `@/components/brand/*` | `Wordmark`, `Symbol`, `EmptyState` | toda a vitrine |
-| `proxy.ts` | matcher e ordem: manutenção → sessão Supabase → proteção de grupo | `identity` e `admin` estendem |
-| Convenção de módulo | `src/modules/<id>/{server,client,components}` (fixada em `SPEC-nuvemshop.md`) | todos |
+| Export                  | Assinatura                                                                      | Uso previsto                        |
+| ----------------------- | ------------------------------------------------------------------------------- | ----------------------------------- |
+| `@/lib/env`             | `env`, `publicEnv` (tipados)                                                    | todo código de servidor / cliente   |
+| `@/lib/supabase/server` | `createClient(): Promise<SupabaseClient<Database>>`                             | RSC, Route Handlers, Server Actions |
+| `@/lib/supabase/client` | `createClient(): SupabaseClient<Database>`                                      | componentes cliente                 |
+| `@/lib/supabase/admin`  | `createAdminClient(): SupabaseClient<Database>`                                 | webhooks, jobs, backoffice          |
+| `@/lib/analytics/track` | `track<E extends AnalyticsEvent>(event: E, payload: AnalyticsPayload[E]): void` | eventos do funil                    |
+| `@/lib/rate-limit`      | `RateLimiter`, `memoryRateLimiter`, `clientIp(req)`                             | route handlers públicos             |
+| `@/lib/http`            | `json(data, init?)`, `problem(status, title, detail?)`                          | respostas padronizadas (RFC 9457)   |
+| `@/lib/copy`            | `copy.system.*`                                                                 | telas de sistema                    |
+| `@/components/brand/*`  | `Wordmark`, `Symbol`, `EmptyState`                                              | toda a vitrine                      |
+| `proxy.ts`              | matcher e ordem: manutenção → sessão Supabase → proteção de grupo               | `identity` e `admin` estendem       |
+| Convenção de módulo     | `src/modules/<id>/{server,client,components}` (fixada em `SPEC-nuvemshop.md`)   | todos                               |
 
 Mudanças nesses contratos exigem atualizar este spec antes do código.
 
@@ -373,14 +387,14 @@ Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiro
 
 ## 11. Riscos e mitigações
 
-| Risco | Mitigação |
-|---|---|
+| Risco                                                                                                                                       | Mitigação                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `cacheComponents` muda semântica de rotas dinâmicas (tudo que usa `cookies()`/`headers()` precisa de `Suspense`) e a equipe erra fronteiras | Fundação já entrega `layout.tsx` com `Suspense` no slot de conteúdo e exemplos comentados; regra fixada aqui antes de `catalog` |
-| Cache do Next no volume `next_cache` cresce sem limite | Limite de 1 GB documentado; `deploy/README.md` inclui rotina `docker system prune` mensal |
-| TLS em `sslip.io` sujeito a rate limit do Let's Encrypt em redeploys frequentes | Volume `caddy_data` persiste certificados; troca para o domínio definitivo é só `SITE_HOST` |
-| Sem Docker local, erros de imagem só aparecem na CI | `ci.yml` constrói a imagem também em PR (sem push), não só no deploy |
-| Playwright contra Supabase real na CI cria acoplamento | Único acesso é `select 1` com anon key; se o projeto estiver pausado a CI falha ruidosamente, o que é desejável |
-| TypeScript 7 vira padrão do ecossistema antes do MVP terminar | Versão fixada; upgrade é item de "Perguntar antes" |
+| Cache do Next no volume `next_cache` cresce sem limite                                                                                      | Limite de 1 GB documentado; `deploy/README.md` inclui rotina `docker system prune` mensal                                       |
+| TLS em `sslip.io` sujeito a rate limit do Let's Encrypt em redeploys frequentes                                                             | Volume `caddy_data` persiste certificados; troca para o domínio definitivo é só `SITE_HOST`                                     |
+| Sem Docker local, erros de imagem só aparecem na CI                                                                                         | `ci.yml` constrói a imagem também em PR (sem push), não só no deploy                                                            |
+| Playwright contra Supabase real na CI cria acoplamento                                                                                      | Único acesso é `select 1` com anon key; se o projeto estiver pausado a CI falha ruidosamente, o que é desejável                 |
+| TypeScript 7 vira padrão do ecossistema antes do MVP terminar                                                                               | Versão fixada; upgrade é item de "Perguntar antes"                                                                              |
 
 ---
 
