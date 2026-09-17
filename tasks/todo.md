@@ -46,13 +46,13 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm run test` executa e passa com ≥ 1 teste de componente
-- [ ] `npm run check` inclui `test` e continua verde
-- [ ] `tests/unit/` espelha `src/` (convenção documentada em comentário no `vitest.config.ts`)
+- [x] `npm run test` executa e passa com ≥ 1 teste de componente
+- [x] `npm run check` inclui `test` e continua verde
+- [x] `tests/unit/` espelha `src/` (convenção documentada em comentário no `vitest.config.mts`)
 
 **Verificação:** `npm run test`; `npm run check`.
 
-**Dependências:** T2 · **Arquivos:** `vitest.config.ts`, `tests/setup.ts`, `tests/unit/app/page.test.tsx`, `package.json` · **Tamanho:** S
+**Dependências:** T2 · **Arquivos:** `vitest.config.mts` (`.mts` para o Vite carregar como ESM sem `"type": "module"` no `package.json`), `tests/setup.ts`, `tests/unit/app/page.test.tsx`, `package.json` · **Tamanho:** S
 
 ---
 

@@ -154,7 +154,7 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 ├── tsconfig.json
 ├── eslint.config.mjs
 ├── prettier.config.mjs
-├── vitest.config.ts
+├── vitest.config.mts                  # .mts: carregado como ESM pelo Vite sem "type": "module"
 ├── playwright.config.ts
 ├── postcss.config.mjs
 └── package.json

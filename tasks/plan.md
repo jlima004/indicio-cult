@@ -43,7 +43,7 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 
 - [x] T1 · Repositório público `jlima004/indicio-cult` e push da `main`
 - [x] T2 · Scaffold Next.js 16 + TS strict + Tailwind 4 + ESLint/Prettier + scripts npm
-- [ ] T3 · Vitest + Testing Library, primeiro teste, `check` inclui `test`
+- [x] T3 · Vitest + Testing Library, primeiro teste, `check` inclui `test`
 - [ ] T4 · `src/lib/env.ts` (zod) + `.env.example` + teste de sincronia + falha rápida
 - [ ] T5 · Clientes Supabase (server/client/admin), `supabase/config.toml`, `db:types`, `database.types.ts` — inclui `[humano]` token do CLI
 - [ ] T6 · `GET /api/health` + `lib/http` + `lib/rate-limit` com testes
