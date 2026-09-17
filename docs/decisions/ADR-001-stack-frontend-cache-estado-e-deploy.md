@@ -3,6 +3,8 @@
 ## Status
 Aceito
 
+**Nota (2026-09-16, [SPEC-foundation](../specs/SPEC-foundation.md) §2).** Com Next.js 16, o mecanismo de cache do §2 passa a ser `use cache` + `cacheTag` + `revalidateTag` (Cache Components, `cacheComponents: true`) em vez de `fetch` com `next.tags`/`unstable_cache`. A estratégia decidida aqui — cache por tag, revalidação sob demanda por webhook e pelo backoffice, revalidação por tempo apenas como rede de segurança — permanece inalterada; muda só a API do framework. Leitura de dados por usuário continua fora do cache compartilhado (componentes dinâmicos sob `Suspense`, ou `use cache: private` quando inevitável).
+
 ## Data
 2026-09-16
 

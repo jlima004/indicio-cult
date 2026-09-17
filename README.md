@@ -12,6 +12,7 @@ A marca se posiciona como *marca de arte impressa para pessoas de repertório es
 |---|---|
 | [`PRD.md`](./docs/PRD.md) | Documento de requisitos do produto: posicionamento, personas, escopo por fase, todas as páginas e fluxos de autenticação, backoffice, política de trocas, requisitos funcionais e não funcionais, integrações, riscos e roadmap |
 | [`decisions/`](./docs/decisions/) | Architecture Decision Records (ADRs) — registro do *porquê* de cada decisão técnica, com alternativas consideradas e consequências. Começa em [`ADR-001`](./docs/decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md) (stack do frontend, cache, carrinho e deploy). |
+| [`specs/`](./docs/specs/) | Especificações por módulo. O [`CAPABILITY-MAP.md`](./docs/specs/CAPABILITY-MAP.md) decompõe o MVP em módulos com dependências e ordem de construção; cada módulo recebe um `SPEC-<id>.md` quando chega a sua vez, começando por [`SPEC-foundation.md`](./docs/specs/SPEC-foundation.md) (base técnica: esqueleto, Docker, CI/CD, Supabase). |
 
 ## Decisões fixadas
 
@@ -45,4 +46,5 @@ A Reserva Ink só envia pedidos à fábrica se houver **saldo pré-pago** sufici
 README.md                 Este arquivo
 docs/PRD.md               Documento de requisitos do produto
 docs/decisions/           Architecture Decision Records (ADR-001, ...)
+docs/specs/               Mapa de capacidades e specs por módulo (SPEC-foundation, ...)
 ```
