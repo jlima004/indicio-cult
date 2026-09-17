@@ -137,12 +137,12 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   ├── proxy.ts                       # manutenção, proteção de (conta)/admin, cabeçalhos
 │   ├── instrumentation.ts             # valida env de servidor na inicialização; Sentry (server/edge)
 │   └── instrumentation-client.ts      # Sentry (browser)
-│                                      # (com `src/`, o Next exige esses três arquivos dentro de `src/`)
+│                                      # (todos opcionais; com `src/`, o Next só os reconhece dentro de `src/`)
 ├── supabase/
 │   ├── config.toml
 │   └── migrations/                    # vazio na fundação (README explicando convenção)
 ├── tests/
-│   ├── unit/                          # espelha src/ (ex.: tests/unit/lib/env.test.ts)
+│   ├── unit/                          # espelha src/ (ex.: tests/unit/lib/env/{index,public}.test.ts)
 │   └── e2e/                           # Playwright: health, 404, home, manutenção
 ├── deploy/
 │   ├── Dockerfile                     # multi-stage, standalone, non-root, HEALTHCHECK

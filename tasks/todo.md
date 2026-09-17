@@ -63,7 +63,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 **Aceite:**
 
 - [x] `npm run build` com `.env` sem `NEXT_PUBLIC_SUPABASE_URL` falha com mensagem nomeando a variável (e `npm run start` sem `SUPABASE_SERVICE_ROLE_KEY` termina com exit 1 nomeando-a — segredos de servidor não existem na CI, então são validados na inicialização, não no build)
-- [x] Teste `env.test.ts` falha se uma chave for adicionada só no schema ou só no `.env.example` (verificado por mutação nos dois sentidos)
+- [x] Teste `tests/unit/lib/env/index.test.ts` falha se uma chave for adicionada só no schema ou só no `.env.example` (verificado por mutação nos dois sentidos)
 - [x] `rg "process\.env" src --glob '!src/lib/env/**'` vazio
 
 **Verificação:** `npm run test -- env`; simular env incompleta e rodar `npm run build`.

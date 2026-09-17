@@ -7,8 +7,9 @@ import { afterEach, vi } from 'vitest'
 
 // `server-only` lança em qualquer bundle que não seja React Server (inclusive no
 // Vitest). Aqui vira no-op para que módulos de servidor (env, supabase/admin)
-// possam ser testados; um teste que precise do comportamento real usa
-// `vi.doMock('server-only', ...)` localmente.
+// possam ser testados. Um teste que precise do comportamento real (lançar fora
+// de React Server) chama `vi.doUnmock('server-only')` + `vi.resetModules()`
+// antes do import dinâmico — `vi.doMock` só substituiria por outro mock.
 vi.mock('server-only', () => ({}))
 
 afterEach(() => {
