@@ -78,13 +78,13 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm run db:types` gera `src/lib/supabase/database.types.ts` sem diff após commit
-- [ ] `admin.ts` importa `server-only`; `client.ts` só usa `publicEnv`
-- [ ] Teste unitário garante que `admin.ts` não é importável em contexto cliente (mock de `server-only` lançando)
+- [x] `npm run db:types` gera `src/lib/supabase/database.types.ts` sem diff após commit
+- [x] `admin.ts` importa `server-only`; `client.ts` só usa `publicEnv`
+- [x] Teste unitário garante que `admin.ts` não é importável em contexto cliente (`server-only` real via `vi.doUnmock`, lançando no import)
 
 **Verificação:** `npm run db:types && git diff --exit-code src/lib/supabase/database.types.ts`; `npm run test -- supabase`.
 
-**Dependências:** T4 · **Arquivos:** `src/lib/supabase/server.ts`, `client.ts`, `admin.ts`, `database.types.ts` (gerado), `supabase/config.toml` (gerado), `supabase/migrations/README.md`, `package.json` · **Tamanho:** M
+**Dependências:** T4 · **Arquivos:** `src/lib/supabase/server.ts`, `client.ts`, `admin.ts`, `database.types.ts` (gerado), `supabase/config.toml` (gerado), `supabase/migrations/README.md`, `package.json` (`supabase` CLI e `dotenv-cli` como dev-deps; `db:*` sob `dotenv -e .env --`), `.prettierignore`, `tests/unit/lib/supabase/{client,server,admin}.test.ts` · **Tamanho:** M
 
 ---
 

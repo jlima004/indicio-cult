@@ -45,7 +45,7 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [x] T2 · Scaffold Next.js 16 + TS strict + Tailwind 4 + ESLint/Prettier + scripts npm
 - [x] T3 · Vitest + Testing Library, primeiro teste, `check` inclui `test`
 - [x] T4 · `src/lib/env/` (zod) + `.env.example` + teste de sincronia + falha rápida
-- [ ] T5 · Clientes Supabase (server/client/admin), `supabase/config.toml`, `db:types`, `database.types.ts` — inclui `[humano]` token do CLI
+- [x] T5 · Clientes Supabase (server/client/admin), `supabase/config.toml`, `db:types`, `database.types.ts` — inclui `[humano]` token do CLI
 - [ ] T6 · `GET /api/health` + `lib/http` + `lib/rate-limit` com testes
 - [ ] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
 - [ ] T8 · Páginas de sistema: layout raiz, Home placeholder, 404, 500, manutenção
