@@ -90,7 +90,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T6 · `GET /api/health`, `lib/http` e `lib/rate-limit`
 
-**Descrição:** Route handler dinâmico: `select 1` via cliente servidor com timeout de 2s → `200 { status:'ok', version, supabase:'ok' }` ou `503 { status:'degraded', supabase:'error' }`, com rate limit 60/min por IP. Criar `lib/http` (`json`, `problem` RFC 9457) e `lib/rate-limit` (`RateLimiter`, `memoryRateLimiter`, `clientIp`) com testes.
+**Descrição:** Route handler dinâmico: probe somente leitura ao Data API via cliente servidor (anon key) com timeout de 2s → `200 { status:'ok', version, supabase:'ok' }` ou `503 { status:'degraded', supabase:'error' }`, com rate limit 60/min por IP. Enquanto o schema `public` estiver vazio, consultar uma relação sentinela inexistente e aceitar `PGRST205` como prova de conectividade, sem criar objetos no banco. Criar `lib/http` (`json`, `problem` RFC 9457) e `lib/rate-limit` (`RateLimiter`, `memoryRateLimiter`, `clientIp`) com testes.
 
 **Aceite:**
 
