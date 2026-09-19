@@ -78,9 +78,9 @@ npm run test:watch          # vitest
 npm run test:coverage       # vitest run --coverage
 npm run test:e2e            # playwright test (sobe `next start` via webServer)
 
-# Supabase
-npm run db:types            # supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/supabase/database.types.ts
-npm run db:migrate          # supabase db push (aplica supabase/migrations no projeto remoto)
+# Supabase (os db:* rodam sob `dotenv -e .env --` porque npm não carrega o .env; o ambiente tem precedência — é como a CI injeta SUPABASE_PROJECT_ID)
+npm run db:types            # supabase gen types typescript --project-id $SUPABASE_PROJECT_ID --schema public > src/lib/supabase/database.types.ts (escreve em .tmp e só substitui em sucesso)
+npm run db:migrate          # supabase db push --project-ref $SUPABASE_PROJECT_ID (aplica supabase/migrations no projeto remoto; pede a senha do banco ou lê SUPABASE_DB_PASSWORD)
 npm run db:new -- <nome>    # supabase migration new <nome>
 
 # Verificação única (o que a CI roda)
