@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "lint:tokens": "sh -c 'output=$(rg -n \"bg-white|text-black|#[0-9a-fA-F]{3,6}\" src --glob \"!src/styles/globals.css\"); status=$?; if [ $status -eq 0 ]; then printf \"%s\\n\" \"$output\"; exit 1; fi; [ $status -eq 1 ]'",
+    "lint:tokens": "sh -c 'output=$(rg -n \"bg-white|text-black|#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([^0-9A-Za-z_-]|$)\" src --glob \"!src/styles/globals.css\"); status=$?; if [ $status -eq 0 ]; then printf \"%s\\n\" \"$output\"; exit 1; fi; [ $status -eq 1 ]'",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
