@@ -94,9 +94,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm run start` local → `curl /api/health` retorna `supabase: 'ok'` e `version` = `APP_VERSION`
-- [ ] Com `NEXT_PUBLIC_SUPABASE_URL` apontando para host inexistente → 503 em ≤ 2,5s
-- [ ] Testes: janela/limite/reset do limiter; 61ª chamada em 1 min → 429 com corpo `problem`
+- [x] `npm run start` local → `curl /api/health` retorna `supabase: 'ok'` e `version` = `APP_VERSION`
+- [x] Com `NEXT_PUBLIC_SUPABASE_URL` apontando para host inexistente → 503 em ≤ 2,5s
+- [x] Testes: janela/limite/reset do limiter; 61ª chamada em 1 min → 429 com corpo `problem`
 
 **Verificação:** `npm run test -- rate-limit http`; `npm run build && npm run start` + `curl`.
 
