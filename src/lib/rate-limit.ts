@@ -20,19 +20,23 @@ type Window = {
 
 export class MemoryRateLimiter implements RateLimiter {
   private readonly windows = new Map<string, Window>()
+  private nextCleanupAt = Number.POSITIVE_INFINITY
 
   constructor(private readonly now: () => number = Date.now) {}
 
   limit(key: string, { max, windowMs }: RateLimitOptions): RateLimitResult {
     const now = this.now()
+    this.cleanupExpired(now)
 
-    for (const [storedKey, window] of this.windows) {
-      if (window.resetAt <= now) this.windows.delete(storedKey)
+    let window = this.windows.get(key)
+
+    if (window === undefined) {
+      window = { count: 0, resetAt: now + windowMs }
+      this.windows.set(key, window)
+      this.nextCleanupAt = Math.min(this.nextCleanupAt, window.resetAt)
     }
 
-    const window = this.windows.get(key) ?? { count: 0, resetAt: now + windowMs }
     window.count += 1
-    this.windows.set(key, window)
 
     const remaining = Math.max(0, max - window.count)
 
@@ -40,6 +44,20 @@ export class MemoryRateLimiter implements RateLimiter {
       ok: window.count <= max,
       remaining,
       resetAt: window.resetAt,
+    }
+  }
+
+  private cleanupExpired(now: number): void {
+    if (now < this.nextCleanupAt) return
+
+    this.nextCleanupAt = Number.POSITIVE_INFINITY
+
+    for (const [key, window] of this.windows) {
+      if (window.resetAt <= now) {
+        this.windows.delete(key)
+      } else {
+        this.nextCleanupAt = Math.min(this.nextCleanupAt, window.resetAt)
+      }
     }
   }
 }

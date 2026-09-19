@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { clientIp, MemoryRateLimiter } from '@/lib/rate-limit'
 
@@ -46,6 +46,22 @@ describe('MemoryRateLimiter', () => {
 
     expect(limiter.limit('ip:1', options).ok).toBe(true)
     expect(limiter.limit('ip:2', options).ok).toBe(true)
+  })
+
+  it('não varre todos os buckets a cada chamada antes da próxima expiração', () => {
+    const limiter = new MemoryRateLimiter(() => 10_000)
+    const iterator = vi.spyOn(Map.prototype, Symbol.iterator)
+    const callsBefore = iterator.mock.calls.length
+
+    try {
+      for (let ip = 1; ip <= 100; ip += 1) {
+        limiter.limit(`ip:${ip}`, { max: 1, windowMs: 60_000 })
+      }
+
+      expect(iterator.mock.calls.length - callsBefore).toBe(0)
+    } finally {
+      iterator.mockRestore()
+    }
   })
 })
 
