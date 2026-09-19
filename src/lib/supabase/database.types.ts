@@ -23,25 +23,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      claim_reason_enum:
-        | "missing_item"
-        | "wrong_item"
-        | "production_failure"
-        | "other"
-      order_claim_type_enum: "refund" | "replace"
-      order_status_enum:
-        | "pending"
-        | "completed"
-        | "draft"
-        | "archived"
-        | "canceled"
-        | "requires_action"
-      return_status_enum:
-        | "open"
-        | "requested"
-        | "received"
-        | "partially_received"
-        | "canceled"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -168,29 +150,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      claim_reason_enum: [
-        "missing_item",
-        "wrong_item",
-        "production_failure",
-        "other",
-      ],
-      order_claim_type_enum: ["refund", "replace"],
-      order_status_enum: [
-        "pending",
-        "completed",
-        "draft",
-        "archived",
-        "canceled",
-        "requires_action",
-      ],
-      return_status_enum: [
-        "open",
-        "requested",
-        "received",
-        "partially_received",
-        "canceled",
-      ],
-    },
+    Enums: {},
   },
 } as const
