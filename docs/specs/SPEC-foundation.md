@@ -299,7 +299,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.2 Healthcheck
 
-- `GET /api/health` → `200 { status: 'ok', version: <git sha>, supabase: 'ok' }` quando um `select 1` via cliente servidor (anon key) responde em ≤ 2s; caso contrário `503 { status: 'degraded', supabase: 'error' }`. Sem cache (`connection()`/dinâmico). Usado pelo `HEALTHCHECK` do Docker, pelo Caddy e pelo monitor externo de uptime.
+- `GET /api/health` → `200 { status: 'ok', version: <git sha>, supabase: 'ok' }` quando um probe somente leitura ao Data API via cliente servidor (anon key) responde em ≤ 2s; caso contrário `503 { status: 'degraded', supabase: 'error' }`. Enquanto o schema `public` estiver vazio, o probe consulta uma relação sentinela inexistente e aceita `PGRST205` como prova de que o PostgREST alcançou o schema cache; isso evita criar tabela ou função só para o healthcheck. Sem cache (`connection()`/dinâmico). Usado pelo `HEALTHCHECK` do Docker, pelo Caddy e pelo monitor externo de uptime.
 
 ### 8.3 Supabase
 
@@ -401,14 +401,14 @@ Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiro
 
 ## 11. Riscos e mitigações
 
-| Risco                                                                                                                                       | Mitigação                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `cacheComponents` muda semântica de rotas dinâmicas (tudo que usa `cookies()`/`headers()` precisa de `Suspense`) e a equipe erra fronteiras | Fundação já entrega `layout.tsx` com `Suspense` no slot de conteúdo e exemplos comentados; regra fixada aqui antes de `catalog` |
-| Cache do Next no volume `next_cache` cresce sem limite                                                                                      | Limite de 1 GB documentado; `deploy/README.md` inclui rotina `docker system prune` mensal                                       |
-| TLS em `sslip.io` sujeito a rate limit do Let's Encrypt em redeploys frequentes                                                             | Volume `caddy_data` persiste certificados; troca para o domínio definitivo é só `SITE_HOST`                                     |
-| Sem Docker local, erros de imagem só aparecem na CI                                                                                         | `ci.yml` constrói a imagem também em PR (sem push), não só no deploy                                                            |
-| Playwright contra Supabase real na CI cria acoplamento                                                                                      | Único acesso é `select 1` com anon key; se o projeto estiver pausado a CI falha ruidosamente, o que é desejável                 |
-| TypeScript 7 vira padrão do ecossistema antes do MVP terminar                                                                               | Versão fixada; upgrade é item de "Perguntar antes"                                                                              |
+| Risco                                                                                                                                       | Mitigação                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `cacheComponents` muda semântica de rotas dinâmicas (tudo que usa `cookies()`/`headers()` precisa de `Suspense`) e a equipe erra fronteiras | Fundação já entrega `layout.tsx` com `Suspense` no slot de conteúdo e exemplos comentados; regra fixada aqui antes de `catalog`           |
+| Cache do Next no volume `next_cache` cresce sem limite                                                                                      | Limite de 1 GB documentado; `deploy/README.md` inclui rotina `docker system prune` mensal                                                 |
+| TLS em `sslip.io` sujeito a rate limit do Let's Encrypt em redeploys frequentes                                                             | Volume `caddy_data` persiste certificados; troca para o domínio definitivo é só `SITE_HOST`                                               |
+| Sem Docker local, erros de imagem só aparecem na CI                                                                                         | `ci.yml` constrói a imagem também em PR (sem push), não só no deploy                                                                      |
+| Playwright contra Supabase real na CI cria acoplamento                                                                                      | Único acesso é um probe somente leitura ao Data API com anon key; se o projeto estiver pausado a CI falha ruidosamente, o que é desejável |
+| TypeScript 7 vira padrão do ecossistema antes do MVP terminar                                                                               | Versão fixada; upgrade é item de "Perguntar antes"                                                                                        |
 
 ---
 
