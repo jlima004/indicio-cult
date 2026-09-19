@@ -15,3 +15,5 @@ AGENTS.md
 
 # Gerado pelo Supabase CLI (`npm run db:types`); a CI compara com `git diff`
 src/lib/supabase/database.types.ts
+# Estado local do Supabase CLI (já ignorado pelo git em supabase/.gitignore)
+supabase/.temp/
