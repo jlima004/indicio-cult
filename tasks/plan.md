@@ -47,7 +47,7 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [x] T4 · `src/lib/env/` (zod) + `.env.example` + teste de sincronia + falha rápida
 - [x] T5 · Clientes Supabase (server/client/admin), `supabase/config.toml`, `db:types`, `database.types.ts` — inclui `[humano]` token do CLI
 - [x] T6 · `GET /api/health` + `lib/http` + `lib/rate-limit` com testes
-- [ ] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
+- [x] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
 - [ ] T8 · Páginas de sistema: layout raiz, Home placeholder, 404, 500, manutenção
 - [ ] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
 - [ ] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`

@@ -110,9 +110,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `rg -n "bg-white|text-black|#[0-9a-fA-F]{3,6}" src --glob '!src/styles/globals.css'` vazio; `lint:tokens` falha se violado
-- [ ] `Symbol` tem 24px por padrão e `aria-hidden` quando decorativo; `Wordmark` renderiza as duas variantes
-- [ ] Testes passam para os três componentes e para as chaves obrigatórias de `copy.system`
+- [x] `rg -n "bg-white|text-black|#[0-9a-fA-F]{3,6}" src --glob '!src/styles/globals.css'` vazio; `lint:tokens` falha se violado
+- [x] `Symbol` tem 24px por padrão e `aria-hidden` quando decorativo; `Wordmark` renderiza as duas variantes
+- [x] Testes passam para os três componentes e para as chaves obrigatórias de `copy.system`
 
 **Verificação:** `npm run check`; `npm run test -- brand copy`.
 
