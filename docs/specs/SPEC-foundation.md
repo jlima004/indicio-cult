@@ -38,7 +38,7 @@ Versões fixadas no `package.json` com range `^` dentro da major indicada; o `pa
 
 | Camada             | Escolha                                         | Versão           | Observação                                                                                                                                                               |
 | ------------------ | ----------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime            | Node.js                                         | 22 LTS           | Imagem base `node:22-alpine`; `engines.node >=22`                                                                                                                        |
+| Runtime            | Node.js                                         | 22 LTS           | Baseline exclusiva `engines.node >=22.22.2 <23`; pins locais `.nvmrc` e `.node-version` em `22.23.1`; imagem futura `node:22-alpine`                                     |
 | Pacotes            | npm                                             | 10.x             | Único gerenciador; `package-lock.json` versionado; CI usa `npm ci`                                                                                                       |
 | Framework          | Next.js (App Router)                            | 16.3.x           | `output: 'standalone'`, `cacheComponents: true`, `proxy.ts` (substitui `middleware.ts`)                                                                                  |
 | UI                 | React / React DOM                               | 19.3.x           | Server Components por padrão                                                                                                                                             |
@@ -67,6 +67,8 @@ npm run start               # next start sobre o build
 
 # Qualidade
 npm run lint                # eslint .
+npm run lint:runtime        # pins/engine/runtime e engines aplicáveis do package-lock compatíveis
+npm run lint:tokens         # impede paletas Tailwind e cores literais fora de globals.css
 npm run lint:fix            # eslint . --fix
 npm run format              # prettier --write .
 npm run format:check        # prettier --check .
@@ -74,6 +76,8 @@ npm run typecheck           # next typegen && tsc --noEmit (typegen emite os tip
 
 # Testes
 npm run test                # vitest run
+npm run test:runtime        # node:test do contrato engines/pins/runtime atual
+npm run test:tokens         # node:test do lint de tokens, incluindo prova por mutação do CLI
 npm run test:watch          # vitest
 npm run test:coverage       # vitest run --coverage
 npm run test:e2e            # playwright test (sobe `next start` via webServer)
@@ -84,7 +88,7 @@ npm run db:migrate          # supabase db push --project-ref $SUPABASE_PROJECT_I
 npm run db:new -- <nome>    # supabase migration new <nome>
 
 # Verificação única (o que a CI roda)
-npm run check               # lint + format:check + typecheck + test
+npm run check               # lint + lint:runtime + lint:tokens + format:check + typecheck + test:runtime + test:tokens + test
 ```
 
 Docker é executado apenas na CI e no VPS (não há Docker neste WSL):
@@ -136,13 +140,15 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   │   └── tokens.md                  # documentação dos tokens e regra de substituição
 │   ├── proxy.ts                       # manutenção, proteção de (conta)/admin, cabeçalhos
 │   ├── instrumentation.ts             # valida env de servidor na inicialização; Sentry (server/edge)
+│   ├── instrumentation.node.ts        # bootstrap Node-only: env de servidor + saída fail-fast
 │   └── instrumentation-client.ts      # Sentry (browser)
 │                                      # (todos opcionais; com `src/`, o Next só os reconhece dentro de `src/`)
 ├── supabase/
 │   ├── config.toml
 │   └── migrations/                    # vazio na fundação (README explicando convenção)
 ├── tests/
-│   ├── unit/                          # espelha src/ (ex.: tests/unit/lib/env/{index,public}.test.ts)
+│   ├── unit/                          # espelha src/, incluindo seleção Node/Edge da instrumentation
+│   ├── tooling/                       # contratos executáveis do runtime Node e dos tokens
 │   └── e2e/                           # Playwright: health, 404, home, manutenção
 ├── deploy/
 │   ├── Dockerfile                     # multi-stage, standalone, non-root, HEALTHCHECK
@@ -154,6 +160,8 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   └── deploy.yml                     # push na main: build imagem → GHCR → SSH → compose up
 ├── docs/                              # PRD, ADRs, specs (já existe)
 ├── .env.example
+├── .nvmrc / .node-version             # pin local idêntico; deve satisfazer engines.node
+├── scripts/                            # gates determinísticos de runtime e tokens
 ├── next.config.ts
 ├── tsconfig.json
 ├── eslint.config.mjs
@@ -210,7 +218,7 @@ export const serverSchema = z.object({
 export const env = parseEnv(serverSchema, process.env)
 ```
 
-Onde a validação acontece: as variáveis **públicas** são inlinadas no bundle e precisam existir na CI — o layout raiz lê `publicEnv`, então `next build` falha nomeando a ausente. As de **servidor** só existem no VPS — `src/instrumentation.ts` importa `@/lib/env` em `register()` e, em falha, loga e `process.exit(1)` (o Next trataria a rejeição como `unhandledRejection` e manteria o processo vivo sem atender).
+Onde a validação acontece: as variáveis **públicas** são inlinadas no bundle e precisam existir na CI — o layout raiz lê `publicEnv`, então `next build` falha nomeando a ausente. As de **servidor** só existem no VPS — `src/instrumentation.ts` usa o `NEXT_RUNTIME` documentado pelo Next para importar `src/instrumentation.node.ts` somente sob `nodejs`. O bootstrap Node importa `@/lib/env` e, em falha, loga e chama `process.exit(1)` (apenas rejeitar a Promise pode deixar o processo vivo sem atender). Assim, nenhuma API Node-only entra no caminho Edge.
 
 ```tsx
 // src/app/not-found.tsx
@@ -245,12 +253,13 @@ Convenções:
 
 ## 6. Estratégia de testes
 
-| Nível                      | Ferramenta                                       | O que cobre nesta fundação                                                                                                                                                                                                 | Onde            |
-| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Unitário                   | Vitest                                           | `env.ts` (falha em env inválida), `rate-limit.ts` (janela, limite, reset), `track.ts` (no-op não lança), `copy.ts` (chaves obrigatórias)                                                                                   | `tests/unit/**` |
-| Componente                 | Vitest + Testing Library (`jsdom`)               | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade                                                                                                                                      | `tests/unit/**` |
-| Smoke E2E                  | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**`  |
-| Contrato de infraestrutura | Shell na CI                                      | Imagem constrói; container sobe; `HEALTHCHECK` passa em ≤ 30s; processo não roda como root                                                                                                                                 | `deploy.yml`    |
+| Nível                      | Ferramenta                                       | O que cobre nesta fundação                                                                                                                                                                                                 | Onde               |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Unitário                   | Vitest                                           | `env` (falha em env inválida), seleção Node/Edge e fail-fast da `instrumentation`, `rate-limit`, `track` e `copy`                                                                                                          | `tests/unit/**`    |
+| Componente                 | Vitest + Testing Library (`jsdom`)               | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade                                                                                                                                      | `tests/unit/**`    |
+| Contrato de tooling        | `node:test`                                      | Pins/faixa Node e engines aplicáveis do lockfile; scanner de tokens com casos positivos, negativos e mutação real do CLI                                                                                                   | `tests/tooling/**` |
+| Smoke E2E                  | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**`     |
+| Contrato de infraestrutura | Shell na CI                                      | Imagem constrói; container sobe; `HEALTHCHECK` passa em ≤ 30s; processo não roda como root                                                                                                                                 | `deploy.yml`       |
 
 Cobertura: sem meta numérica na fundação (há pouco código); a meta será fixada em `CONSTRAINTS.md` quando `catalog` entrar. O que existe de lógica (env, rate limit) tem teste.
 
@@ -263,7 +272,9 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 **Sempre**
 
 - Rodar `npm run check` antes de commitar; CI bloqueia merge se falhar.
-- Ler variáveis de ambiente somente via `src/lib/env/`; nunca `process.env` direto fora dele.
+- Ler variáveis de ambiente somente via `src/lib/env/`; a única exceção é
+  `process.env.NEXT_RUNTIME` em `src/instrumentation.ts`, conforme a API de seleção de runtime do
+  Next.
 - Manter `.env.example` sincronizado com os schemas de `src/lib/env/` (teste unitário compara as chaves).
 - Executar o container como usuário não-root, com `HEALTHCHECK` e `restart: unless-stopped`.
 - Escrever copy de sistema no tom do PRD §3 (sem exclamações, sem emoji, sem "Ops!").
@@ -325,7 +336,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 ### 8.5 Tokens de design provisórios
 
 - `globals.css` define em `@theme`: `--color-bg`, `--color-fg`, `--color-muted`, `--color-border`, `--color-accent` (todos neutros: branco, preto, três cinzas), `--font-sans` (fonte do sistema via `next/font` quando definida), escala de espaçamento padrão do Tailwind, `--radius-none` como padrão (a marca é reta).
-- `tokens.md` registra que a paleta final substitui apenas valores de variáveis; componentes não usam cores literais (`bg-white`, `text-black` proibidos por regra ESLint simples de string no CI: `rg` em `check`).
+- `tokens.md` registra que a paleta final substitui apenas valores de variáveis; componentes não usam paletas Tailwind diretas, cores arbitrárias ou literais CSS. `lint:tokens` aplica esse contrato fora de `globals.css`, preservando fragmentos, referências SVG e utilities semânticas/estruturais.
 
 ### 8.6 Observabilidade
 
@@ -385,7 +396,7 @@ Mudanças nesses contratos exigem atualizar este spec antes do código.
 
 Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiros:
 
-1. `npm ci && npm run check` passa em máquina limpa com Node 22 e `.env` copiado de `.env.example` com valores reais do Supabase.
+1. `npm ci && npm run check` passa em máquina limpa com Node `>=22.22.2 <23`; `.nvmrc` e `.node-version` pinam `22.23.1`, e a `.env` é copiada de `.env.example` com valores reais do Supabase.
 2. `npm run build` gera `.next/standalone`; `npm run start` responde `GET /api/health` → `200` com `supabase: 'ok'`.
 3. `npm run test:e2e` passa nos quatro cenários (health, 404, home, manutenção) em viewport mobile e desktop.
 4. Faltando qualquer variável obrigatória, `npm run build`/`start` falha na inicialização com mensagem apontando a variável — nunca falha tarde em runtime.
@@ -428,6 +439,6 @@ Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiro
 - [Mapa de capacidades](./CAPABILITY-MAP.md)
 - [PRD — §8 Mapa do site, §14 Requisitos não funcionais](../PRD.md)
 - [ADR-001 — Stack, cache, estado e deploy](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md)
-- [Next.js — Cache Components](https://nextjs.org/docs/app/getting-started/cache-components), [`proxy.ts`](https://nextjs.org/docs/app/api-reference/file-conventions/proxy), [`output: 'standalone'`](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
+- [Next.js — instrumentation e código específico por runtime](https://nextjs.org/docs/app/guides/instrumentation#importing-runtime-specific-code), [Cache Components](https://nextjs.org/docs/app/getting-started/cache-components), [`proxy.ts`](https://nextjs.org/docs/app/api-reference/file-conventions/proxy), [`output: 'standalone'`](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
 - [Supabase — Server-Side Auth para Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs)
 - [Caddy — Automatic HTTPS](https://caddyserver.com/docs/automatic-https)

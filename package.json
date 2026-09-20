@@ -4,25 +4,28 @@
   "private": true,
   "description": "Arte para quem reconhece o indício. Vitrine headless (Next.js + Nuvemshop + Supabase).",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.2 <23"
   },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "lint:tokens": "sh -c 'output=$(rg -n \"bg-white|text-black|#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([^0-9A-Za-z_-]|$)\" src --glob \"!src/styles/globals.css\"); status=$?; if [ $status -eq 0 ]; then printf \"%s\\n\" \"$output\"; exit 1; fi; [ $status -eq 1 ]'",
+    "lint:runtime": "node scripts/check-node-runtime.mjs",
+    "lint:tokens": "node scripts/lint-tokens.mjs src",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:runtime": "node --test tests/tooling/check-node-runtime.test.mjs",
+    "test:tokens": "node --test tests/tooling/lint-tokens.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:types": "dotenv -e .env -- sh -c 'out=src/lib/supabase/database.types.ts; supabase gen types typescript --project-id \"$SUPABASE_PROJECT_ID\" --schema public > \"$out.tmp\" && mv \"$out.tmp\" \"$out\" || { cat \"$out.tmp\" >&2; rm -f \"$out.tmp\"; exit 1; }'",
     "db:migrate": "dotenv -e .env -- sh -c 'supabase db push --project-ref \"$SUPABASE_PROJECT_ID\"'",
     "db:new": "supabase migration new",
-    "check": "npm run lint && npm run lint:tokens && npm run format:check && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run lint:runtime && npm run lint:tokens && npm run format:check && npm run typecheck && npm run test:runtime && npm run test:tokens && npm run test"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

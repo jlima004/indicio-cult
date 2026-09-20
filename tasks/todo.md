@@ -32,7 +32,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 - [x] `npm ci && npm run check` (lint + format:check + typecheck) verde em máquina limpa
 - [x] `npm run build` gera `.next/standalone`; `npm run dev` serve a página padrão em `:3000`
-- [x] `package.json` fixa Next 16.3.x, React 19.3.x, TS 5.9.x, Tailwind 4.x, Zustand 5.x, `engines.node >=22`; `.env.example` existe (vazio, com cabeçalho)
+- [x] `package.json` fixa Next 16.3.x, React 19.3.x, TS 5.9.x, Tailwind 4.x, Zustand 5.x, `engines.node >=22.22.2 <23`; `.nvmrc` e `.node-version` pinam `22.23.1`; `.env.example` existe (vazio, com cabeçalho)
 
 **Verificação:** `npm run check && npm run build`; `ls .next/standalone/server.js`.
 
@@ -58,13 +58,16 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T4 · `src/lib/env.ts` com validação e falha rápida
 
-**Descrição:** Implementar `env` (servidor, `server-only`) e `publicEnv` conforme spec §5 e §8.4 com `zod`; preencher `.env.example` com todas as chaves e comentários; teste unitário que compara as chaves do `.env.example` com os schemas; garantir que `build`/`start` falha na inicialização apontando a variável ausente (importar `env` em `instrumentation.ts`).
+**Descrição:** Implementar `env` (servidor, `server-only`) e `publicEnv` conforme spec §5 e §8.4 com `zod`; preencher `.env.example` com todas as chaves e comentários; teste unitário que compara as chaves do `.env.example` com os schemas; garantir que `build`/`start` falha na inicialização apontando a variável ausente (`instrumentation.ts` seleciona o runtime e delega a validação fail-fast ao bootstrap Node-only `instrumentation.node.ts`).
 
 **Aceite:**
 
 - [x] `npm run build` com `.env` sem `NEXT_PUBLIC_SUPABASE_URL` falha com mensagem nomeando a variável (e `npm run start` sem `SUPABASE_SERVICE_ROLE_KEY` termina com exit 1 nomeando-a — segredos de servidor não existem na CI, então são validados na inicialização, não no build)
 - [x] Teste `tests/unit/lib/env/index.test.ts` falha se uma chave for adicionada só no schema ou só no `.env.example` (verificado por mutação nos dois sentidos)
-- [x] `rg "process\.env" src --glob '!src/lib/env/**'` vazio
+- [x] Fora de `src/lib/env/**`, `process.env` aparece somente como
+      `process.env.NEXT_RUNTIME` em `src/instrumentation.ts` (allowlist verificável com
+      `rg -l "process\.env" src --glob '!src/lib/env/**'` e
+      `rg -o "process\.env\.[A-Z0-9_]+" src/instrumentation.ts`)
 
 **Verificação:** `npm run test -- env`; simular env incompleta e rodar `npm run build`.
 
@@ -110,7 +113,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [x] `rg -n "bg-white|text-black|#[0-9a-fA-F]{3,6}" src --glob '!src/styles/globals.css'` vazio; `lint:tokens` falha se violado
+- [x] `lint:tokens` rejeita paletas Tailwind, cores arbitrárias e literais CSS fora de `globals.css`; testes positivos, negativos e prova por mutação do CLI passam
 - [x] `Symbol` tem 24px por padrão e `aria-hidden` quando decorativo; `Wordmark` renderiza as duas variantes
 - [x] Testes passam para os três componentes e para as chaves obrigatórias de `copy.system`
 

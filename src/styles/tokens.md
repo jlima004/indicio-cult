@@ -15,5 +15,27 @@ cores literais durante essa substituição.
 | `--radius-none`  | Cantos retos da marca                                           |
 
 No código de interface, use as utilities semânticas geradas pelo Tailwind, como `bg-bg`, `text-fg`,
-`text-muted`, `border-border` e `text-accent`. O script `npm run lint:tokens` rejeita cores literais
-conhecidas e valores hexadecimais fora de `globals.css`.
+`text-muted`, `border-border` e `text-accent`. Fora de `globals.css`, o script
+`npm run lint:tokens` rejeita:
+
+- utilities cromáticas das paletas nativas do Tailwind instalado (nomes derivados de
+  `tailwindcss/theme.css`, incluindo variantes e opacidade) nas famílias `accent`, `bg`, `border`,
+  `caret`, `decoration`, `divide`, `drop-shadow`, `fill`, `from`/`via`/`to`, `inset-ring`,
+  `inset-shadow`, `mask-*-from`/`mask-*-to`, `outline`, `placeholder`, `ring`, `ring-offset`,
+  `shadow`, `stroke`, `text` e `text-shadow`;
+- literais cromáticos em todo o valor de utilities arbitrárias dessas famílias, inclusive dentro de
+  gradientes, `color-mix(...)`, outras funções compostas e type hints como `color:` ou `image:`;
+  para valores arbitrários, a cobertura também inclui `backdrop-filter`, `filter` e `mask`;
+- literais em arbitrary properties cromáticas, como `[color:...]`, `[background:...]`,
+  `[border-color:...]`, `[fill:...]` e `[stroke:...]`, inclusive com variantes;
+- hexadecimais, o conjunto de cores CSS nomeadas e funções CSS de cor em propriedades
+  cromáticas, gradientes, sombras, filtros e custom properties, inclusive quando a declaração é
+  multilinha; em TS/JS/HTML/SVG, o mesmo vale para propriedades de estilo reconhecidas e atributos
+  cromáticos, incluindo `stopColor`, `floodColor` e `lightingColor` em JSX e seus equivalentes
+  kebab-case em SVG.
+
+Referências de fragmento (`href="#feed-section"`, `url(#fade)`), `currentColor`, `none`,
+`var(--token)`, URLs, arbitrary properties não cromáticas, utilities estruturais e tokens
+semânticos não são cores literais proibidas. A checagem é estática: classes ou valores montados
+dinamicamente, tagged templates de bibliotecas CSS-in-JS e data-flow indireto continuam sendo
+responsabilidade de revisão.
