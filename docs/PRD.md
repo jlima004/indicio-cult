@@ -2,14 +2,16 @@
 
 **Product Requirements Document — E-commerce de arte impressa (Print on Demand)**
 
-| Campo             | Valor                                                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Produto           | Indicio Cult — loja virtual de arte impressa                                                                                                 |
-| Assinatura        | _Arte para quem reconhece o indício._                                                                                                        |
-| Versão            | 1.1                                                                                                                                          |
-| Status            | Em revisão                                                                                                                                   |
-| Premissas fixadas | Checkout delegado à Nuvemshop; autenticação via Supabase (e-mail/senha + Google); frete via API Reserva Ink; fulfillment POD via Reserva Ink |
-| Em aberto         | Paleta de cores (definida posteriormente); stack do frontend                                                                                 |
+| Campo             | Valor                                                                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Produto           | Indicio Cult — loja virtual de arte impressa                                                                                                                                                          |
+| Assinatura        | _Arte para quem reconhece o indício._                                                                                                                                                                 |
+| Versão            | 1.2                                                                                                                                                                                                   |
+| Status            | Em revisão                                                                                                                                                                                            |
+| Premissas fixadas | Checkout delegado à Nuvemshop; autenticação via Supabase (e-mail/senha + Google); frete via API Reserva Ink; fulfillment POD via Reserva Ink                                                          |
+| Identidade        | Paleta e tipo da vitrine definidos no Figma (não reabrir). Stack do frontend: [ADR-001](decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md).                                                   |
+| Alinhamento UI    | Home, header e rodapé alinhados ao arquivo Figma [Indicio Cult](https://www.figma.com/design/rakcFK2hEb9f9wktHDAVET/Indicio-Cult) (Home Desktop `8:110`, Home Mobile `38:41`).                         |
+| Em aberto         | Questões operacionais em §20                                                                                                                                                                          |
 
 ---
 
@@ -60,12 +62,14 @@ A arquitetura é **headless**: a vitrine (Home, séries, peças, editorial, cont
 
 **Tom de voz:** culta sem pedantismo, sofisticada e precisa, visual e sugestiva, contemporânea, inquietante sem exagero.
 
-| Situação        | Evitar                       | Indicio Cult                           |
-| --------------- | ---------------------------- | -------------------------------------- |
-| Botão de compra | "Comprar agora!"             | "Adicionar ao arquivo"                 |
-| Carrinho vazio  | "Seu carrinho está vazio :(" | "Nada aqui ainda."                     |
-| Newsletter      | "Assine e ganhe 10% OFF"     | "Receba o próximo indício."            |
-| 404             | "Página não encontrada"      | "Esse rastro não leva a lugar nenhum." |
+| Situação        | Evitar                       | Indicio Cult                                                |
+| --------------- | ---------------------------- | ----------------------------------------------------------- |
+| Botão de compra | "Comprar agora!"             | "Adicionar ao arquivo"                                      |
+| Carrinho vazio  | "Seu carrinho está vazio :(" | "Nada aqui ainda."                                          |
+| Newsletter      | "Assine e ganhe 10% OFF"     | UI da Home: "Receba novos indícios." / botão **INSCREVER**  |
+| 404             | "Página não encontrada"      | "Esse rastro não leva a lugar nenhum."                      |
+
+A copy da UI do Journal na Home não é o assunto do e-mail de double opt-in (Apêndice B: "Confirme para receber o próximo indício.").
 
 ---
 
@@ -174,13 +178,33 @@ flowchart LR
 
 ### 9.1 Home
 
-- Cabeçalho fixo: wordmark, navegação (Coleções, Peças, Editorial, Manifesto), busca, conta, carrinho com contador.
-- Hero da série vigente (imagem, título, uma frase, CTA "Ver a série").
-- Assinatura da marca isolada.
-- Grade de 4–6 peças em destaque (curadoria manual).
-- 2–3 séries anteriores; texto editorial em destaque; bloco de newsletter; rodapé (institucional, legal, redes, CNPJ, formas de pagamento).
-- Blocos gerenciáveis no backoffice; sem pop-up de entrada.
-- **Métrica:** CTR do hero ≥ 25%.
+Fonte visual: Figma Indicio Cult — Home Desktop `8:110`, Home Mobile `38:41`. Header `72:236` / `72:270`; footer `74:270` / `74:311`. A ordem dos blocos é a mesma nos dois breakpoints.
+
+1. **Header**
+   - Destinos da nav (rotas em §8): **Coleções**, **Peças**, **Editorial**, **Manifesto**.
+   - **Desktop:** wordmark SVG (`IC / Logo`, `Placement=Header`, `Size=Desktop`); os quatro links da nav; ícones de busca, conta e sacola; badge de quantidade `0`.
+   - **Mobile (estado fechado):** logo SVG (`Placement=Header`, `Size=Mobile`) e ícones de menu, busca e sacola. Sem labels da nav e sem badge de texto no closed; os quatro destinos existem no menu.
+2. **Hero de marca** — tagline “Arte para quem reconhece o indício.”; título “Vestir o indício.”; lead “Camisetas autorais com presença editorial. Cinema, literatura e artes plásticas aparecem como linguagem, ritmo e atmosfera.”; CTA “CONHEÇA AS COLEÇÕES”; fotografia. Desktop inclui aside “ARTE VESTE OUTROS OLHARES.” e indicador 01/03. A assinatura da marca (logo SVG `Placement=Hero` + tagline) vive neste bloco — e de novo no rodapé — não num bloco isolado.
+3. **Manifesto** (teaser da Home; a página completa é §9.6 `/manifesto`) — kicker “NOSSO MANIFESTO”; “Mais que estampas, indícios de um mundo maior.”; corpo “A indicio cult nasce da interseção entre arte, pensamento e cotidiano. Nossas camisetas são superfícies para ideias — fragmentos de cinema, literatura e artes visuais que te acompanham na vida real. Para quem enxerga sentido nos detalhes.”; CTA “SOBRE A MARCA →”. Desktop: aside “REFERÊNCIAS QUE VESTEM PESSOAS REAIS.”
+4. **Coleções** — rótulo “COLEÇÕES”; **3** cards no recorte visual (Narrativas Psicológicas, Curadoria Auteur, Biblioteca Noturna); CTA do card “EXPLORAR”; “VER TODAS →”. O backoffice troca o conteúdo dos slots, não a quantidade do layout.
+5. **Destaques** — rótulo “CAMISETAS EM DESTAQUE”; **6** peças; “VER TODAS →”. Mesma regra: conteúdo curado, quantidade do layout fixa.
+6. **Lifestyle banner** — “Arte também te acompanha.” Desktop: apoio “PARA O DIA A DIA E PARA O QUE VEM DEPOIS.” e aside “IDEIAS TAMBÉM VESTEM.”
+7. **Materials** — três cards: Algodão premium; Estampa autoral; Acabamento cuidadoso.
+8. **Journal** (captura de e-mail na Home; não é item de nav) — kicker “JOURNAL”; título “Receba novos indícios.”; apoio “Lançamentos, bastidores e referências que inspiram.”; placeholder “Seu e-mail”; botão “INSCREVER”. Desktop: aside “ARTE PENSAMENTO E BOAS COMPANHIAS.”
+9. **Footer** (aprovado)
+   - Wordmark SVG (`IC / Logo`, `Placement=Footer`) + tagline “Arte para quem reconhece o indício.” O rodapé também mostra o texto “indicio cult” junto da marca.
+   - **LOJA:** Coleções, Peças, Editorial (3; sem Newsletter, sem Sale).
+   - **INSTITUCIONAL:** Manifesto, Ajuda, Trocas e devoluções, Contato.
+   - **LEGAL:** Privacidade, Termos, Cookies.
+   - **REDES:** Instagram, Pinterest, YouTube, Spotify (heading “REDES”, não “SIGA”; no mobile as quatro redes aparecem sem repetir o heading).
+   - Placeholders (não substituir por dados inventados): `CNPJ 00.000.000/0000-00` e `Endereço da sede`.
+   - PIX · CARTÃO.
+   - Quote “Viver com mais referências.”
+   - © 2026 Indicio Cult / Todos os direitos reservados.
+
+- Destinos da nav e do rodapé seguem §8 (`/colecoes`, `/pecas`, `/editorial`, `/manifesto`, `/ajuda`, `/ajuda/trocas-e-devolucoes`, `/legal/*`, `/contato`). O Journal captura e-mail na Home; a rota `/newsletter` permanece. Sem pop-up de entrada.
+- Blocos gerenciáveis no backoffice (copy, fotografia, quais séries e peças entram nos 3 + 6 slots).
+- **Métrica:** CTR do CTA “CONHEÇA AS COLEÇÕES” ≥ 25%.
 
 ### 9.2 Séries (`/colecoes`, `/colecoes/[slug]`)
 
@@ -363,7 +387,7 @@ Produtos, variantes, preços, pedidos, cupons, clientes e pagamentos são gerido
 | Disponibilidade     | ≥ 99,5% mensal na vitrine; checkout depende do SLA Nuvemshop.                                                                                                                                                                                                                                                                                                                            |
 | Segurança           | HTTPS; nenhum dado de pagamento na vitrine; Supabase Auth com RLS nas tabelas de favoritos, endereços e trocas; 2FA no admin; tokens Nuvemshop e Reserva Ink só no servidor, com escopos mínimos (`store.shipping_simulation.read`, `store.financial_balance.read`, `store.financial_statement.read`, `store.orders.read`); rate limit em login, rastreio, contato e simulação de frete. |
 | LGPD                | Minimização; consentimento granular; exportação/exclusão dos dados da vitrine; política com encarregado; dados de pedido sob retenção fiscal na Nuvemshop.                                                                                                                                                                                                                               |
-| Acessibilidade      | WCAG 2.1 AA: contraste (a validar com a paleta futura), teclado, foco visível, alt text, formulários rotulados.                                                                                                                                                                                                                                                                          |
+| Acessibilidade      | WCAG 2.1 AA: contraste (tokens do Figma), teclado, foco visível, alt text, formulários rotulados.                                                                                                                                                                                                                                                                                       |
 | SEO                 | URLs estáveis; metadados; dados estruturados (Produto, Artigo, Organização, Breadcrumb); sitemap; canonical; Open Graph.                                                                                                                                                                                                                                                                 |
 | Responsividade      | Mobile-first (≥ 70% do tráfego esperado).                                                                                                                                                                                                                                                                                                                                                |
 | Observabilidade     | Monitoramento de erros; alertas de falha de webhook Nuvemshop e de `502` recorrente na Reserva Ink; eventos de analytics padronizados (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, `sign_up`, `newsletter_subscribe`, `exchange_requested`).                                                                                                                               |
@@ -374,9 +398,9 @@ Produtos, variantes, preços, pedidos, cupons, clientes e pagamentos são gerido
 
 ## 15. Identidade visual aplicada ao produto
 
-**Paleta de cores e tipografia serão definidas posteriormente e não fazem parte deste documento.**
+Paleta (paper/ink, cobre) e tipo da vitrine (Inter + Cormorant Garamond) estão no arquivo Figma [Indicio Cult](https://www.figma.com/design/rakcFK2hEb9f9wktHDAVET/Indicio-Cult). Não reabrir aqui; tokens detalhados ficam no Figma.
 
-- **Logo:** wordmark empilhado ("indicio" / "□ cult") na Home e rodapé; horizontal no cabeçalho; símbolo isolado (quadro com falha) como favicon, avatar, loader e marcador de favorito. Respeitar área de respiro e tamanho mínimo (~80 px wordmark, ~24 px símbolo). Proibido distorcer, aplicar sombra, alterar proporções ou modificar o símbolo.
+- **Logo:** wordmark **SVG** do set `IC / Logo` (`Placement=Header|Hero|Footer`). Cabeçalho: variantes Header Desktop (`104×59`) e Header Mobile (`80×46`). Hero da Home: `Placement=Hero` + tagline. Rodapé: `Placement=Footer` + tagline; o rodapé também mostra o texto “indicio cult” junto da marca. Não substituir o SVG por wordmark tipográfico. Símbolo isolado (quadro com falha) como favicon, avatar, loader e marcador de favorito. Respeitar área de respiro e tamanho mínimo (~80 px wordmark, ~24 px símbolo). Proibido distorcer, aplicar sombra, alterar proporções ou modificar o símbolo.
 - **Componentes mínimos:** botões (3 níveis), campos, seletores de cor/tamanho, card de peça, card de série, acordeão, painel lateral (mini-carrinho, guia de tamanhos), toast, badge, breadcrumb, paginação, linha do tempo de pedido, tabela (admin), skeleton, banner de aviso e de cookies, estados vazios com o símbolo.
 - **Fotografia:** peças em corpo real, luz natural ou dura, fundos neutros, sem sorriso publicitário; estampa isolada em alta resolução; mockups genéricos do fornecedor apenas no admin.
 - **Checkout Nuvemshop:** aplicar a identidade da marca dentro do que a personalização permitir.
@@ -466,4 +490,4 @@ Produtos, variantes, preços, pedidos, cupons, clientes e pagamentos são gerido
 | Alerta de saldo (operadora)            | "[Saldo] Reserva Ink abaixo de R$ X"       |
 | Newsletter double opt-in               | "Confirme para receber o próximo indício." |
 
-Os e-mails de pedido (recebido, pago, enviado, entregue) são emitidos pela Nuvemshop.
+Os e-mails de pedido (recebido, pago, enviado, entregue) são emitidos pela Nuvemshop. O assunto do double opt-in é transacional; a UI do Journal na Home usa “Receba novos indícios.” / INSCREVER.
