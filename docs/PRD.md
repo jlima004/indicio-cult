@@ -66,10 +66,8 @@ A arquitetura é **headless**: a vitrine (Home, séries, peças, editorial, cont
 | --------------- | ---------------------------- | ----------------------------------------------------------- |
 | Botão de compra | "Comprar agora!"             | "Adicionar ao arquivo"                                      |
 | Carrinho vazio  | "Seu carrinho está vazio :(" | "Nada aqui ainda."                                          |
-| Newsletter      | "Assine e ganhe 10% OFF"     | UI da Home: "Receba novos indícios." / botão **INSCREVER**  |
+| Newsletter      | "Assine e ganhe 10% OFF"     | "Receba novos indícios." / botão **INSCREVER**              |
 | 404             | "Página não encontrada"      | "Esse rastro não leva a lugar nenhum."                      |
-
-A copy da UI do Journal na Home não é o assunto do e-mail de double opt-in (Apêndice B: "Confirme para receber o próximo indício.").
 
 ---
 
@@ -449,7 +447,7 @@ Paleta (paper/ink, cobre) e tipo da vitrine (Inter + Cormorant Garamond) estão 
 
 | Fase                   | Duração   | Entregas                                                                                                            | Saída                                                                                               |
 | ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 0 — Fundação           | 2–3 sem.  | Stack do frontend, paleta e design system, wireframes, credenciais Nuvemshop/Reserva Ink/Supabase, amostras físicas | Wireframes validados; amostra aprovada                                                              |
+| 0 — Fundação           | 2–3 sem.  | Stack do frontend ([ADR-001](decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md)); paleta e tipo no Figma; credenciais Nuvemshop/Reserva Ink/Supabase; amostras físicas | Paleta/tipo no Figma; stack no ADR-001; amostra aprovada                                            |
 | 1 — MVP                | 6–8 sem.  | Seções 9–13 (Must), primeira série com 6–10 peças, e-mails, legais                                                  | Compra real ponta a ponta via checkout Nuvemshop; frete e saldo funcionando; Lighthouse ≥ 90 mobile |
 | 1.1 — Lançamento suave | 2 sem.    | Convidados e lista inicial; correções; medição do funil                                                             | 20 pedidos; NPS coletado                                                                            |
 | 2 — Expansão           | 8–10 sem. | Posters/quadros, drops, edições limitadas, vale-presente, avaliações                                                | Segunda categoria vendendo                                                                          |
@@ -488,6 +486,6 @@ Paleta (paper/ink, cobre) e tipo da vitrine (Inter + Cormorant Garamond) estão 
 | Troca solicitada (cliente)             | "Sobre a sua troca."                       |
 | Troca solicitada (gerente)             | "[Troca] Pedido #NNNN — motivo — cliente"  |
 | Alerta de saldo (operadora)            | "[Saldo] Reserva Ink abaixo de R$ X"       |
-| Newsletter double opt-in               | "Confirme para receber o próximo indício." |
+| Newsletter double opt-in               | "Confirme para receber novos indícios."    |
 
-Os e-mails de pedido (recebido, pago, enviado, entregue) são emitidos pela Nuvemshop. O assunto do double opt-in é transacional; a UI do Journal na Home usa “Receba novos indícios.” / INSCREVER.
+Os e-mails de pedido (recebido, pago, enviado, entregue) são emitidos pela Nuvemshop.
