@@ -6,6 +6,9 @@
   --color-muted: #57534c;
   --color-border: #d6d0c4;
   --color-accent: #b04422;
+  --color-card: #ffffff;
+  --color-inverse-bg: #0f0f0d;
+  --color-inverse-fg: #ffffff;
   --radius-none: 0;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
