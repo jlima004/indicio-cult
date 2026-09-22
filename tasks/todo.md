@@ -129,9 +129,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `/` renderiza wordmark + "Arte para quem reconhece o indício." com um único `h1`
-- [ ] `/qualquer-coisa` → 404 com a copy da marca e link para `/`
-- [ ] `error.tsx` renderiza com botão que chama `reset`; `/manutencao` renderiza copy da marca
+- [x] `/` renderiza wordmark + "Arte para quem reconhece o indício." com um único `h1`
+- [x] `/qualquer-coisa` → 404 com a copy da marca e link para `/`
+- [x] `error.tsx` renderiza com botão que chama `reset`; `/manutencao` renderiza copy da marca
 
 **Verificação:** `npm run test -- not-found page`; `npm run build && npm run start` e navegar nas 4 rotas.
 
