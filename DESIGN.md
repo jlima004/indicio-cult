@@ -1,259 +1,259 @@
 ---
 version: alpha
 name: Indicio Cult
-description: "Sistema visual editorial para a vitrine headless de arte impressa Indicio Cult, derivado do Figma atual."
+description: 'Sistema visual editorial para a vitrine headless de arte impressa Indicio Cult, derivado do Figma atual.'
 colors:
-  white: "#FFFFFF"
-  paper-50: "#F8F7F4"
-  paper-100: "#EFEDE9"
-  ink-950: "#0F0F0D"
-  ink-800: "#24231F"
-  ink-600: "#57534C"
-  ink-450: "#7B756B"
-  line-300: "#D6D0C4"
-  accent-red: "#982F28"
-  accent-blue: "#30445E"
-  accent-ochre: "#A7732A"
-  brand-ink: "#141414"
-  brand-copper: "#B04422"
-  ink-stage: "#292926"
-  overlay-clear: "#00000000"
-  overlay-scrim: "#000000B8"
-  bg-page: "{colors.paper-50}"
-  bg-soft: "{colors.paper-100}"
-  bg-inverse: "{colors.ink-950}"
-  bg-card: "{colors.white}"
-  bg-stage: "{colors.ink-stage}"
-  text-primary: "{colors.ink-950}"
-  text-secondary: "{colors.ink-600}"
-  text-muted: "{colors.ink-450}"
-  text-inverse: "{colors.white}"
-  border-subtle: "{colors.line-300}"
-  brand-accent: "{colors.brand-copper}"
-  editorial-red: "{colors.accent-red}"
-  editorial-blue: "{colors.accent-blue}"
-  editorial-ochre: "{colors.accent-ochre}"
-  scrim-start: "{colors.overlay-clear}"
-  scrim-end: "{colors.overlay-scrim}"
+  white: '#FFFFFF'
+  paper-50: '#F8F7F4'
+  paper-100: '#EFEDE9'
+  ink-950: '#0F0F0D'
+  ink-800: '#24231F'
+  ink-600: '#57534C'
+  ink-450: '#7B756B'
+  line-300: '#D6D0C4'
+  accent-red: '#982F28'
+  accent-blue: '#30445E'
+  accent-ochre: '#A7732A'
+  brand-ink: '#141414'
+  brand-copper: '#B04422'
+  ink-stage: '#292926'
+  overlay-clear: '#00000000'
+  overlay-scrim: '#000000B8'
+  bg-page: '{colors.paper-50}'
+  bg-soft: '{colors.paper-100}'
+  bg-inverse: '{colors.ink-950}'
+  bg-card: '{colors.white}'
+  bg-stage: '{colors.ink-stage}'
+  text-primary: '{colors.ink-950}'
+  text-secondary: '{colors.ink-600}'
+  text-muted: '{colors.ink-450}'
+  text-inverse: '{colors.white}'
+  border-subtle: '{colors.line-300}'
+  brand-accent: '{colors.brand-copper}'
+  editorial-red: '{colors.accent-red}'
+  editorial-blue: '{colors.accent-blue}'
+  editorial-ochre: '{colors.accent-ochre}'
+  scrim-start: '{colors.overlay-clear}'
+  scrim-end: '{colors.overlay-scrim}'
 typography:
   display-hero:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "104px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '104px'
     fontWeight: 500
-    lineHeight: "96px"
-    letterSpacing: "-0.03em"
+    lineHeight: '96px'
+    letterSpacing: '-0.03em'
   display-banner:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "44px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '44px'
     fontWeight: 500
-    lineHeight: "42px"
-    letterSpacing: "-0.35px"
+    lineHeight: '42px'
+    letterSpacing: '-0.35px'
   display-error-code:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "200px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '200px'
     fontWeight: 500
     lineHeight: 1.08
   display-error-code-mobile:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "100px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '100px'
     fontWeight: 500
     lineHeight: 1.08
   heading-h1:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "48px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '48px'
     fontWeight: 500
-    lineHeight: "52px"
-    letterSpacing: "-0.6px"
+    lineHeight: '52px'
+    letterSpacing: '-0.6px'
   heading-h2:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "36px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '36px'
     fontWeight: 500
-    lineHeight: "42px"
-    letterSpacing: "-0.35px"
+    lineHeight: '42px'
+    letterSpacing: '-0.35px'
   heading-h3:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "24px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '24px'
     fontWeight: 600
-    lineHeight: "30px"
-    letterSpacing: "-0.1px"
+    lineHeight: '30px'
+    letterSpacing: '-0.1px'
   heading-editorial:
-    fontFamily: "Cormorant Garamond"
-    fontSize: "42px"
+    fontFamily: 'Cormorant Garamond'
+    fontSize: '42px'
     fontWeight: 500
-    lineHeight: "42px"
-    letterSpacing: "-0.35px"
+    lineHeight: '42px'
+    letterSpacing: '-0.35px'
   body-lg:
-    fontFamily: "Inter"
-    fontSize: "18px"
+    fontFamily: 'Inter'
+    fontSize: '18px'
     fontWeight: 400
-    lineHeight: "28px"
-    letterSpacing: "0px"
+    lineHeight: '28px'
+    letterSpacing: '0px'
   body-hero:
-    fontFamily: "Inter"
-    fontSize: "18px"
+    fontFamily: 'Inter'
+    fontSize: '18px'
     fontWeight: 400
-    lineHeight: "27px"
-    letterSpacing: "0px"
+    lineHeight: '27px'
+    letterSpacing: '0px'
   body-md:
-    fontFamily: "Inter"
-    fontSize: "16px"
+    fontFamily: 'Inter'
+    fontSize: '16px'
     fontWeight: 400
-    lineHeight: "24px"
-    letterSpacing: "0px"
+    lineHeight: '24px'
+    letterSpacing: '0px'
   body-sm:
-    fontFamily: "Inter"
-    fontSize: "14px"
+    fontFamily: 'Inter'
+    fontSize: '14px'
     fontWeight: 400
-    lineHeight: "20px"
-    letterSpacing: "0px"
+    lineHeight: '20px'
+    letterSpacing: '0px'
   label-tagline:
-    fontFamily: "Inter"
-    fontSize: "14px"
+    fontFamily: 'Inter'
+    fontSize: '14px'
     fontWeight: 500
-    lineHeight: "20px"
-    letterSpacing: "0px"
+    lineHeight: '20px'
+    letterSpacing: '0px'
   label-nav:
-    fontFamily: "Inter"
-    fontSize: "12px"
+    fontFamily: 'Inter'
+    fontSize: '12px'
     fontWeight: 500
-    lineHeight: "16px"
-    letterSpacing: "0.6px"
+    lineHeight: '16px'
+    letterSpacing: '0.6px'
   label-micro:
-    fontFamily: "Inter"
-    fontSize: "11px"
+    fontFamily: 'Inter'
+    fontSize: '11px'
     fontWeight: 500
-    lineHeight: "16px"
-    letterSpacing: "1.8px"
+    lineHeight: '16px'
+    letterSpacing: '1.8px'
   label-fine:
-    fontFamily: "Inter"
-    fontSize: "10px"
+    fontFamily: 'Inter'
+    fontSize: '10px'
     fontWeight: 500
-    lineHeight: "16px"
-    letterSpacing: "1.8px"
+    lineHeight: '16px'
+    letterSpacing: '1.8px'
   label-plate:
-    fontFamily: "Inter"
-    fontSize: "10px"
+    fontFamily: 'Inter'
+    fontSize: '10px'
     fontWeight: 400
-    lineHeight: "16px"
-    letterSpacing: "0.14em"
+    lineHeight: '16px'
+    letterSpacing: '0.14em'
   label-kicker-wide:
-    fontFamily: "Inter"
-    fontSize: "11px"
+    fontFamily: 'Inter'
+    fontSize: '11px'
     fontWeight: 400
-    lineHeight: "16px"
-    letterSpacing: "0.16em"
+    lineHeight: '16px'
+    letterSpacing: '0.16em'
 rounded:
-  none: "0px"
-  xs: "2px"
-  sm: "4px"
-  full: "999px"
+  none: '0px'
+  xs: '2px'
+  sm: '4px'
+  full: '999px'
 spacing:
-  none: "0px"
-  xs: "4px"
-  2xs: "6px"
-  sm: "8px"
-  sm-plus: "9px"
-  compact: "10px"
-  md: "12px"
-  base: "16px"
-  base-plus: "18px"
-  editorial: "20px"
-  lg: "24px"
-  xl: "32px"
-  2xl: "48px"
-  hero: "56px"
-  3xl: "64px"
-  gutter-wide: "72px"
-  4xl: "80px"
-  5xl: "96px"
-  6xl: "128px"
-  7xl: "160px"
-  layout-page-max: "1440px"
-  layout-content-max: "1312px"
-  layout-mobile-width: "390px"
-  layout-header-height: "80px"
-  layout-touch-target: "48px"
-  layout-collection-card-height: "288px"
-  layout-product-image-height: "228px"
-  layout-mobile-product-image-height: "196px"
-  layout-mobile-hero-image-height: "380px"
+  none: '0px'
+  xs: '4px'
+  2xs: '6px'
+  sm: '8px'
+  sm-plus: '9px'
+  compact: '10px'
+  md: '12px'
+  base: '16px'
+  base-plus: '18px'
+  editorial: '20px'
+  lg: '24px'
+  xl: '32px'
+  2xl: '48px'
+  hero: '56px'
+  3xl: '64px'
+  gutter-wide: '72px'
+  4xl: '80px'
+  5xl: '96px'
+  6xl: '128px'
+  7xl: '160px'
+  layout-page-max: '1440px'
+  layout-content-max: '1312px'
+  layout-mobile-width: '390px'
+  layout-header-height: '80px'
+  layout-touch-target: '48px'
+  layout-collection-card-height: '288px'
+  layout-product-image-height: '228px'
+  layout-mobile-product-image-height: '196px'
+  layout-mobile-hero-image-height: '380px'
 components:
   button-ghost-desktop:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.label-micro}"
-    rounded: "{rounded.none}"
-    height: "16px"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-primary}'
+    typography: '{typography.label-micro}'
+    rounded: '{rounded.none}'
+    height: '16px'
   button-ghost-mobile:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.label-micro}"
-    rounded: "{rounded.none}"
-    height: "{spacing.layout-touch-target}"
-    width: "342px"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-primary}'
+    typography: '{typography.label-micro}'
+    rounded: '{rounded.none}'
+    height: '{spacing.layout-touch-target}'
+    width: '342px'
   field-input:
-    backgroundColor: "{colors.bg-card}"
-    textColor: "{colors.text-muted}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.none}"
-    height: "52px"
+    backgroundColor: '{colors.bg-card}'
+    textColor: '{colors.text-muted}'
+    typography: '{typography.body-sm}'
+    rounded: '{rounded.none}'
+    height: '52px'
   field-submit:
-    backgroundColor: "{colors.bg-inverse}"
-    textColor: "{colors.text-inverse}"
-    typography: "{typography.label-micro}"
-    rounded: "{rounded.none}"
-    height: "52px"
+    backgroundColor: '{colors.bg-inverse}'
+    textColor: '{colors.text-inverse}'
+    typography: '{typography.label-micro}'
+    rounded: '{rounded.none}'
+    height: '52px'
   text-link-nav:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.label-nav}"
-    rounded: "{rounded.none}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-primary}'
+    typography: '{typography.label-nav}'
+    rounded: '{rounded.none}'
   text-link-nav-hover:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.label-nav}"
-    rounded: "{rounded.none}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-secondary}'
+    typography: '{typography.label-nav}'
+    rounded: '{rounded.none}'
   text-link-footer:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.none}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-primary}'
+    typography: '{typography.body-sm}'
+    rounded: '{rounded.none}'
   text-link-footer-hover:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.none}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-secondary}'
+    typography: '{typography.body-sm}'
+    rounded: '{rounded.none}'
   icon-button-hit:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.none}"
-    size: "{spacing.layout-touch-target}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.none}'
+    size: '{spacing.layout-touch-target}'
   icon-button-hit-hover:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-secondary}"
-    rounded: "{rounded.none}"
-    size: "{spacing.layout-touch-target}"
+    backgroundColor: 'transparent'
+    textColor: '{colors.text-secondary}'
+    rounded: '{rounded.none}'
+    size: '{spacing.layout-touch-target}'
   header:
-    backgroundColor: "{colors.bg-card}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.none}"
-    height: "{spacing.layout-header-height}"
+    backgroundColor: '{colors.bg-card}'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.none}'
+    height: '{spacing.layout-header-height}'
   footer:
-    backgroundColor: "{colors.bg-card}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.none}"
+    backgroundColor: '{colors.bg-card}'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.none}'
   not-found-artwork:
-    backgroundColor: "{colors.bg-soft}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.none}"
-    width: "520px"
-    height: "420px"
+    backgroundColor: '{colors.bg-soft}'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.none}'
+    width: '520px'
+    height: '420px'
   not-found-artwork-mobile:
-    backgroundColor: "{colors.bg-soft}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.none}"
-    width: "260px"
-    height: "210px"
+    backgroundColor: '{colors.bg-soft}'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.none}'
+    width: '260px'
+    height: '210px'
 ---
 
 # Indicio Cult — DESIGN.md
