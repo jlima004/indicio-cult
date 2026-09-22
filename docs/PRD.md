@@ -2,16 +2,16 @@
 
 **Product Requirements Document — E-commerce de arte impressa (Print on Demand)**
 
-| Campo             | Valor                                                                                                                                                                                                 |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Produto           | Indicio Cult — loja virtual de arte impressa                                                                                                                                                          |
-| Assinatura        | _Arte para quem reconhece o indício._                                                                                                                                                                 |
-| Versão            | 1.2                                                                                                                                                                                                   |
-| Status            | Em revisão                                                                                                                                                                                            |
-| Premissas fixadas | Checkout delegado à Nuvemshop; autenticação via Supabase (e-mail/senha + Google); frete via API Reserva Ink; fulfillment POD via Reserva Ink                                                          |
-| Identidade        | Paleta e tipo da vitrine definidos no Figma (não reabrir). Stack do frontend: [ADR-001](decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md).                                                   |
-| Alinhamento UI    | Home, header e rodapé alinhados ao arquivo Figma [Indicio Cult](https://www.figma.com/design/rakcFK2hEb9f9wktHDAVET/Indicio-Cult) (Home Desktop `8:110`, Home Mobile `38:41`).                         |
-| Em aberto         | Questões operacionais em §20                                                                                                                                                                          |
+| Campo             | Valor                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Produto           | Indicio Cult — loja virtual de arte impressa                                                                                                                                   |
+| Assinatura        | _Arte para quem reconhece o indício._                                                                                                                                          |
+| Versão            | 1.2                                                                                                                                                                            |
+| Status            | Em revisão                                                                                                                                                                     |
+| Premissas fixadas | Checkout delegado à Nuvemshop; autenticação via Supabase (e-mail/senha + Google); frete via API Reserva Ink; fulfillment POD via Reserva Ink                                   |
+| Identidade        | Paleta e tipo da vitrine definidos no Figma (não reabrir). Stack do frontend: [ADR-001](decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md).                            |
+| Alinhamento UI    | Home, header e rodapé alinhados ao arquivo Figma [Indicio Cult](https://www.figma.com/design/rakcFK2hEb9f9wktHDAVET/Indicio-Cult) (Home Desktop `8:110`, Home Mobile `38:41`). |
+| Em aberto         | Questões operacionais em §20                                                                                                                                                   |
 
 ---
 
@@ -62,12 +62,12 @@ A arquitetura é **headless**: a vitrine (Home, séries, peças, editorial, cont
 
 **Tom de voz:** culta sem pedantismo, sofisticada e precisa, visual e sugestiva, contemporânea, inquietante sem exagero.
 
-| Situação        | Evitar                       | Indicio Cult                                                |
-| --------------- | ---------------------------- | ----------------------------------------------------------- |
-| Botão de compra | "Comprar agora!"             | "Adicionar ao arquivo"                                      |
-| Carrinho vazio  | "Seu carrinho está vazio :(" | "Nada aqui ainda."                                          |
-| Newsletter      | "Assine e ganhe 10% OFF"     | "Receba novos indícios." / botão **INSCREVER**              |
-| 404             | "Página não encontrada"      | "Esse rastro não leva a lugar nenhum."                      |
+| Situação        | Evitar                       | Indicio Cult                                   |
+| --------------- | ---------------------------- | ---------------------------------------------- |
+| Botão de compra | "Comprar agora!"             | "Adicionar ao arquivo"                         |
+| Carrinho vazio  | "Seu carrinho está vazio :(" | "Nada aqui ainda."                             |
+| Newsletter      | "Assine e ganhe 10% OFF"     | "Receba novos indícios." / botão **INSCREVER** |
+| 404             | "Página não encontrada"      | "Esse rastro não leva a lugar nenhum."         |
 
 ---
 
@@ -385,7 +385,7 @@ Produtos, variantes, preços, pedidos, cupons, clientes e pagamentos são gerido
 | Disponibilidade     | ≥ 99,5% mensal na vitrine; checkout depende do SLA Nuvemshop.                                                                                                                                                                                                                                                                                                                            |
 | Segurança           | HTTPS; nenhum dado de pagamento na vitrine; Supabase Auth com RLS nas tabelas de favoritos, endereços e trocas; 2FA no admin; tokens Nuvemshop e Reserva Ink só no servidor, com escopos mínimos (`store.shipping_simulation.read`, `store.financial_balance.read`, `store.financial_statement.read`, `store.orders.read`); rate limit em login, rastreio, contato e simulação de frete. |
 | LGPD                | Minimização; consentimento granular; exportação/exclusão dos dados da vitrine; política com encarregado; dados de pedido sob retenção fiscal na Nuvemshop.                                                                                                                                                                                                                               |
-| Acessibilidade      | WCAG 2.1 AA: contraste (tokens do Figma), teclado, foco visível, alt text, formulários rotulados.                                                                                                                                                                                                                                                                                       |
+| Acessibilidade      | WCAG 2.1 AA: contraste (tokens do Figma), teclado, foco visível, alt text, formulários rotulados.                                                                                                                                                                                                                                                                                        |
 | SEO                 | URLs estáveis; metadados; dados estruturados (Produto, Artigo, Organização, Breadcrumb); sitemap; canonical; Open Graph.                                                                                                                                                                                                                                                                 |
 | Responsividade      | Mobile-first (≥ 70% do tráfego esperado).                                                                                                                                                                                                                                                                                                                                                |
 | Observabilidade     | Monitoramento de erros; alertas de falha de webhook Nuvemshop e de `502` recorrente na Reserva Ink; eventos de analytics padronizados (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, `sign_up`, `newsletter_subscribe`, `exchange_requested`).                                                                                                                               |
@@ -445,13 +445,13 @@ Paleta (paper/ink, cobre) e tipo da vitrine (Inter + Cormorant Garamond) estão 
 
 ## 19. Roadmap
 
-| Fase                   | Duração   | Entregas                                                                                                            | Saída                                                                                               |
-| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Fase                   | Duração   | Entregas                                                                                                                                                                       | Saída                                                                                               |
+| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
 | 0 — Fundação           | 2–3 sem.  | Stack do frontend ([ADR-001](decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md)); paleta e tipo no Figma; credenciais Nuvemshop/Reserva Ink/Supabase; amostras físicas | Paleta/tipo no Figma; stack no ADR-001; amostra aprovada                                            |
-| 1 — MVP                | 6–8 sem.  | Seções 9–13 (Must), primeira série com 6–10 peças, e-mails, legais                                                  | Compra real ponta a ponta via checkout Nuvemshop; frete e saldo funcionando; Lighthouse ≥ 90 mobile |
-| 1.1 — Lançamento suave | 2 sem.    | Convidados e lista inicial; correções; medição do funil                                                             | 20 pedidos; NPS coletado                                                                            |
-| 2 — Expansão           | 8–10 sem. | Posters/quadros, drops, edições limitadas, vale-presente, avaliações                                                | Segunda categoria vendendo                                                                          |
-| 3 — Comunidade         | contínuo  | Arquivo público, artistas, conteúdo de assinantes, EN                                                               | Definir após Fase 2                                                                                 |
+| 1 — MVP                | 6–8 sem.  | Seções 9–13 (Must), primeira série com 6–10 peças, e-mails, legais                                                                                                             | Compra real ponta a ponta via checkout Nuvemshop; frete e saldo funcionando; Lighthouse ≥ 90 mobile |
+| 1.1 — Lançamento suave | 2 sem.    | Convidados e lista inicial; correções; medição do funil                                                                                                                        | 20 pedidos; NPS coletado                                                                            |
+| 2 — Expansão           | 8–10 sem. | Posters/quadros, drops, edições limitadas, vale-presente, avaliações                                                                                                           | Segunda categoria vendendo                                                                          |
+| 3 — Comunidade         | contínuo  | Arquivo público, artistas, conteúdo de assinantes, EN                                                                                                                          | Definir após Fase 2                                                                                 |
 
 ---
 
@@ -478,14 +478,14 @@ Paleta (paper/ink, cobre) e tipo da vitrine (Inter + Cormorant Garamond) estão 
 
 ## Apêndice B — E-mails da vitrine
 
-| Gatilho                                | Assunto                                    |
-| -------------------------------------- | ------------------------------------------ |
-| Verificação de e-mail                  | "Confirme seu e-mail."                     |
-| Recuperação de senha                   | "Redefinir sua senha."                     |
-| Convite pós-compra (se houver retorno) | "Acompanhe sua peça."                      |
-| Troca solicitada (cliente)             | "Sobre a sua troca."                       |
-| Troca solicitada (gerente)             | "[Troca] Pedido #NNNN — motivo — cliente"  |
-| Alerta de saldo (operadora)            | "[Saldo] Reserva Ink abaixo de R$ X"       |
-| Newsletter double opt-in               | "Confirme para receber novos indícios."    |
+| Gatilho                                | Assunto                                   |
+| -------------------------------------- | ----------------------------------------- |
+| Verificação de e-mail                  | "Confirme seu e-mail."                    |
+| Recuperação de senha                   | "Redefinir sua senha."                    |
+| Convite pós-compra (se houver retorno) | "Acompanhe sua peça."                     |
+| Troca solicitada (cliente)             | "Sobre a sua troca."                      |
+| Troca solicitada (gerente)             | "[Troca] Pedido #NNNN — motivo — cliente" |
+| Alerta de saldo (operadora)            | "[Saldo] Reserva Ink abaixo de R$ X"      |
+| Newsletter double opt-in               | "Confirme para receber novos indícios."   |
 
 Os e-mails de pedido (recebido, pago, enviado, entregue) são emitidos pela Nuvemshop.

@@ -333,10 +333,10 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 | `SITE_HOST`                            | deploy             | sim                        | Caddy (`<ip>.sslip.io` até haver domínio)    |
 | `APP_VERSION`                          | deploy             | sim (`dev` fora da imagem) | git sha injetado no build; exposto no health |
 
-### 8.5 Tokens de design provisórios
+### 8.5 Tokens de design
 
-- `globals.css` define em `@theme`: `--color-bg`, `--color-fg`, `--color-muted`, `--color-border`, `--color-accent` (todos neutros: branco, preto, três cinzas), `--font-sans` (fonte do sistema via `next/font` quando definida), escala de espaçamento padrão do Tailwind, `--radius-none` como padrão (a marca é reta).
-- `tokens.md` registra que a paleta final substitui apenas valores de variáveis; componentes não usam paletas Tailwind diretas, cores arbitrárias ou literais CSS. `lint:tokens` aplica esse contrato fora de `globals.css`, preservando fragmentos, referências SVG e utilities semânticas/estruturais.
+- `globals.css` define em `@theme` os cinco tokens cromáticos da identidade Figma (já não são neutros), `--font-sans` (Inter) e `--font-serif` (Cormorant Garamond) via `next/font`, a escala de espaçamento padrão do Tailwind e `--radius-none` (a marca é reta). Hex e nomes Figma estão na tabela de `tokens.md`.
+- `tokens.md` registra que essa substituição é só o bloco `@theme`; componentes não usam paletas Tailwind diretas, cores arbitrárias ou literais CSS. `lint:tokens` aplica esse contrato fora de `globals.css`, preservando fragmentos, referências SVG e utilities semânticas/estruturais.
 
 ### 8.6 Observabilidade
 

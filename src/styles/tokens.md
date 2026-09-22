@@ -1,22 +1,23 @@
-# Tokens provisórios
+# Tokens
 
-Os tokens desta fundação são semânticos e neutros. A identidade visual definitiva deve trocar
-somente os valores declarados no bloco `@theme` de `globals.css`; componentes não devem receber
-cores literais durante essa substituição.
+A identidade visual está nos valores do bloco `@theme` de `globals.css`. A substituição é só esse bloco: a tabela abaixo é o mapa 1:1 com as variáveis CSS, e componentes não recebem hex.
 
-| Token            | Uso                                                             |
-| ---------------- | --------------------------------------------------------------- |
-| `--color-bg`     | Fundo principal                                                 |
-| `--color-fg`     | Texto e traços de maior contraste                               |
-| `--color-muted`  | Texto secundário                                                |
-| `--color-border` | Divisórias e contornos discretos                                |
-| `--color-accent` | Ênfase neutra e símbolo da marca                                |
-| `--font-sans`    | Fonte sem serifa carregada pelo layout, com fallback do sistema |
-| `--radius-none`  | Cantos retos da marca                                           |
+| Token CSS        | Token Figma                  | Valor                                        | Uso                                      |
+| ---------------- | ---------------------------- | -------------------------------------------- | ---------------------------------------- |
+| `--color-bg`     | `bg/page` → `paper-50`       | `#f8f7f4`                                    | Fundo da página                          |
+| `--color-fg`     | `text/primary` → `ink-950`   | `#0f0f0d`                                    | Texto e traços de maior contraste        |
+| `--color-muted`  | `text/secondary` → `ink-600` | `#57534c`                                    | Texto secundário                         |
+| `--color-border` | `border/subtle` → `line-300` | `#d6d0c4`                                    | Divisórias e contornos discretos         |
+| `--color-accent` | `brand/copper`               | `#b04422`                                    | Ênfase e símbolo da marca                |
+| `--font-sans`    | `type/font-family-sans`      | Inter (`var(--font-inter)`)                  | Corpo, nav e labels                      |
+| `--font-serif`   | `type/font-family-editorial` | Cormorant Garamond (`var(--font-cormorant)`) | Display e headings; utility `font-serif` |
+| `--radius-none`  | `radius/none`                | `0`                                          | Cantos retos da marca                    |
 
-No código de interface, use as utilities semânticas geradas pelo Tailwind, como `bg-bg`, `text-fg`,
-`text-muted`, `border-border` e `text-accent`. Fora de `globals.css`, o script
-`npm run lint:tokens` rejeita:
+`--font-serif` carrega Cormorant Garamond. O Tailwind gera `font-serif` para uso futuro; ninguém precisa aplicá-la ainda.
+
+Estes tokens existem no Figma e só serão adicionados ao `@theme` quando a Home for implementada: `text/muted`, `accent/red`, `bg/soft`, `bg/card`, `bg/inverse` e `text/inverse`. `text/muted` é texto terciário e `accent/red` é o pager do Hero; nenhum dos dois substitui `--color-muted` nem `--color-accent`.
+
+`lint:tokens` não muda. No código de interface, use as utilities semânticas geradas pelo Tailwind, como `bg-bg`, `text-fg`, `text-muted`, `border-border` e `text-accent`. Fora de `globals.css`, o script `npm run lint:tokens` rejeita:
 
 - utilities cromáticas das paletas nativas do Tailwind instalado (nomes derivados de
   `tailwindcss/theme.css`, incluindo variantes e opacidade) nas famílias `accent`, `bg`, `border`,
