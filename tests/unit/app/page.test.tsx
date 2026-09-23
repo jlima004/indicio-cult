@@ -1,5 +1,9 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/env/public', () => ({
+  publicEnv: { NEXT_PUBLIC_SITE_URL: 'https://indiciocult.com.br' },
+}))
 
 import Home from '@/app/(vitrine)/page'
 

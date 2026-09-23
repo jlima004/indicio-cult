@@ -54,7 +54,7 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [ ] T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha) — inclui `[humano]` criar projeto/DSN
 - [ ] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
 
-**Próximo gate:** T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`. Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T10 · Human Review da remediação. Execução local autorizada; fechamento depende de Human Review, aprovação da PR e merge.
 
 ### Checkpoint A — "Aplicação completa localmente"
 

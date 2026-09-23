@@ -19,9 +19,30 @@ const cormorant = Cormorant_Garamond({
 })
 
 // Ler `publicEnv` aqui valida as variáveis NEXT_PUBLIC_* no build (o layout é
-// pré-renderizado). Título, descrição e Open Graph completos entram em T10.
+// pré-renderizado).
+const siteDescription =
+  'Camisetas autorais com presença editorial. Cinema, literatura e artes plásticas aparecem como linguagem, ritmo e atmosfera.'
+
 export const metadata: Metadata = {
   metadataBase: new URL(publicEnv.NEXT_PUBLIC_SITE_URL),
+  title: {
+    default: 'Indicio Cult',
+    template: '%s | Indicio Cult',
+  },
+  description: siteDescription,
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    siteName: 'Indicio Cult',
+    title: 'Indicio Cult',
+    description: siteDescription,
+    images: [
+      {
+        url: '/images/og/indicio-cult.png',
+        alt: 'Logo Indicio Cult',
+      },
+    ],
+  },
 }
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
