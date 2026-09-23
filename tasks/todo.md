@@ -145,9 +145,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `MAINTENANCE_MODE=true npm run start` → `/` responde 503 com a página de manutenção; `/api/health` continua 200
-- [ ] `/conta` e `/admin` redirecionam para `/` (302) sem sessão
-- [ ] `npm run build` sem erros de `cacheComponents` (nenhum `cookies()` fora de `Suspense`/handlers)
+- [x] `MAINTENANCE_MODE=true npm run start` → `/` responde 503 com a página de manutenção; `/api/health` continua 200
+- [x] `/conta` e `/admin` redirecionam para `/` (302) sem sessão
+- [x] `npm run build` sem erros de `cacheComponents` (nenhum `cookies()` fora de `Suspense`/handlers)
 
 **Verificação:** `npm run build && MAINTENANCE_MODE=true npm run start` + `curl -I`; `npm run test -- proxy`.
 
