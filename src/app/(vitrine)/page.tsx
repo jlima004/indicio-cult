@@ -1,4 +1,28 @@
+import type { Metadata } from 'next'
+
 import { Wordmark } from '@/components/brand/Wordmark'
+import { publicEnv } from '@/lib/env/public'
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    siteName: 'Indicio Cult',
+    title: 'Indicio Cult',
+    description:
+      'Camisetas autorais com presença editorial. Cinema, literatura e artes plásticas aparecem como linguagem, ritmo e atmosfera.',
+    url: new URL('/', publicEnv.NEXT_PUBLIC_SITE_URL).toString(),
+    images: [
+      {
+        url: '/images/og/indicio-cult.png',
+        alt: 'Logo Indicio Cult',
+      },
+    ],
+  },
+}
 
 export default function Home() {
   return (

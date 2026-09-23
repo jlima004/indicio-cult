@@ -157,7 +157,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T10 · Metadata, Open Graph, `robots.ts`, `sitemap.ts`, `track()`
 
-**Descrição:** `metadata` padrão no layout raiz (título com template, descrição, `metadataBase` = `NEXT_PUBLIC_SITE_URL`, Open Graph com imagem do logo, `alternates.canonical`); `robots.ts` (permitir tudo, `sitemap`); `sitemap.ts` com a Home; `lib/analytics/track.ts` com union tipado dos eventos do PRD §14 e implementação no-op que loga em `development`.
+**Descrição:** `metadata` padrão no layout raiz (título com template, descrição, `metadataBase` = `NEXT_PUBLIC_SITE_URL`, Open Graph com imagem do logo; canonical específico da Home); `robots.ts` (permitir tudo, `sitemap`); `sitemap.ts` com a Home; `lib/analytics/track.ts` com union tipado dos eventos do PRD §14 e implementação no-op que loga em `development`.
 
 **Aceite:**
 
