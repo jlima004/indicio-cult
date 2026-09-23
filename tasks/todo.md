@@ -177,9 +177,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] Sem DSN, `npm run build && npm run start` funcionam e nenhum request sai para o Sentry
-- [ ] Com DSN em `development`, `/?boom=1` na Home (guardado por `NODE_ENV !== 'production'`) gera evento no Sentry com `release` correto
-- [ ] `rg SENTRY_DSN .next/static` retorna só `NEXT_PUBLIC_SENTRY_DSN`
+- [x] Sem DSN, `npm run build && npm run start` funcionam e nenhum request sai para o Sentry
+- [x] Com DSN em `development`, `/?boom=1` na Home (guardado por `NODE_ENV !== 'production'`) gera evento no Sentry com `release` correto
+- [x] `rg SENTRY_DSN .next/static` retorna só `NEXT_PUBLIC_SENTRY_DSN`
 
 **Verificação:** `npm run build`; teste manual com DSN local; `rg` no bundle.
 
