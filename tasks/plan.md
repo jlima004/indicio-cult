@@ -49,12 +49,12 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [x] T6 · `GET /api/health` + `lib/http` + `lib/rate-limit` com testes
 - [x] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
 - [x] T8 · Páginas de sistema: layout raiz, Home placeholder, 404, 500, manutenção
-- [ ] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
+- [x] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
 - [ ] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`
 - [ ] T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha) — inclui `[humano]` criar projeto/DSN
 - [ ] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
 
-**Próximo gate:** T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)` / `(conta)` / `admin`. Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`. Execução bloqueada até autorização humana explícita.
 
 ### Checkpoint A — "Aplicação completa localmente"
 
