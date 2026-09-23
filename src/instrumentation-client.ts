@@ -19,6 +19,8 @@ export function onRouterTransitionStart(
   navigationType: 'push' | 'replace' | 'traverse',
 ) {
   if (publicEnv.NEXT_PUBLIC_SENTRY_DSN) {
-    Sentry.captureRouterTransitionStart(url, navigationType)
+    const suffixStart = url.search(/[?#]/)
+    const safeUrl = suffixStart < 0 ? url : url.slice(0, suffixStart)
+    Sentry.captureRouterTransitionStart(safeUrl, navigationType)
   }
 }

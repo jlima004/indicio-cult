@@ -23,6 +23,7 @@ describe('instrumentation do navegador', () => {
   beforeEach(() => {
     sentry.init.mockClear()
     sentry.replayIntegration.mockClear()
+    sentry.captureRouterTransitionStart.mockClear()
     for (const [key, value] of Object.entries(validPublicEnv)) {
       vi.stubEnv(key, value)
     }
@@ -60,5 +61,43 @@ describe('instrumentation do navegador', () => {
     expect(sentry.replayIntegration).not.toHaveBeenCalled()
     expect(options).not.toHaveProperty('replaysSessionSampleRate')
     expect(options).not.toHaveProperty('replaysOnErrorSampleRate')
+  })
+
+  it.each([
+    ['/conta/redefinir?token=synthetic-secret', '/conta/redefinir', 'push'],
+    ['/produto/abc#reviews', '/produto/abc', 'replace'],
+    ['/checkout?email=synthetic@example.invalid#payment', '/checkout', 'traverse'],
+    ['/colecoes', '/colecoes', 'push'],
+    [
+      'https://indiciocult.com.br/busca?token=synthetic-secret#synthetic@example.invalid',
+      'https://indiciocult.com.br/busca',
+      'replace',
+    ],
+  ] as const)(
+    'envia somente o caminho navegável de %s ao Sentry',
+    async (url, expectedUrl, navigationType) => {
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'https://public@example.invalid/2')
+      const { onRouterTransitionStart } = await loadClientInstrumentation()
+
+      onRouterTransitionStart(url, navigationType)
+
+      expect(sentry.captureRouterTransitionStart).toHaveBeenCalledExactlyOnceWith(
+        expectedUrl,
+        navigationType,
+      )
+      const forwardedUrl = sentry.captureRouterTransitionStart.mock.calls[0]?.[0] as string
+      expect(forwardedUrl).not.toContain('?')
+      expect(forwardedUrl).not.toContain('#')
+      expect(forwardedUrl).not.toContain('synthetic-secret')
+      expect(forwardedUrl).not.toContain('synthetic@example.invalid')
+    },
+  )
+
+  it('não encaminha transição ao Sentry sem DSN público', async () => {
+    const { onRouterTransitionStart } = await loadClientInstrumentation()
+
+    onRouterTransitionStart('/busca?token=synthetic-secret#synthetic@example.invalid', 'push')
+
+    expect(sentry.captureRouterTransitionStart).not.toHaveBeenCalled()
   })
 })
