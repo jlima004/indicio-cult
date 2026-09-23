@@ -17,7 +17,7 @@ Construir a base técnica da vitrine — Next.js 16 (App Router), Supabase, Dock
 - **Sem CI durante a Fase A.** O gate de qualidade é `npm run check` local antes de cada PR; a proteção da `main` com status check obrigatório entra em T17. Os PRs da Fase A são revisados manualmente.
 - **Fatias verticais.** Cada tarefa entrega algo observável (uma rota, um teste passando, um job verde), não uma camada horizontal.
 - **Tarefas humanas explícitas.** Token do Supabase CLI, DSN do Sentry, provisionamento do VPS e segredos do GitHub exigem credenciais que o agente não tem. Estão marcadas com `[humano]` e posicionadas para não bloquear o trabalho anterior.
-- **Logo vetorial.** Só existe `docs/logo.png` (1,2 MB). Até haver SVG, `Wordmark` é tipográfico e `Symbol` é um SVG simples desenhado à mão (quadrado com falha) — a substituição pelo arquivo oficial é troca de asset, não de componente.
+- **Logo vetorial.** A T10 exportou do Figma o SVG oficial da variante Hero em `public/images/og/indicio-cult-logo.svg` e gerou a composição Open Graph `public/images/og/indicio-cult.png`. `docs/logo.png` permanece; o `Wordmark` tipográfico, o `Symbol` SVG desenhado à mão e o favicon continuam provisórios. A substituição pelos assets oficiais será uma troca de asset, não de componente.
 - **Dependências de runtime adicionadas pelo plano:** `zod` (validação de env, já implícito no exemplo do spec §5), `@sentry/nextjs`, `@supabase/supabase-js`, `@supabase/ssr`, `zustand` (fixar versão, sem uso). Qualquer outra passa por "Perguntar antes".
 
 ## Grafo de dependências
@@ -50,11 +50,11 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [x] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
 - [x] T8 · Páginas de sistema: layout raiz, Home placeholder, 404, 500, manutenção
 - [x] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
-- [ ] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`
+- [x] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`
 - [ ] T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha) — inclui `[humano]` criar projeto/DSN
 - [ ] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
 
-**Próximo gate:** T10 · Human Review da remediação. Execução local autorizada; fechamento depende de Human Review, aprovação da PR e merge.
+**Próximo gate:** T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha). Execução bloqueada até autorização humana explícita.
 
 ### Checkpoint A — "Aplicação completa localmente"
 
@@ -105,10 +105,10 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 | `cacheComponents: true` exige `Suspense` em tudo que lê `cookies()`; `proxy.ts` + Supabase SSR podem gerar erro de build tardio | Médio                          | T8 já entrega `Suspense` no slot do layout; T9 é a primeira tarefa a tocar `cookies()` e valida `npm run build`                                                                                    |
 | Sem CI na Fase A, um PR pode entrar com `check` vermelho                                                                        | Baixo                          | Regra explícita em `todo.md`: `npm run check` local antes do PR; T17 torna isso obrigatório                                                                                                        |
 | Supabase CLI precisa de `SUPABASE_ACCESS_TOKEN` e projeto ativo                                                                 | Baixo                          | Falha ruidosa é desejável; `deploy/README.md` documenta                                                                                                                                            |
-| PNG do logo sem versão vetorial                                                                                                 | Baixo                          | `Wordmark` tipográfico e `Symbol` SVG provisórios                                                                                                                                                  |
+| Componentes da marca e favicon ainda sem assets vetoriais oficiais integrados                                                       | Baixo                          | SVG oficial da variante Hero disponível para Open Graph; `Wordmark`, `Symbol` e favicon seguem provisórios                                                                                                                                                  |
 
 ## Questões abertas
 
-1. **Logo vetorial:** existe SVG do wordmark e do símbolo? Sem ele, favicon e `Symbol` ficam provisórios.
+1. **Logo vetorial:** a variante Hero oficial já foi exportada do Figma para Open Graph. Ainda falta integrar as variantes vetoriais oficiais ao `Wordmark`, ao `Symbol` e ao favicon, que permanecem provisórios.
 2. **Provedor de analytics, monitor de uptime, fonte provisória, recursos do KVM 2** — herdadas do spec §12; nenhuma bloqueia este plano.
 3. **Acesso ao VPS:** IP público, usuário inicial e método de acesso (senha ou chave) — necessários em T15.
