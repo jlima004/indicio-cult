@@ -161,9 +161,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `curl /` contém `<title>`, `og:title`, `og:image` absoluto, `<link rel="canonical">`
-- [ ] `/robots.txt` e `/sitemap.xml` respondem 200 com conteúdo válido
-- [ ] `track('purchase', {...})` com payload errado não compila; teste garante que não lança em produção
+- [x] `curl /` contém `<title>`, `og:title`, `og:image` absoluto, `<link rel="canonical">`
+- [x] `/robots.txt` e `/sitemap.xml` respondem 200 com conteúdo válido
+- [x] `track('purchase', {...})` com payload errado não compila; teste garante que não lança em produção
 
 **Verificação:** `npm run test -- track`; `npm run build && npm run start` + `curl`.
 
