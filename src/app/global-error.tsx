@@ -1,6 +1,8 @@
 'use client'
 
+import * as Sentry from '@sentry/nextjs'
 import { Cormorant_Garamond, Inter } from 'next/font/google'
+import { useEffect, useRef } from 'react'
 
 import { Symbol } from '@/components/brand/Symbol'
 import { copy } from '@/lib/copy'
@@ -24,7 +26,16 @@ type GlobalErrorProps = {
   reset: () => void
 }
 
-export default function GlobalError({ reset }: GlobalErrorProps) {
+export default function GlobalError({ error, reset }: GlobalErrorProps) {
+  const reportedError = useRef<Error | null>(null)
+
+  useEffect(() => {
+    if (reportedError.current !== error) {
+      reportedError.current = error
+      Sentry.captureException(error)
+    }
+  }, [error])
+
   return (
     <html lang="pt-BR" className={`${inter.variable} ${cormorant.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-fg">

@@ -49,7 +49,7 @@ Versões fixadas no `package.json` com range `^` dentro da major indicada; o `pa
 | Testes             | Vitest + Testing Library                        | 5.x              | Unitário e componente (`jsdom`)                                                                                                                                          |
 | E2E                | Playwright                                      | 1.63.x           | Smoke contra build de produção local                                                                                                                                     |
 | Lint / format      | ESLint (flat) + `eslint-config-next` + Prettier | 9.x / 16.x / 3.x | Sem regras customizadas além do preset no início. ESLint 9 (não 10): `eslint-config-next` 16 depende de `eslint-plugin-react` 7.37, que quebra em ESLint 10 (2026-09-16) |
-| Erros              | `@sentry/nextjs`                                | 10.x             | DSN via env; desabilitado quando ausente                                                                                                                                 |
+| Erros              | `@sentry/nextjs`                                | 11.x             | DSN via env; desabilitado quando ausente                                                                                                                                 |
 | Proxy TLS          | Caddy                                           | 2.x              | Container no mesmo `compose`; TLS automático (Let's Encrypt)                                                                                                             |
 | CI/CD              | GitHub Actions + GHCR                           | —                | Build multi-stage, push por SHA e `latest`, deploy via SSH                                                                                                               |
 
@@ -340,7 +340,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.6 Observabilidade
 
-- Sentry: `instrumentation.ts` e `instrumentation-client.ts`; `tracesSampleRate` 0.1; `environment` = `production` | `development`; `release` = `APP_VERSION`; PII desligado. `error.tsx` reporta via `Sentry.captureException`.
+- Sentry: `instrumentation.ts` e `instrumentation-client.ts`; `tracesSampleRate` 0.1; `environment` = `production` | `development`; `release` = `APP_VERSION`; `dataCollection` restritivo no SDK 11.x mantém PII desligado, conforme a intenção original de `sendDefaultPii: false`. `error.tsx` reporta via `Sentry.captureException`.
 - `track(event, payload)`: assinatura tipada com o union dos eventos do PRD §14 (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, `sign_up`, `newsletter_subscribe`, `exchange_requested`); implementação no-op que loga em `development`. Provedor real é decisão futura (Questões abertas).
 - Logs de servidor em JSON de uma linha (`console.log` com objeto); Caddy loga acesso em JSON para o volume.
 

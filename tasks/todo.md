@@ -173,7 +173,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T11 · Sentry
 
-**Descrição:** `@sentry/nextjs` com `instrumentation.ts`, `instrumentation-client.ts`, `withSentryConfig` em `next.config.ts` (sem upload de source maps até haver token), `tracesSampleRate` 0.1, `sendDefaultPii: false`, `release` = `APP_VERSION`, desligado quando o DSN está ausente; `error.tsx` e `global-error.tsx` chamam `Sentry.captureException`. `[humano]`: criar projeto no Sentry e obter DSN (para o `.env` local agora; do VPS em T15).
+**Descrição:** `@sentry/nextjs` 11.x com `instrumentation.ts`, `instrumentation-client.ts`, `withSentryConfig` em `next.config.ts` (sem upload de source maps até haver token), `tracesSampleRate` 0.1, `dataCollection` restritivo (sem coleta automática de PII; substitui o requisito original de `sendDefaultPii: false`), `release` = `APP_VERSION`, desligado quando o DSN está ausente; `error.tsx` e `global-error.tsx` chamam `Sentry.captureException`. `[humano]`: criar projeto no Sentry e obter DSN (para o `.env` local agora; do VPS em T15).
 
 **Aceite:**
 

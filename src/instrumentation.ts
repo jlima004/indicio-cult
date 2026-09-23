@@ -7,3 +7,19 @@ export async function register() {
     await registerNode()
   }
 }
+
+// Next 16 captura erros de Server Components pelo hook de instrumentação.
+// O bootstrap já validou o ambiente; sem DSN não carregamos o transporte.
+export const onRequestError: import('next').Instrumentation.onRequestError = async (
+  error,
+  request,
+  context,
+) => {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return
+  const { env } = await import('@/lib/env')
+  if (!env.SENTRY_DSN) return
+  const { captureRequestError } = await import('@sentry/nextjs')
+  // O SDK copia request.path para um contexto próprio, fora do filtro
+  // dataCollection.urlQueryParams. Remover query e fragmento aqui.
+  captureRequestError(error, { ...request, path: request.path.replace(/[?#].*$/, '') }, context)
+}

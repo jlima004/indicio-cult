@@ -28,6 +28,7 @@
     "check": "npm run lint && npm run lint:runtime && npm run lint:tokens && npm run format:check && npm run typecheck && npm run test:runtime && npm run test:tokens && npm run test"
   },
   "dependencies": {
+    "@sentry/nextjs": "^11.0.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "next": "^16.3.5",
