@@ -1,5 +1,8 @@
 'use client'
 
+import * as Sentry from '@sentry/nextjs'
+import { useEffect, useRef } from 'react'
+
 import { Symbol } from '@/components/brand/Symbol'
 import { copy } from '@/lib/copy'
 
@@ -8,7 +11,16 @@ type ErrorPageProps = {
   reset: () => void
 }
 
-export default function ErrorPage({ reset }: ErrorPageProps) {
+export default function ErrorPage({ error, reset }: ErrorPageProps) {
+  const reportedError = useRef<Error | null>(null)
+
+  useEffect(() => {
+    if (reportedError.current !== error) {
+      reportedError.current = error
+      Sentry.captureException(error)
+    }
+  }, [error])
+
   return (
     <main className="flex min-h-dvh flex-1 items-center justify-center px-8 py-16">
       <div className="flex w-full max-w-[35rem] flex-col items-center gap-6 bg-card text-center sm:gap-7">

@@ -1,9 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { Children, isValidElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import GlobalError from '@/app/global-error'
 import { copy } from '@/lib/copy'
+
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }))
+vi.mock('@sentry/nextjs', () => ({ captureException }))
 
 vi.mock('next/font/google', () => ({
   Cormorant_Garamond: () => ({ variable: 'font-cormorant' }),
@@ -11,22 +13,30 @@ vi.mock('next/font/google', () => ({
 }))
 
 describe('Global Error', () => {
-  it('é autossuficiente em html/body, usa a copy canônica e permite retry por reset', () => {
+  it('reporta uma vez por erro, mesmo após rerender, e reporta um novo erro', () => {
+    captureException.mockClear()
+    const first = new Error('primeira falha global')
+    const second = new Error('segunda falha global')
     const reset = vi.fn()
-    const documentElement = GlobalError({
-      error: new Error('falha global de teste'),
-      reset,
+    const view = render(<GlobalError error={first} reset={reset} />, {
+      container: document,
     })
 
-    expect(documentElement.type).toBe('html')
-    const body = Children.only(documentElement.props.children)
-    expect(isValidElement(body) && body.type).toBe('body')
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(first)
+    view.rerender(<GlobalError error={first} reset={reset} />)
+    expect(captureException).toHaveBeenCalledTimes(1)
+    view.rerender(<GlobalError error={second} reset={reset} />)
+    expect(captureException).toHaveBeenNthCalledWith(2, second)
+  })
 
-    if (!isValidElement<{ children: ReactNode }>(body)) {
-      throw new Error('Global Error deve renderizar um body válido')
-    }
+  it('é autossuficiente em html/body, usa a copy canônica e permite retry por reset', () => {
+    const reset = vi.fn()
+    render(<GlobalError error={new Error('falha global de teste')} reset={reset} />, {
+      container: document,
+    })
 
-    render(body.props.children)
+    expect(document.documentElement).toHaveAttribute('lang', 'pt-BR')
+    expect(document.body).toHaveClass('bg-bg', 'text-fg')
 
     const headings = screen.getAllByRole('heading', { level: 1 })
     expect(headings).toHaveLength(1)
