@@ -109,12 +109,12 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   │   ├── not-found.tsx              # 404: "Esse rastro não leva a lugar nenhum."
 │   │   ├── error.tsx                  # 500 (client boundary, copy da marca)
 │   │   ├── global-error.tsx
-│   │   ├── manutencao/page.tsx        # alvo do rewrite em modo manutenção
+│   │   ├── manutencao/page.tsx        # HTML da resposta terminal em modo manutenção
 │   │   ├── (vitrine)/
 │   │   │   ├── layout.tsx             # cabeçalho + rodapé públicos (placeholders)
 │   │   │   └── page.tsx               # Home placeholder: wordmark + assinatura
 │   │   ├── (conta)/layout.tsx         # reservado a `identity`; exige sessão (proxy.ts)
-│   │   ├── admin/layout.tsx           # reservado a `admin`; exige papel admin (proxy.ts)
+│   │   ├── admin/layout.tsx           # reservado a `admin`; exige sessão (proxy.ts); autorização por papel pertence ao módulo responsável
 │   │   ├── api/health/route.ts        # GET → { status, version, supabase: 'ok'|'error' }
 │   │   ├── robots.ts
 │   │   └── sitemap.ts                 # apenas Home por enquanto
@@ -305,7 +305,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 - `/` (Home placeholder): wordmark empilhado, assinatura _"Arte para quem reconhece o indício."_, nada mais. Sem navegação funcional.
 - `not-found.tsx`: símbolo da marca, "Esse rastro não leva a lugar nenhum.", link para a Home.
 - `error.tsx` / `global-error.tsx`: copy neutra da marca, botão "Tentar de novo", reporte ao Sentry.
-- `/manutencao`: copy da marca; `proxy.ts` reescreve toda rota não-`/api/health` para ela com status 503 e `Retry-After` quando `MAINTENANCE_MODE=true`.
+- `/manutencao`: copy da marca; quando `MAINTENANCE_MODE=true`, `proxy.ts` responde terminalmente às rotas não-`/api/health` com status 503, `Retry-After` e o HTML da página de manutenção.
 - `robots.ts` e `sitemap.ts` mínimos; `metadata` padrão no `layout.tsx` (título, descrição, Open Graph com o logo, `lang="pt-BR"`).
 
 ### 8.2 Healthcheck

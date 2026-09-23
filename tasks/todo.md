@@ -141,7 +141,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T9 · `proxy.ts` e grupos de rota
 
-**Descrição:** Criar `src/app/(vitrine)/layout.tsx` (cabeçalho/rodapé placeholders) e mover a Home para lá; `(conta)/layout.tsx` e `admin/layout.tsx` só com comentário do módulo dono. `proxy.ts` na raiz com ordem: (1) `MAINTENANCE_MODE=true` → rewrite para `/manutencao` com 503 e `Retry-After`, exceto `/api/health`; (2) refresh de sessão Supabase (`getClaims()`); (3) sem sessão em `/conta/*` ou `/admin/*` → redirect `/` com `TODO(identity)`. Regras puras em `src/lib/proxy/rules.ts` com testes. Matcher exclui `_next/static`, `_next/image`, `favicon.ico`.
+**Descrição:** Criar `src/app/(vitrine)/layout.tsx` (cabeçalho/rodapé placeholders) e mover a Home para lá; `(conta)/layout.tsx` e `admin/layout.tsx` só com comentário do módulo dono. `src/proxy.ts` com ordem: (1) `MAINTENANCE_MODE=true` → resposta terminal 503 usando o HTML da página `/manutencao`, com `Retry-After`, exceto `/api/health`; (2) refresh de sessão Supabase (`getClaims()`); (3) sem sessão em `/conta/*` ou `/admin/*` → redirect `/` com `TODO(identity)`. Regras puras em `src/lib/proxy/rules.ts` com testes. Matcher exclui `_next/static`, `_next/image`, `favicon.ico`.
 
 **Aceite:**
 
@@ -151,7 +151,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Verificação:** `npm run build && MAINTENANCE_MODE=true npm run start` + `curl -I`; `npm run test -- proxy`.
 
-**Dependências:** T5, T8 · **Arquivos:** `proxy.ts`, `src/lib/proxy/rules.ts`, `src/app/(vitrine)/layout.tsx`, `src/app/(conta)/layout.tsx`, `src/app/admin/layout.tsx`, `tests/unit/lib/proxy.test.ts` · **Tamanho:** M
+**Dependências:** T5, T8 · **Arquivos:** `src/proxy.ts`, `src/lib/proxy/rules.ts`, `src/app/(vitrine)/layout.tsx`, `src/app/(conta)/layout.tsx`, `src/app/admin/layout.tsx`, `tests/unit/lib/proxy.test.ts` · **Tamanho:** M
 
 ---
 
