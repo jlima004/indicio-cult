@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import Home from '@/app/page'
+import Home from '@/app/(vitrine)/page'
 
 describe('Home (placeholder da Foundation)', () => {
   it('renderiza o Wordmark empilhado e a assinatura da marca em um único h1', () => {
