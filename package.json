@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:runtime": "node --test tests/tooling/check-node-runtime.test.mjs",
     "test:tokens": "node --test tests/tooling/lint-tokens.test.mjs",
     "test:watch": "vitest",
@@ -39,6 +40,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "~1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
