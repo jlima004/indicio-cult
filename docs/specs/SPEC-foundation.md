@@ -1,13 +1,13 @@
 # Spec: `foundation` — base técnica da vitrine Indicio Cult
 
-| Campo         | Valor                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------- |
-| Módulo        | `foundation` (ver [mapa de capacidades](./CAPABILITY-MAP.md))                                     |
-| Depende de    | —                                                                                                 |
-| Consumido por | todos os demais módulos                                                                           |
-| Origem        | [PRD §8, §14](../PRD.md); [ADR-001](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md) |
-| Status        | Aprovado (2026-09-16)                                                                             |
-| Data          | 2026-09-16                                                                                        |
+| Campo         | Valor                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Módulo        | `foundation` (ver [mapa de capacidades](./CAPABILITY-MAP.md))                                                                                                |
+| Depende de    | —                                                                                                                                                            |
+| Consumido por | todos os demais módulos                                                                                                                                      |
+| Origem        | [PRD §8, §14](../PRD.md); [ADR-001](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md); [ADR-002](../decisions/ADR-002-coolify-traefik-deploy.md) |
+| Status        | Aprovado em 2026-09-16; arquitetura de deploy readjudicada em 2026-09-24                                                                                     |
+| Data          | 2026-09-16 (aprovação original); revisão de deploy: 2026-09-24                                                                                               |
 
 ---
 
@@ -17,9 +17,9 @@ Entregar o esqueleto executável sobre o qual todos os módulos do MVP são cons
 
 **Para quem.** A operadora/desenvolvedora (P4) e os agentes que implementarão os módulos seguintes. Este módulo não tem usuário final; seu "cliente" é o próximo módulo da ordem de construção.
 
-**Por que agora.** PRD e ADR-001 fecharam o quê e a stack. Supabase e VPS já existem. Sem uma fundação com critérios verificáveis, cada módulo decidiria estrutura, tooling e deploy por conta própria.
+**Por que agora.** PRD e ADR-001 fecharam o quê e a stack; ADR-002 readjudicou o deploy após confirmar Coolify/Traefik na VPS. Supabase e VPS já existem. Sem uma fundação com critérios verificáveis, cada módulo decidiria estrutura, tooling e deploy por conta própria.
 
-**Sucesso em uma frase.** `git push` na `main` resulta, sem intervenção manual, em uma imagem publicada e em execução no VPS, servindo a 404 da marca sobre HTTPS válido, com `GET /api/health` confirmando conexão ao Supabase e a CI verde (lint, tipos, testes unitários, smoke e2e).
+**Sucesso em uma frase.** Push/merge na `main` passa pela CI e só então fixa o SHA aprovado e aciona o deploy pela API Coolify; o recurso Dockerfile na VPS serve a 404 da marca sobre HTTPS via Traefik, com `GET /api/health` confirmando Supabase e o SHA aprovado.
 
 ### Fora de escopo deste módulo
 
@@ -28,7 +28,7 @@ Entregar o esqueleto executável sobre o qual todos os módulos do MVP são cons
 - Paleta e tipografia definitivas (tokens provisórios apenas).
 - Integrações Nuvemshop, Reserva Ink, e-mail, analytics real, Google OAuth.
 - Staging, múltiplas réplicas, CDN, cache handler distribuído.
-- Domínio definitivo (usa subdomínio `sslip.io` derivado do IP até haver domínio).
+- Escolha/compra do domínio definitivo; T15 configura um domínio apontado para a VPS no Coolify (DNS temporário é opcional).
 
 ---
 
@@ -50,8 +50,8 @@ Versões fixadas no `package.json` com range `^` dentro da major indicada; o `pa
 | E2E                | Playwright                                      | 1.63.x           | Smoke contra build de produção local                                                                                                                                     |
 | Lint / format      | ESLint (flat) + `eslint-config-next` + Prettier | 9.x / 16.x / 3.x | Sem regras customizadas além do preset no início. ESLint 9 (não 10): `eslint-config-next` 16 depende de `eslint-plugin-react` 7.37, que quebra em ESLint 10 (2026-09-16) |
 | Erros              | `@sentry/nextjs`                                | 11.x             | DSN via env; desabilitado quando ausente                                                                                                                                 |
-| Proxy TLS          | Caddy                                           | 2.x              | Container no mesmo `compose`; TLS automático (Let's Encrypt)                                                                                                             |
-| CI/CD              | GitHub Actions + GHCR                           | —                | Build multi-stage, push por SHA e `latest`, deploy via SSH                                                                                                               |
+| Proxy TLS          | Traefik gerenciado pelo Coolify                 | 3.6 no host      | Roteamento e TLS da VPS compartilhada; sem proxy da aplicação                                                                                                            |
+| CI/CD              | GitHub Actions + API Coolify                    | —                | CI verde, commit pinado e verificado antes do deploy; Coolify constrói do Git com Dockerfile                                                                             |
 
 **Amendment ao ADR-001 §2.** O mecanismo de cache passa a ser `use cache` + `cacheTag` + `revalidateTag` (Cache Components), não `fetch` com `next.tags`. A estratégia (cache por tag, revalidação sob demanda por webhook/backoffice, tempo como rede de segurança) é a mesma. Nota registrada no ADR-001 em 2026-09-16.
 
@@ -91,11 +91,7 @@ npm run db:new -- <nome>    # supabase migration new <nome>
 npm run check               # lint + lint:runtime + lint:tokens + format:check + typecheck + test:runtime + test:tokens + test
 ```
 
-Docker é executado apenas na CI e no VPS (não há Docker neste WSL):
-
-```bash
-docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/docker-compose.yml up -d
-```
+Dockerfile é validado na CI e construído pelo Coolify na VPS (Docker local não é pré-requisito da T13). O runbook está em [`deploy/README.md`](../../deploy/README.md).
 
 ---
 
@@ -152,12 +148,11 @@ docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/doc
 │   └── e2e/                           # Playwright: health, 404, home, manutenção
 ├── deploy/
 │   ├── Dockerfile                     # multi-stage, standalone, non-root, HEALTHCHECK
-│   ├── docker-compose.yml             # app + caddy; volumes: caddy_data, next_cache
-│   ├── Caddyfile                      # {$SITE_HOST} → app:3000; cabeçalhos de segurança
-│   └── README.md                      # provisionamento do VPS (passo a passo, único)
+│   ├── traefik-security-headers.yml   # template Dynamic Configuration; aplicação humana T15
+│   └── README.md                      # runbook do recurso Coolify, domínio/TLS e deploy
 ├── .github/workflows/
 │   ├── ci.yml                         # PR e push: npm run check + build + e2e
-│   └── deploy.yml                     # push na main: build imagem → GHCR → SSH → compose up
+│   └── deploy.yml                     # futuro: CI verde → pin Coolify → deploy API → health/SHA
 ├── docs/                              # PRD, ADRs, specs (já existe)
 ├── .env.example
 ├── .nvmrc / .node-version             # pin local idêntico; deve satisfazer engines.node
@@ -218,7 +213,7 @@ export const serverSchema = z.object({
 export const env = parseEnv(serverSchema, process.env)
 ```
 
-Onde a validação acontece: as variáveis **públicas** são inlinadas no bundle e precisam existir na CI — o layout raiz lê `publicEnv`, então `next build` falha nomeando a ausente. As de **servidor** só existem no VPS — `src/instrumentation.ts` usa o `NEXT_RUNTIME` documentado pelo Next para importar `src/instrumentation.node.ts` somente sob `nodejs`. O bootstrap Node importa `@/lib/env` e, em falha, loga e chama `process.exit(1)` (apenas rejeitar a Promise pode deixar o processo vivo sem atender). Assim, nenhuma API Node-only entra no caminho Edge.
+Onde a validação acontece: as variáveis **públicas** são inlinadas no bundle e precisam existir na CI e no build Coolify — o layout raiz lê `publicEnv`, então `next build` falha nomeando a ausente. Em produção, `SUPABASE_SERVICE_ROLE_KEY` é segredo real obrigatório no runtime Coolify. Na foundation CI, os servidores `next start` do E2E recebem a sentinela literal não secreta `ci-unused-foundation-e2e` para satisfazer o bootstrap: health usa cliente anon e Home, 404, manutenção e setup Playwright não usam `admin.ts`. A sentinela não autentica no Supabase, não serve para testes admin e exige readjudicação quando a suíte exercitar operações com service role. `src/instrumentation.ts` usa o `NEXT_RUNTIME` documentado pelo Next para importar `src/instrumentation.node.ts` somente sob `nodejs`. O bootstrap Node importa `@/lib/env` e, em falha, loga e chama `process.exit(1)` (apenas rejeitar a Promise pode deixar o processo vivo sem atender). Assim, nenhuma API Node-only entra no caminho Edge.
 
 ```tsx
 // src/app/not-found.tsx
@@ -253,17 +248,17 @@ Convenções:
 
 ## 6. Estratégia de testes
 
-| Nível                      | Ferramenta                                       | O que cobre nesta fundação                                                                                                                                                                                                 | Onde               |
-| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| Unitário                   | Vitest                                           | `env` (falha em env inválida), seleção Node/Edge e fail-fast da `instrumentation`, `rate-limit`, `track` e `copy`                                                                                                          | `tests/unit/**`    |
-| Componente                 | Vitest + Testing Library (`jsdom`)               | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade                                                                                                                                      | `tests/unit/**`    |
-| Contrato de tooling        | `node:test`                                      | Pins/faixa Node e engines aplicáveis do lockfile; scanner de tokens com casos positivos, negativos e mutação real do CLI                                                                                                   | `tests/tooling/**` |
-| Smoke E2E                  | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**`     |
-| Contrato de infraestrutura | Shell na CI                                      | Imagem constrói; container sobe; `HEALTHCHECK` passa em ≤ 30s; processo não roda como root                                                                                                                                 | `deploy.yml`       |
+| Nível                      | Ferramenta                                       | O que cobre nesta fundação                                                                                                                                                                                                 | Onde                   |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Unitário                   | Vitest                                           | `env` (falha em env inválida), seleção Node/Edge e fail-fast da `instrumentation`, `rate-limit`, `track` e `copy`                                                                                                          | `tests/unit/**`        |
+| Componente                 | Vitest + Testing Library (`jsdom`)               | `not-found`, `EmptyState`, `Symbol` renderizam com copy e atributos de acessibilidade                                                                                                                                      | `tests/unit/**`        |
+| Contrato de tooling        | `node:test`                                      | Pins/faixa Node e engines aplicáveis do lockfile; scanner de tokens com casos positivos, negativos e mutação real do CLI                                                                                                   | `tests/tooling/**`     |
+| Smoke E2E                  | Playwright (Chromium, viewport mobile e desktop) | `GET /api/health` → 200 e `supabase: 'ok'`; `/rota-inexistente` → 404 com copy da marca; `/` → 200 com wordmark; `MAINTENANCE_MODE=true` → toda rota pública responde 503 com a página de manutenção, exceto `/api/health` | `tests/e2e/**`         |
+| Contrato de infraestrutura | CI + health público                              | Dockerfile constrói em CI; Coolify executa `USER node`, porta 3000 e health; T16 verifica SHA implantado                                                                                                                   | `ci.yml`, `deploy.yml` |
 
 Cobertura: sem meta numérica na fundação (há pouco código); a meta será fixada em `CONSTRAINTS.md` quando `catalog` entrar. O que existe de lógica (env, rate limit) tem teste.
 
-E2E roda contra `next build && next start` (não `dev`), com Supabase apontando para o projeto real via secrets da CI — o healthcheck é o único acesso e é somente leitura.
+E2E roda contra `next build && next start` (não `dev`), com URL e anon key públicas apontando para o projeto Supabase de teste real via GitHub Variables ou valores de workflow — o healthcheck é o único acesso e é somente leitura. A sentinela de service role é literal do workflow, não GitHub Secret.
 
 ---
 
@@ -276,14 +271,14 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
   `process.env.NEXT_RUNTIME` em `src/instrumentation.ts`, conforme a API de seleção de runtime do
   Next.
 - Manter `.env.example` sincronizado com os schemas de `src/lib/env/` (teste unitário compara as chaves).
-- Executar o container como usuário não-root, com `HEALTHCHECK` e `restart: unless-stopped`.
+- Executar o container como usuário não-root, com `HEALTHCHECK`; reinício e ciclo de vida são geridos pelo Coolify.
 - Escrever copy de sistema no tom do PRD §3 (sem exclamações, sem emoji, sem "Ops!").
 
 **Perguntar antes**
 
 - Adicionar dependência de runtime (dev-deps de tooling podem entrar com justificativa no PR).
 - Alterar `next.config.ts` além do previsto aqui (`output`, `cacheComponents`, `images`).
-- Mudar o fluxo de deploy, o `Caddyfile` ou o `docker-compose.yml`.
+- Mudar o fluxo de deploy, o Dockerfile, o recurso Coolify ou a configuração Traefik compartilhada.
 - Criar qualquer tabela, função ou política no Supabase (pertence aos módulos).
 - Subir major de Next, React, TypeScript ou Tailwind.
 
@@ -291,9 +286,9 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 - Commitar `.env`, chaves, DSN ou tokens (inclusive em testes ou fixtures).
 - Expor `SUPABASE_SERVICE_ROLE_KEY` ou qualquer segredo em código com `'use client'` ou com prefixo `NEXT_PUBLIC_`.
-- Rodar a aplicação como root ou publicar a porta do Next diretamente (só o Caddy expõe 80/443).
+- Rodar a aplicação como root, publicar a porta 3000 no host ou criar outro proxy público; o Traefik do Coolify ocupa 80/443.
 - Desabilitar `strict`, remover testes falhando ou adicionar `eslint-disable` para "passar a CI".
-- Fazer deploy manual fora do pipeline (o VPS é descartável; o pipeline é a única fonte de verdade).
+- Contornar a CI com Auto Deploy do Coolify; produção é acionada pelo workflow após CI verde.
 
 ---
 
@@ -310,7 +305,7 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.2 Healthcheck
 
-- `GET /api/health` → `200 { status: 'ok', version: <git sha>, supabase: 'ok' }` quando um probe somente leitura ao Data API via cliente servidor (anon key) responde em ≤ 2s; caso contrário `503 { status: 'degraded', supabase: 'error' }`. Enquanto o schema `public` estiver vazio, o probe consulta uma relação sentinela inexistente e aceita `PGRST205` como prova de que o PostgREST alcançou o schema cache; isso evita criar tabela ou função só para o healthcheck. Sem cache (`connection()`/dinâmico). Usado pelo `HEALTHCHECK` do Docker, pelo Caddy e pelo monitor externo de uptime.
+- `GET /api/health` → `200 { status: 'ok', version: <git sha>, supabase: 'ok' }` quando um probe somente leitura ao Data API via cliente servidor (anon key) responde em ≤ 2s; caso contrário `503 { status: 'degraded', supabase: 'error' }`. Enquanto o schema `public` estiver vazio, o probe consulta uma relação sentinela inexistente e aceita `PGRST205` como prova de que o PostgREST alcançou o schema cache; isso evita criar tabela ou função só para o healthcheck. Sem cache (`connection()`/dinâmico). Usado pelo `HEALTHCHECK` do Docker, pela verificação pós-deploy e pelo monitor externo de uptime.
 
 ### 8.3 Supabase
 
@@ -321,17 +316,23 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.4 Variáveis de ambiente
 
-| Variável                               | Escopo             | Obrigatória                | Uso                                          |
-| -------------------------------------- | ------------------ | -------------------------- | -------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`                 | público            | sim                        | canonical, Open Graph, sitemap               |
-| `NEXT_PUBLIC_SUPABASE_URL`             | público            | sim                        | clientes Supabase                            |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`        | público            | sim                        | clientes Supabase                            |
-| `SUPABASE_SERVICE_ROLE_KEY`            | servidor           | sim                        | `admin.ts`                                   |
-| `SUPABASE_PROJECT_ID`                  | tooling            | sim (local/CI)             | `db:types`, `db:migrate`                     |
-| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | servidor / público | não                        | Sentry desligado se ausente                  |
-| `MAINTENANCE_MODE`                     | servidor           | não (`false`)              | `proxy.ts`                                   |
-| `SITE_HOST`                            | deploy             | sim                        | Caddy (`<ip>.sslip.io` até haver domínio)    |
-| `APP_VERSION`                          | deploy             | sim (`dev` fora da imagem) | git sha injetado no build; exposto no health |
+| Variável                                                     | Escopo no Coolify                 | Uso                                                           |
+| ------------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`                                       | Build + Runtime                   | URL canônica, igual ao domínio público configurado no Coolify |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`  | Build + Runtime                   | Clientes Supabase; valores públicos                           |
+| `NEXT_PUBLIC_SENTRY_DSN`                                     | Build + Runtime, opcional         | Sentry no navegador                                           |
+| `SUPABASE_SERVICE_ROLE_KEY`                                  | Runtime only                      | `admin.ts`; nunca no build                                    |
+| `SENTRY_DSN`                                                 | Runtime only, opcional            | Sentry no servidor                                            |
+| `MAINTENANCE_MODE`                                           | Runtime only (`false` por padrão) | Resposta terminal 503 na vitrine                              |
+| `APP_VERSION=$SOURCE_COMMIT`                                 | Build + Runtime                   | SHA do commit implantado; `dev` fora do deploy                |
+| `SOURCE_COMMIT`                                              | Predefinida pelo Coolify          | Commit do Git; incluir no build em Advanced                   |
+| `SUPABASE_PROJECT_ID`, `SUPABASE_ACCESS_TOKEN`               | Tooling local/CI                  | CLI, tipos e migrações; não são env da aplicação              |
+| `COOLIFY_API_URL`, `COOLIFY_APP_UUID`, URL pública de health | GitHub Variables (T15)            | Endereço/UUID da automação T16; não são env da aplicação      |
+| `COOLIFY_CONFIG_TOKEN`, `COOLIFY_DEPLOY_TOKEN`               | GitHub Secrets (T15)              | Read/write e deploy separados; não são env da aplicação       |
+
+Configurar as variáveis públicas também como Build Variables, pois o Next as embute no build. Desabilitar Build Variable para segredos de servidor (a UI habilita Build e Runtime por padrão). Para `APP_VERSION`, habilitar **Include Source Commit in Build**, manter expansão de `$SOURCE_COMMIT` (Literal desligado) e **Inject Build Args to Dockerfile** desligado porque os `ARG` são declarados explicitamente. `NEXT_PUBLIC_SITE_URL` é a fonte da URL na aplicação; o domínio/porta interna pertencem ao recurso Coolify. O teste mantém `.env.example` alinhado aos schemas.
+
+Na CI, `NEXT_PUBLIC_SITE_URL` pode ser `http://127.0.0.1:3000`, compatível com o Playwright atual. `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` são públicos, não segredos de servidor. `SUPABASE_PROJECT_ID` é identificador de tooling; `SUPABASE_ACCESS_TOKEN` é segredo de tooling para `db:types`. A service role real continua obrigatória apenas no runtime de produção; a sentinela E2E não altera o schema.
 
 ### 8.5 Tokens de design
 
@@ -340,9 +341,10 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.6 Observabilidade
 
-- Sentry: `instrumentation.ts` e `instrumentation-client.ts`; `tracesSampleRate` 0.1; `environment` = `production` | `development`; `release` = `APP_VERSION`; `dataCollection` restritivo no SDK 11.x mantém PII desligado, conforme a intenção original de `sendDefaultPii: false`. `error.tsx` reporta via `Sentry.captureException`.
-- `track(event, payload)`: assinatura tipada com o union dos eventos do PRD §14 (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, `sign_up`, `newsletter_subscribe`, `exchange_requested`); implementação no-op que loga em `development`. Provedor real é decisão futura (Questões abertas).
-- Logs de servidor em JSON de uma linha (`console.log` com objeto); Caddy loga acesso em JSON para o volume.
+- Sentry: `instrumentation.ts` e `instrumentation-client.ts`; `tracesSampleRate` 0.1; `environment` = `production` | `development`; `release` = `APP_VERSION`. DSNs ausentes desligam a integração correspondente.
+- Logs de servidor em JSON de uma linha (`console.log` com objeto).
+- Access logs são responsabilidade do Traefik compartilhado. O baseline fornecido não comprova que estejam habilitados. JSON é o formato desejado caso a plataforma os habilite, mas configuração de access log é global/estática e pode afetar outras aplicações. T15/T17 registram evidência ou decisão humana; T13 não altera o proxy global.
+- Monitor externo consulta `/api/health`; a versão da resposta deve corresponder ao commit efetivamente implantado.
 
 ### 8.7 Rate limit
 
@@ -350,24 +352,23 @@ E2E roda contra `next build && next start` (não `dev`), com Supabase apontando 
 
 ### 8.8 Docker e proxy
 
-- `Dockerfile` multi-stage: `deps` (npm ci) → `build` (next build, `NEXT_TELEMETRY_DISABLED=1`, `APP_VERSION` como build arg) → `runner` (`node:22-alpine`, copia `.next/standalone`, `.next/static`, `public`; `USER node`; `EXPOSE 3000`; `HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1`).
-- `docker-compose.yml`: serviços `app` (imagem `ghcr.io/jlima004/indicio-cult:<sha>`, `env_file: .env`, volume `next_cache:/app/.next/cache`, sem `ports`) e `caddy` (`caddy:2`, portas 80/443, volumes `caddy_data`, `caddy_config`, `./Caddyfile`); rede interna; `restart: unless-stopped` em ambos.
-- `Caddyfile`: `{$SITE_HOST}` → `reverse_proxy app:3000`; `encode zstd gzip`; cabeçalhos `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` restritivo; `-Server`. CSP fica para quando houver scripts de terceiros (Questões abertas).
-- `deploy/README.md`: provisionamento único do VPS (usuário não-root com sudo, Docker Engine + Compose, firewall 22/80/443, `fail2ban`, chave SSH da CI, pasta `/srv/indicio-cult` com `.env` e `docker-compose.yml`, `SITE_HOST`).
+- `deploy/Dockerfile` multi-stage em `node:22-alpine`: `deps` com `npm ci`, `build` com Next `standalone`, `runner` com `.next/standalone`, `.next/static` e `public`; `USER node`, `HOSTNAME=0.0.0.0`, porta interna `3000`, `HEALTHCHECK` real em `/api/health`. O cache `/app/.next/cache` é gravável pelo usuário. Nenhum segredo de servidor é build arg.
+- O recurso Coolify é **Git repository + Dockerfile Build Pack**, Base Directory `/`, Dockerfile Location `/deploy/Dockerfile`, branch `main` e Ports Exposes `3000`. Nenhum host port é publicado. Para o domínio, usar o formato documentado `https://<domínio>:3000` no Coolify: o sufixo escolhe a porta **interna**; HTTPS público continua 443.
+- O Coolify gera a rota no Traefik compartilhado e administra TLS. Não há Compose, Caddy nem outro reverse proxy da aplicação.
+- Os headers `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy` e `Permissions-Policy` usam middleware Traefik específico do projeto. O template em `deploy/traefik-security-headers.yml` é aplicado manualmente como Dynamic Configuration em T15. A documentação atual do Coolify exige desabilitar Readonly labels para anexá-lo ao router HTTPS gerado; preservar os middlewares existentes e validar o resultado. Não editar `/data/coolify/proxy/docker-compose.yml` automaticamente.
+- Persistência opcional do cache via Coolify Persistent Storage > Volume Mount em `/app/.next/cache`, com escrita pelo usuário `node`. Cache pode ser reconstruído; não é backup nem dado de negócio. Observar crescimento, inicialmente ~1 GB.
+- `deploy/README.md` documenta configuração e verificação futuras; T13 não acessa a VPS nem executa deploy.
 
 ### 8.9 CI/CD (GitHub Actions)
 
-- `ci.yml` em PR e push: `npm ci` → `npm run check` → `npm run build` → `npm run test:e2e`; `db:types` + `git diff --exit-code`; cache do npm e do Playwright.
-- `deploy.yml` em push na `main` (após `ci.yml` verde, via `workflow_run` ou job dependente): build da imagem com `APP_VERSION=${{ github.sha }}`, push para GHCR com tags `sha` e `latest`; SSH no VPS (`appleboy/ssh-action` ou `ssh` puro com chave em secret); `docker compose pull && docker compose up -d --remove-orphans`; espera `GET https://$SITE_HOST/api/health` responder 200 em ≤ 90s, senão o job falha (o deploy anterior continua rodando porque `up -d` só troca o container se a imagem nova subir; rollback documentado = `docker compose up -d` com a tag anterior).
-- Aquecimento pós-deploy (ADR-001): `curl` na Home após health ok.
-- Secrets no GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SITE_HOST`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_PROJECT_ID`, `SUPABASE_ACCESS_TOKEN` (CLI). O `.env` de produção vive **só no VPS**; a CI não o conhece.
+- `ci.yml` em PR/push: `npm ci`, `npm run check`, `npm run build`, E2E, `db:types` diff, gitleaks, varredura de segredo do bundle e `docker build -f deploy/Dockerfile` sem publicação. O build recebe `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, opcionalmente `NEXT_PUBLIC_SENTRY_DSN`, e `APP_VERSION=github.sha`; nenhum segredo de servidor. URL/chave Supabase públicas devem alcançar o projeto de teste real. `SUPABASE_PROJECT_ID` (Variable) e `SUPABASE_ACCESS_TOKEN` (Secret) são exclusivos do passo `db:types`. Um subgate `[humano]` cadastra esses valores antes de exigir CI verde. O E2E usa `SUPABASE_SERVICE_ROLE_KEY=ci-unused-foundation-e2e` literal apenas no runtime dos servidores de teste e `MAINTENANCE_MODE=false` no servidor normal; não exercita admin. DSNs podem ficar ausentes. Sem Compose.
+- **Coolify Auto Deploy = OFF.** T16 recebe `candidate_sha=workflow_run.head_sha` após CI verde da `main`. Uma `concurrency` group exclusiva de produção, com `cancel-in-progress: false`, cobre checagem, pin, deploy e verificação. Se a `main` atual já avançou antes da mutação, a execução fica `superseded`. Senão, `PATCH /api/v1/applications/{uuid}` fixa `git_commit_sha=candidate_sha`, `GET` confirma o pin, e apenas então `POST /api/v1/deploy?uuid=...` inicia o deployment. O workflow acompanha o `deployment_uuid`, exige commit do deployment igual ao candidato, `GET /api/health` com `status=ok`, `supabase=ok`, `version=candidate_sha`, e só então aquece a Home. Divergência ou prova ausente falha. HTTP 2xx da API não é conclusão.
+- Invariante: `CI approved candidate_sha == configured git_commit_sha == SOURCE_COMMIT == APP_VERSION == health.version`. A checagem da `main` descarta workflow obsoleto; o pin impede a corrida entre HEAD móvel e checkout. Cada execução redefine o pin. A serialização do GitHub não cobre operador ou outro automador: T15 restringe alterações concorrentes ao recurso durante o gate.
+- T15 cadastra `COOLIFY_API_URL`, `COOLIFY_APP_UUID` e URL pública de health como GitHub Variables; `COOLIFY_CONFIG_TOKEN` (`read` + `write`) e `COOLIFY_DEPLOY_TOKEN` (`deploy`) como Secrets. O token de deploy é exclusivo no painel; `write` é amplo no escopo da equipe. Não usar `root` nem `read:sensitive`. Segredos runtime de produção ficam no recurso Coolify, nunca na imagem.
 
 ### 8.10 Repositório
 
-- Criar repositório **público** `jlima004/indicio-cult` no GitHub (`gh repo create --public`), `main` protegida: PR obrigatório, `ci.yml` obrigatório, sem force-push. Por ser público: a imagem no GHCR fica pública (sem credencial de pull no VPS), nenhum segredo entra em workflow logs (`::add-mask::` para valores derivados) e a varredura de segredos do critério 10 é obrigatória desde o primeiro commit.
-- Commits em PT-BR no formato _Conventional Commits_ (`feat(foundation): ...`); `README.md` ganha seção "Como rodar" e link para este spec.
-
----
+O repositório público `jlima004/indicio-cult` existe. A `main` terá PR e `ci.yml` obrigatórios, sem force-push ou deleção (T17). A CI procura segredos e dados de servidor no bundle. O Coolify lê o Git e constrói a imagem com `deploy/Dockerfile`; GHCR não é requisito do módulo. Registry ou build server separado exige nova decisão.
 
 ## 9. Contratos fornecidos aos módulos dependentes
 
@@ -396,41 +397,46 @@ Mudanças nesses contratos exigem atualizar este spec antes do código.
 
 Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiros:
 
-1. `npm ci && npm run check` passa em máquina limpa com Node `>=22.22.2 <23`; `.nvmrc` e `.node-version` pinam `22.23.1`, e a `.env` é copiada de `.env.example` com valores reais do Supabase.
-2. `npm run build` gera `.next/standalone`; `npm run start` responde `GET /api/health` → `200` com `supabase: 'ok'`.
-3. `npm run test:e2e` passa nos quatro cenários (health, 404, home, manutenção) em viewport mobile e desktop.
-4. Faltando qualquer variável obrigatória, `npm run build`/`start` falha na inicialização com mensagem apontando a variável — nunca falha tarde em runtime.
-5. Imagem Docker constrói na CI; `docker inspect` mostra usuário `node`; `HEALTHCHECK` fica `healthy` em ≤ 30s.
-6. Push na `main` executa `ci.yml` e `deploy.yml` sem intervenção; ao final, `https://$SITE_HOST/` responde 200 com a Home placeholder, `https://$SITE_HOST/qualquer-coisa` responde 404 com "Esse rastro não leva a lugar nenhum.", e o certificado é válido (Let's Encrypt).
-7. `https://$SITE_HOST/api/health` responde 200 e o erro forçado (rota de teste removida após validação ou `?boom=1` em `development` apenas) aparece no Sentry com `release` = sha do commit.
-8. Lighthouse mobile na Home placeholder ≥ 95 em Performance, Acessibilidade e Boas práticas (baseline antes de qualquer feature).
-9. `MAINTENANCE_MODE=true` no `.env` do VPS + `docker compose up -d` → vitrine em 503 com página de manutenção; `/api/health` continua 200.
-10. Nenhum segredo no repositório (`gitleaks` ou `trufflehog` na CI, zero achados) e nenhuma ocorrência de `SUPABASE_SERVICE_ROLE_KEY` em bundles do cliente (`rg` em `.next/static` na CI).
-11. `README.md` e `deploy/README.md` permitem a um segundo desenvolvedor rodar localmente e reprovisionar o VPS do zero seguindo apenas os documentos.
+1. `npm ci && npm run check` passa em máquina limpa com Node `>=22.22.2 <23`; `.nvmrc` e `.node-version` pinam `22.23.1`; `.env` local segue `.env.example`.
+2. `npm run build` gera `.next/standalone`; `npm run start` responde `GET /api/health` com `supabase: 'ok'`.
+3. `npm run test:e2e` passa nos quatro cenários em viewport mobile e desktop.
+4. Variável obrigatória ausente faz build/start falhar de forma clara, sem falha tardia em produção.
+5. `deploy/Dockerfile` constrói na CI, roda como `node`, escuta `0.0.0.0:3000` e tem `HEALTHCHECK` saudável; nenhuma porta host da aplicação é publicada.
+6. Push/merge na `main` executa CI; somente CI verde aciona `deploy.yml` e pin/deploy por API, com Auto Deploy OFF. O domínio configurado no Coolify responde Home 200, 404 da marca e TLS público válido via Traefik.
+7. Evidência mostra `candidate_sha` aprovado na CI igual a `git_commit_sha` configurado antes do deploy, commit registrado no deployment, `SOURCE_COMMIT`, `APP_VERSION` e `GET /api/health.version`; health responde `status: 'ok'` e `supabase: 'ok'`. Erro forçado de desenvolvimento aparece no Sentry com `release` igual ao SHA.
+8. Lighthouse mobile na Home placeholder ≥ 95 em Performance, Acessibilidade e Boas práticas.
+9. `MAINTENANCE_MODE=true` no recurso Coolify e redeploy controlado → vitrine em 503 com página de manutenção; `/api/health` continua 200; depois restaurar `false`.
+10. Gitleaks na CI sem achados e nenhuma ocorrência do valor de `SUPABASE_SERVICE_ROLE_KEY` em bundles do cliente; segredos de servidor ausentes dos build args/layers.
+11. `README.md` e `deploy/README.md` permitem a outro desenvolvedor rodar localmente e à operadora reproduzir a configuração da aplicação no Coolify. Security headers e estado real dos access logs são verificados; rollback Coolify foi testado.
 
 ---
 
 ## 11. Riscos e mitigações
 
-| Risco                                                                                                                                       | Mitigação                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `cacheComponents` muda semântica de rotas dinâmicas (tudo que usa `cookies()`/`headers()` precisa de `Suspense`) e a equipe erra fronteiras | Fundação já entrega `layout.tsx` com `Suspense` no slot de conteúdo e exemplos comentados; regra fixada aqui antes de `catalog`           |
-| Cache do Next no volume `next_cache` cresce sem limite                                                                                      | Limite de 1 GB documentado; `deploy/README.md` inclui rotina `docker system prune` mensal                                                 |
-| TLS em `sslip.io` sujeito a rate limit do Let's Encrypt em redeploys frequentes                                                             | Volume `caddy_data` persiste certificados; troca para o domínio definitivo é só `SITE_HOST`                                               |
-| Sem Docker local, erros de imagem só aparecem na CI                                                                                         | `ci.yml` constrói a imagem também em PR (sem push), não só no deploy                                                                      |
-| Playwright contra Supabase real na CI cria acoplamento                                                                                      | Único acesso é um probe somente leitura ao Data API com anon key; se o projeto estiver pausado a CI falha ruidosamente, o que é desejável |
-| TypeScript 7 vira padrão do ecossistema antes do MVP terminar                                                                               | Versão fixada; upgrade é item de "Perguntar antes"                                                                                        |
+| Risco                                                       | Mitigação                                                                                                 |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `cacheComponents` muda semântica de rotas dinâmicas         | Fundação entrega `Suspense` e regra de fronteira antes de `catalog`                                       |
+| Cache do Next em Persistent Storage cresce                  | Monitorar e gerir volume com referência inicial ~1 GB; cache pode ser descartado/reconstruído             |
+| Coolify/API indisponível ou deploy aceito com app degradada | T16 falha se deployment, saúde, Supabase e SHA não confirmarem; monitor externo e rollback Coolify        |
+| Branch móvel avança entre check e checkout                  | Fixar e reler `git_commit_sha` antes do deploy; serializar produção; conferir deployment e health         |
+| `SOURCE_COMMIT` não chega ao build ou cache mascara release | Habilitar Include Source Commit in Build; exigir `SOURCE_COMMIT=APP_VERSION=health.version=candidate_sha` |
+| Domínio ou TLS aponta à porta errada                        | Configurar domínio com alvo interno 3000 e testar certificado/rotas reais em T15/T17                      |
+| Traefik compartilhado e alteração de labels                 | Middleware específico, preservar labels geradas; mudanças globais exigem decisão humana                   |
+| VPS permanece ponto único de falha                          | Monitor externo, procedimento de recuperação e rollback                                                   |
+| Docker local indisponível                                   | `ci.yml` constrói a imagem em PR antes de qualquer deploy                                                 |
+| Playwright depende do Supabase real na CI                   | Probe somente leitura; falha ruidosa se o serviço estiver indisponível                                    |
 
 ---
 
 ## 12. Questões abertas
 
 1. **Provedor de analytics** (GA4, Plausible, Umami self-hosted?) — decide o que `track()` faz e se há script de terceiros (impacta CSP e consent).
-2. **Domínio definitivo** — quando existir, atualizar `SITE_HOST`, `NEXT_PUBLIC_SITE_URL` e o redirect URL do Supabase Auth.
+2. **Domínio definitivo** — quando existir, configurar DNS e domínio no Coolify, atualizar `NEXT_PUBLIC_SITE_URL` e o redirect URL do Supabase Auth.
 3. **Monitor externo de uptime** (UptimeRobot, Better Stack, healthchecks.io?) — ADR-001 exige antes do lançamento suave; a fundação só garante o endpoint.
 4. **Fonte tipográfica provisória** — sistema (`system-ui`) ou já uma fonte candidata via `next/font`?
 5. ~~Owner do GitHub~~ — **fechada em 2026-09-16:** repositório público em `jlima004/indicio-cult`.
-6. **Recursos do KVM 2** — confirmar vCPU/RAM contra o consumo do build; se o build no VPS não for necessário (é feito na CI), o runtime cabe folgado, mas registrar os números (ADR-001, ação 6).
+6. **Recursos do KVM 2** — confirmar vCPU/RAM/disco contra o build e runtime no Coolify; T14 valida a imagem na CI, mas Coolify também constrói na VPS.
+7. **Access logs do Traefik** — estado atual não comprovado; T15/T17 registram evidência e eventual decisão humana sobre configuração global.
 
 ---
 
@@ -441,4 +447,5 @@ Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiro
 - [ADR-001 — Stack, cache, estado e deploy](../decisions/ADR-001-stack-frontend-cache-estado-e-deploy.md)
 - [Next.js — instrumentation e código específico por runtime](https://nextjs.org/docs/app/guides/instrumentation#importing-runtime-specific-code), [Cache Components](https://nextjs.org/docs/app/getting-started/cache-components), [`proxy.ts`](https://nextjs.org/docs/app/api-reference/file-conventions/proxy), [`output: 'standalone'`](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
 - [Supabase — Server-Side Auth para Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs)
-- [Caddy — Automatic HTTPS](https://caddyserver.com/docs/automatic-https)
+- [ADR-002 — Deploy Coolify/Traefik](../decisions/ADR-002-coolify-traefik-deploy.md)
+- [Coolify — Dockerfile](https://coolify.io/docs/applications/builds/dockerfile), [Environment Variables](https://coolify.io/docs/applications/configuration/environment-variables), [API Update Application](https://coolify.io/docs/api/endpoints/applications/update-application-by-uuid), [API Deploy](https://coolify.io/docs/api/endpoints/deployments/deploy-by-tag-or-uuid), [Traefik Dynamic Configuration](https://coolify.io/docs/core/networking/proxy/traefik/dynamic-config)

@@ -75,10 +75,10 @@ describe('env (servidor)', () => {
 })
 
 describe('.env.example', () => {
-  // Chaves que só ferramentas externas leem (Supabase CLI, Caddy). Ficam no
+  // Chaves que só ferramentas externas leem (Supabase CLI). Ficam no
   // .env.example para a operadora, mas a aplicação não as valida. Adicionar
   // uma chave aqui é decisão explícita, não acidente.
-  const toolingOnlyKeys = ['SUPABASE_PROJECT_ID', 'SITE_HOST']
+  const toolingOnlyKeys = ['SUPABASE_PROJECT_ID']
 
   // Chaves que o runtime define sozinho (o Next fixa NODE_ENV pelo comando e
   // ignora o valor de arquivos .env). Estão no schema, não no .env.example.

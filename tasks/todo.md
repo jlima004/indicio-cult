@@ -173,7 +173,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T11 · Sentry
 
-**Descrição:** `@sentry/nextjs` 11.x com `instrumentation.ts`, `instrumentation-client.ts`, `withSentryConfig` em `next.config.ts` (sem upload de source maps até haver token), `tracesSampleRate` 0.1, `dataCollection` restritivo (sem coleta automática de PII; substitui o requisito original de `sendDefaultPii: false`), `release` = `APP_VERSION`, desligado quando o DSN está ausente; `error.tsx` e `global-error.tsx` chamam `Sentry.captureException`. `[humano]`: criar projeto no Sentry e obter DSN (para o `.env` local agora; do VPS em T15).
+**Descrição:** `@sentry/nextjs` 11.x com `instrumentation.ts`, `instrumentation-client.ts`, `withSentryConfig` em `next.config.ts` (sem upload de source maps até haver token), `tracesSampleRate` 0.1, `dataCollection` restritivo (sem coleta automática de PII; substitui o requisito original de `sendDefaultPii: false`), `release` = `APP_VERSION`, desligado quando o DSN está ausente; `error.tsx` e `global-error.tsx` chamam `Sentry.captureException`. `[humano]`: criar projeto no Sentry e obter DSN (para o `.env` local agora; para o recurso Coolify em T15).
 
 **Aceite:**
 
@@ -210,97 +210,111 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Próximo gate:** T13 · Dockerfile, Compose, Caddyfile e guia do VPS. Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T13 · Dockerfile + contrato Coolify/Traefik + runbook. Implementação local em revisão humana; T13 só fecha após merge.
 
 ---
 
 ## Fase B — Empacotamento e entrega
 
-### T13 · Dockerfile, Compose, Caddyfile e guia do VPS
+### T13 · Dockerfile + contrato Coolify/Traefik + runbook
 
-**Descrição:** Conforme spec §8.8: `deploy/Dockerfile` multi-stage (`deps` → `build` → `runner` em `node:22-alpine`, `USER node`, `HEALTHCHECK` em `/api/health`, `APP_VERSION` como build arg), `deploy/docker-compose.yml` (`app` sem portas + `caddy` 80/443, volumes `caddy_data`, `caddy_config`, `next_cache`, `restart: unless-stopped`, `IMAGE_TAG` parametrizado), `deploy/Caddyfile` (`{$SITE_HOST}`, cabeçalhos de segurança, `encode zstd gzip`, **emissor de staging do Let's Encrypt** até T17) e `deploy/README.md` com o provisionamento único do VPS (usuário não-root, Docker Engine + Compose, firewall 22/80/443, `fail2ban`, chave SSH da CI, `/srv/indicio-cult/{.env,docker-compose.yml,Caddyfile}`, `SITE_HOST` em `sslip.io`, rollback por tag, `docker system prune` mensal, limite de 1 GB do `next_cache`).
+**Descrição:** Conforme spec §8.8 e ADR-002: `deploy/Dockerfile` multi-stage (`node:22-alpine`, `npm ci`, Next `standalone`, `USER node`, `HOSTNAME=0.0.0.0`, `EXPOSE 3000`, `HEALTHCHECK /api/health`), `.dockerignore` seguro e `deploy/README.md` para aplicação Git-based Dockerfile no Coolify. Sem Compose/Caddy de aplicação. O runbook cobre variáveis de build/runtime, `SOURCE_COMMIT` → `APP_VERSION`, domínio/TLS Traefik, volume de cache `/app/.next/cache`, security headers, Auto Deploy OFF, pin de commit e deploy por API pós-CI, access logs como assunto de plataforma e rollback futuro.
 
 **Aceite:**
 
-- [ ] `Dockerfile` não roda como root e declara `HEALTHCHECK`; `.dockerignore` exclui `node_modules`, `.next`, `.env*`, `tests`, `docs`
-- [ ] `docker-compose.yml` não publica a porta do Next; só o Caddy expõe 80/443
-- [ ] `deploy/README.md` permite provisionar o VPS do zero sem consultar mais nada
+- [ ] Imagem multi-stage usa Node 22, Next `standalone`, usuário não-root, porta interna 3000 e healthcheck real; cache é gravável pelo usuário `node`.
+- [ ] `APP_VERSION` recebe o commit implantado via `SOURCE_COMMIT`, com configuração de build documentada; somente variáveis públicas e o SHA entram no build, sem segredo de servidor.
+- [ ] `.dockerignore` exclui `node_modules`, `.next`, `.env*`, testes e docs; nenhum proxy próprio ou porta host 80/443 é criado.
+- [ ] Runbook documenta recurso Coolify, domínio/TLS, storage, headers, Auto Deploy OFF, pin e deploy por API somente após CI e acesso a logs sem afirmar habilitação atual.
+- [ ] Nenhum deploy real executado. T13 permanece desmarcada até merge/sincronização.
 
-**Verificação:** revisão manual (sem Docker local); validação executável em T14 (`compose config` + build) e T16 (deploy).
+**Verificação:** revisão estática e gates locais; T14 constrói a imagem na CI, T15 configura a plataforma e T16 valida deploy real.
 
-**Dependências:** T2 · **Arquivos:** `deploy/Dockerfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/README.md`, `.dockerignore` · **Tamanho:** M
+**Dependências:** T2 · **Arquivos:** `deploy/Dockerfile`, `.dockerignore`, `deploy/README.md`, template opcional de middleware · **Tamanho:** M
 
 ---
 
 ### T14 · `ci.yml` completo
 
-**Descrição:** Workflow em PR e push: `npm ci` (cache) → `npm run check` → `npm run build` → Playwright (navegadores em cache) com segredos do Supabase → `npm run db:types && git diff --exit-code` → `gitleaks` (action oficial) → `rg -q "SUPABASE_SERVICE_ROLE_KEY" .next/static && exit 1` → `docker compose -f deploy/docker-compose.yml config` → `docker build` da imagem (sem push, `APP_VERSION=${{ github.sha }}`). `[humano]`: cadastrar `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_PROJECT_ID`, `SUPABASE_ACCESS_TOKEN` nos segredos do repositório.
+**Descrição:** Workflow em PR e push: `npm ci` → `npm run check` → `npm run build` → `npm run test:e2e` → `npm run db:types && git diff --exit-code` → gitleaks → varredura de segredo no bundle → `docker build` do `deploy/Dockerfile` (sem push/publicação). O build recebe somente valores públicos e `APP_VERSION=github.sha`; nenhum Compose é exigido.
+
+**Contrato CI em quatro categorias:** (A) Build/Public: `NEXT_PUBLIC_SITE_URL` (URL de teste, por exemplo `http://127.0.0.1:3000`), `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` (projeto real de teste acessível pelo health); `NEXT_PUBLIC_SENTRY_DSN` opcional; `APP_VERSION=github.sha`. São GitHub Variables/valores de workflow, não secrets obrigatórios. (B) Tooling: `SUPABASE_PROJECT_ID` como Variable e `SUPABASE_ACCESS_TOKEN` como Secret, disponíveis ao passo `db:types`. (C) E2E Runtime: `SUPABASE_SERVICE_ROLE_KEY=ci-unused-foundation-e2e` literal não secreto somente para `next start`; `MAINTENANCE_MODE=false` no servidor normal. A sentinela satisfaz a validação de startup, não é credencial Supabase e nunca deve alcançar teste admin; reavaliar quando a suíte cobrir admin. (D) Optional/Disabled: `SENTRY_DSN` e `NEXT_PUBLIC_SENTRY_DSN` ausentes se Sentry não for testado. A service role real é obrigatória em produção/Coolify e não pertence a esses jobs CI.
+
+**Subgate `[humano]`:** Antes de exigir workflow verde, cadastrar `SUPABASE_ACCESS_TOKEN` em GitHub Secrets e `SUPABASE_PROJECT_ID`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` em Variables ou valores não secretos do workflow. A classificação pública pode seguir política do projeto. Não cadastrar service role real para os smoke E2E.
+
+O script `db:types` usa `dotenv -e .env --`; T14 deve prover um `.env` temporário vazio se o runner não tiver o arquivo, deixando `SUPABASE_PROJECT_ID` e `SUPABASE_ACCESS_TOKEN` do ambiente prevalecerem. O arquivo temporário não é commitado nem enviado ao Docker build.
 
 **Aceite:**
 
-- [ ] Workflow verde na `main` e em um PR de teste; tempo total ≤ 10 min com cache quente
-- [ ] Job de imagem falha se o `Dockerfile` quebrar; gitleaks bloqueia PR com segredo falso (`sk_test_...` em branch descartável)
-- [ ] `db:types` diff falha se `database.types.ts` estiver desatualizado
+- [ ] Workflow verde na `main` e PR de teste; tempo total ≤ 10 min com cache quente.
+- [ ] Docker build falha quando o Dockerfile quebra; gitleaks e varredura do bundle bloqueiam segredos.
+- [ ] `db:types` diff falha se os tipos estiverem desatualizados.
+- [ ] Build usa as variáveis públicas; E2E usa Supabase público real e sentinela não secreta apenas no runtime, sem chamar `admin.ts`.
+- [ ] `db:types` recebe project id/access token; nenhuma service role real está na CI.
+- [ ] Docker build recebe apenas os três `NEXT_PUBLIC_*` obrigatórios, o DSN público opcional e `APP_VERSION`; exclui `SUPABASE_SERVICE_ROLE_KEY`, `SENTRY_DSN`, `SUPABASE_ACCESS_TOKEN`.
 
-**Verificação:** `gh run list --workflow ci.yml`; `gh run view <id>`; branches descartáveis para os casos negativos.
+**Verificação:** `gh run list --workflow ci.yml`; `gh run view <id>`; casos negativos em branch descartável.
 
 **Dependências:** T12, T13 · **Arquivos:** `.github/workflows/ci.yml`, `.gitleaks.toml` (se necessário) · **Tamanho:** S
 
 ---
 
-### T15 · `[humano]` Provisionamento do VPS e segredos de deploy
+### T15 · `[humano]` Configurar Indicio Cult no Coolify
 
-**Descrição:** Seguindo `deploy/README.md`: preparar o VPS (usuário, Docker, firewall, chave SSH dedicada à CI, `/srv/indicio-cult` com `.env` completo — Supabase, `SITE_HOST=<ip-com-hifens>.sslip.io`, `APP_VERSION` é injetado pela imagem, `SENTRY_DSN` se já existir — mais `docker-compose.yml` e `Caddyfile`); cadastrar em _Settings → Secrets_: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SITE_HOST`. Pode começar logo após T1, com o `deploy/README.md` ainda em rascunho se a operadora preferir.
+**Descrição:** Seguir `deploy/README.md` na VPS Hostinger já equipada com Coolify/Traefik: conectar `jlima004/indicio-cult` branch `main`, Base Directory `/`, Dockerfile Location `/deploy/Dockerfile`, porta interna 3000 e domínio; configurar variáveis Build/Runtime, `APP_VERSION=$SOURCE_COMMIT`, Include Source Commit in Build, healthcheck e Persistent Storage de cache. Configurar middleware de security headers pelo mecanismo suportado, mantendo labels existentes; verificar roteamento/TLS e registrar o estado real dos access logs. **Auto Deploy OFF.** Habilitar API Access, registrar Application UUID, criar `COOLIFY_CONFIG_TOKEN` (`read` + `write`) e `COOLIFY_DEPLOY_TOKEN` (`deploy`) na equipe proprietária; titular Admin/Owner. Cadastrar tokens como GitHub Secrets e `COOLIFY_API_URL`, `COOLIFY_APP_UUID`, URL pública de health como Variables. Impedir outros gatilhos/mutações concorrentes durante T16. `write` é amplo no escopo da equipe; não usar `root`/`read:sensitive`. Qualquer mudança global no proxy exige gate humano próprio.
 
 **Aceite:**
 
-- [ ] `ssh -i <chave-ci> $VPS_USER@$VPS_HOST docker compose version` funciona a partir da máquina local
-- [ ] `curl -I http://$SITE_HOST` chega ao VPS (porta 80 aberta; DNS `sslip.io` resolvendo)
-- [ ] `gh secret list` mostra os 4 segredos de deploy + os 4 do Supabase (T14)
+- [ ] Recurso Git Dockerfile e domínio apontam internamente à porta 3000; processo acessível por HTTPS válido, sem porta host da aplicação.
+- [ ] Build/runtime vars e secrets têm escopo correto; `SOURCE_COMMIT` alcança o build e `APP_VERSION` expõe o SHA.
+- [ ] Auto Deploy OFF, API Access/UUID/tokens e GitHub secrets/variables corretos; headers aplicados e estado dos access logs registrado.
 
-**Verificação:** comandos acima executados pela operadora; agente confere `gh secret list`.
+**Verificação:** operadora inspeciona configuração Coolify, DNS/TLS, logs, health e GitHub secrets; não executar nesta T13.
 
-**Dependências:** T1, T13 · **Arquivos:** nenhum · **Tamanho:** S (humano)
+**Dependências:** T13 · **Arquivos:** nenhum de runtime; configuração humana · **Tamanho:** M
 
 ---
 
-### T16 · `deploy.yml`: GHCR → SSH → Compose → health → aquecimento
+### T16 · `deploy.yml`: CI verde → pin SHA → deploy API → health → aquecimento
 
-**Descrição:** Workflow em push na `main`, condicionado ao `ci.yml` verde: login no GHCR, build/push da imagem com tags `sha` e `latest` (pacote público), SSH no VPS, `IMAGE_TAG=<sha> docker compose pull && up -d --remove-orphans`, espera `https://$SITE_HOST/api/health` responder 200 com `version` = sha em ≤ 90s (senão falha), `curl` de aquecimento na Home. Seção de rollback no `deploy/README.md` (`IMAGE_TAG=<sha-anterior> docker compose up -d`).
+**Descrição:** Workflow após `ci.yml` verde para a `main`: definir `candidate_sha=workflow_run.head_sha`; usar `concurrency` exclusiva de produção com `cancel-in-progress: false` até terminar a verificação. Antes da mutação, comparar SHA atual da `main`; se diferente, marcar `superseded` e não fazer deploy. Fazer `PATCH /api/v1/applications/{uuid}` com `git_commit_sha=candidate_sha`, reler por `GET` e exigir igualdade. Se o pin não puder ser provado, falhar **antes** do trigger. Fazer `POST /api/v1/deploy?uuid=...`, guardar `deployment_uuid`, aguardar status final bem-sucedido e exigir `deployment.commit=candidate_sha`. Consultar `/api/health` até `status=ok`, `supabase=ok`, `version=candidate_sha`; só então aquecer Home. Cada execução redefine o pin; 2xx da API sozinho não é sucesso. O URL público para verificação pertence à configuração do workflow, não ao `.env` da aplicação.
 
 **Aceite:**
 
-- [ ] Push na `main` publica `ghcr.io/jlima004/indicio-cult:<sha>` e o VPS passa a servir essa versão (`/api/health` retorna o `version` correto e `supabase: 'ok'`)
-- [ ] `https://$SITE_HOST/` responde 200 (certificado de staging nesta etapa; `curl -k` no job até T17)
-- [ ] Job falha e o container anterior segue rodando quando o health não responde (testar com imagem quebrada em branch)
+- [ ] Push/merge na `main` só chega à produção após CI verde; Auto Deploy permanece OFF.
+- [ ] Candidato obsoleto não deploya; concurrency impede dois workflows de alterarem `git_commit_sha` simultaneamente.
+- [ ] Pin igual ao candidato é relido antes do deploy; deployment parte desse pin e expõe commit igual ao candidato.
+- [ ] Workflow falha se API, deployment, TLS, saúde, Supabase ou versão divergir; 2xx não é prova de sucesso.
+- [ ] Home responde 200 com certificado público válido e aquecimento executado.
 
-**Verificação:** `gh run view`; `curl -sk https://$SITE_HOST/api/health`; `docker compose ps` no VPS.
+**Verificação:** `gh run view`, logs do deployment Coolify e `curl` HTTPS sem `-k`.
 
 **Dependências:** T14, T15 · **Arquivos:** `.github/workflows/deploy.yml`, `deploy/README.md` · **Tamanho:** S
 
 ---
 
-### T17 · Proteção da `main` e certificado de produção
+### T17 · Proteção da `main`, Traefik TLS/headers e rollback
 
-**Descrição:** Via `gh api`: `main` exige PR, status check `ci` obrigatório, sem force-push, sem deleção. Trocar o `Caddyfile` do emissor de staging para produção do Let's Encrypt (remover `-k` do `deploy.yml`) e confirmar certificado válido. Testar rollback uma vez com a tag anterior.
+**Descrição:** Exigir PR e status check `ci` na `main`, sem force-push/deleção; verificar certificado Let's Encrypt real via Coolify/Traefik, middleware de security headers e roteamento; registrar evidência dos access logs (ou decisão humana sobre sua ativação global). Testar rollback com mecanismo oficial do Coolify e restaurar release vigente. Como rollback reutiliza variáveis runtime atuais, registrar commit da imagem antiga e release embutida, conferir se `APP_VERSION`/health representam essa imagem, corrigir divergência sob controle humano e só então aceitar o ensaio.
 
 **Aceite:**
 
-- [ ] `git push origin main` direto é rejeitado; PR sem `ci` verde não pode ser mesclado
-- [ ] `curl -sI https://$SITE_HOST/` sem `-k` retorna 200; `/qualquer-coisa` retorna 404 com a copy da marca
-- [ ] Rollback para o sha anterior executado e revertido; documentado no `deploy/README.md`
+- [ ] Push direto na `main` rejeitado; PR sem CI verde não é mesclado.
+- [ ] HTTPS sem `-k`, 404 da marca, TLS e headers corretos.
+- [ ] Rollback do Coolify para imagem anterior testado e revertido, com evidência do commit da imagem, release embutida e health coerente; estado dos access logs registrado.
 
-**Verificação:** `gh api repos/jlima004/indicio-cult/branches/main/protection`; `curl`; `docker compose ps` no VPS.
+**Verificação:** proteção GitHub, `curl` público, tela/logs Coolify e registro do teste de rollback.
 
-**Dependências:** T16 · **Arquivos:** `deploy/Caddyfile`, `.github/workflows/deploy.yml`, `deploy/README.md` · **Tamanho:** S
+**Dependências:** T16 · **Arquivos:** `deploy/README.md`, documentação/evidências · **Tamanho:** S
 
 ---
 
-## Checkpoint B — "Está no ar"
+## Checkpoint B — “Está no ar”
 
-- [ ] `https://$SITE_HOST/`, `/qualquer-coisa` (404) e `/api/health` respondem via pipeline, certificado válido
-- [ ] `ci.yml` e `deploy.yml` verdes nas duas últimas execuções; rollback testado
-- [ ] Revisão com a operadora: o que o pipeline faz, onde ficam segredos, como fazer rollback
+- [ ] Domínio público responde via Coolify/Traefik com TLS válido; Home, 404 e `/api/health` corretos.
+- [ ] CI e deploy workflow verdes; evidência de `candidate_sha == configured git_commit_sha == deployment.commit == SOURCE_COMMIT == APP_VERSION == health.version`.
+- [ ] Push/merge na `main` só aciona pin/deploy por API após CI; Auto Deploy OFF; rollback Coolify testado.
+- [ ] Operadora revisou configuração, secrets, headers e estado real dos access logs.
 
 ---
 
@@ -308,15 +322,15 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ### T18 · Validação final, README e baseline Lighthouse
 
-**Descrição:** Percorrer os 11 critérios do spec §10 marcando cada um com evidência (link do run, saída de comando); rodar Lighthouse mobile na Home em produção e registrar em `docs/specs/SPEC-foundation.md` (seção "Evidências", nova); adicionar ao `README.md` a seção "Como rodar" (pré-requisitos, `.env`, `npm run dev`, `npm run check`, link para `deploy/README.md`); testar `MAINTENANCE_MODE=true` no VPS e reverter; atualizar este arquivo e o status do spec para "Implementado".
+**Descrição:** Percorrer os 11 critérios do spec §10 com evidência; rodar Lighthouse mobile na Home em produção; adicionar ao README “Como rodar” e link ao runbook Coolify; testar `MAINTENANCE_MODE=true` no recurso Coolify e reverter; atualizar este arquivo e o status do spec somente após validação.
 
 **Aceite:**
 
-- [ ] 11/11 critérios do spec §10 marcados com evidência
-- [ ] Lighthouse mobile ≥ 95 em Performance, Acessibilidade e Boas práticas na Home
-- [ ] Um segundo desenvolvedor (ou o agente em sessão limpa) consegue rodar `npm run dev` seguindo só o README
+- [ ] 11/11 critérios do spec §10 com evidência.
+- [ ] Lighthouse mobile ≥ 95 em Performance, Acessibilidade e Boas práticas na Home.
+- [ ] Outra pessoa consegue rodar `npm run dev` apenas com o README.
 
-**Verificação:** `npx lighthouse https://$SITE_HOST --form-factor=mobile`; leitura cega do README em sessão nova.
+**Verificação:** `npx lighthouse <url-publica> --form-factor=mobile`; leitura cega do README em sessão nova; health/maintenance públicos.
 
 **Dependências:** T10, T11, T17 · **Arquivos:** `README.md`, `docs/specs/SPEC-foundation.md`, `tasks/todo.md` · **Tamanho:** S
 

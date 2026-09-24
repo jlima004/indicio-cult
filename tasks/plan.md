@@ -1,114 +1,105 @@
 # Plano de implementação: módulo `foundation`
 
-| Campo            | Valor                                                                                        |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16) |
-| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                  |
-| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                 |
-| Status           | Aprovado (2026-09-16)                                                                        |
+| Campo            | Valor                                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
+| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
+| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
+| Status           | Em execução — T13 é o próximo gate                                                                                              |
 
 ## Visão geral
 
-Construir a base técnica da vitrine — Next.js 16 (App Router), Supabase, Docker + Caddy, CI/CD no GitHub Actions, observabilidade e tokens provisórios — até que um `git push` na `main` resulte em deploy automático no VPS respondendo HTTPS com a 404 da marca e `GET /api/health` confirmando o Supabase. Nenhuma feature de produto.
+Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `standalone`, Coolify na VPS Hostinger, Traefik compartilhado, CI/CD no GitHub Actions, observabilidade e tokens — até que a `main` passe pela CI e o workflow fixe o SHA aprovado no recurso Coolify antes do deployment por API, com saúde confirmada sobre HTTPS. Nenhuma feature de produto. A arquitetura de deploy atual é o [ADR-002](../docs/decisions/ADR-002-coolify-traefik-deploy.md).
 
 ## Decisões de arquitetura do plano
 
-- **Código primeiro, entrega depois (decisão da operadora).** A Fase A constrói a aplicação completa localmente (tooling, env, Supabase, páginas, proxy, observabilidade, testes); a Fase B empacota e entrega (Docker, CI, VPS, deploy). Vantagens: nenhum artefato provisório (o `/api/health` nasce real; o `ci.yml` nasce completo), e a operadora só precisa provisionar VPS e segredos quando há algo pronto para subir. **Trade-off aceito:** o risco da cadeia de deploy (TLS em `sslip.io`, GHCR, SSH) só aparece na Fase B; mitigado por T13 validar `docker compose config` e o build da imagem na CI antes de qualquer deploy, e por T15 poder ser feito em paralelo desde o início.
-- **Sem CI durante a Fase A.** O gate de qualidade é `npm run check` local antes de cada PR; a proteção da `main` com status check obrigatório entra em T17. Os PRs da Fase A são revisados manualmente.
-- **Fatias verticais.** Cada tarefa entrega algo observável (uma rota, um teste passando, um job verde), não uma camada horizontal.
-- **Tarefas humanas explícitas.** Token do Supabase CLI, DSN do Sentry, provisionamento do VPS e segredos do GitHub exigem credenciais que o agente não tem. Estão marcadas com `[humano]` e posicionadas para não bloquear o trabalho anterior.
-- **Logo vetorial.** A T10 exportou do Figma o SVG oficial da variante Hero em `public/images/og/indicio-cult-logo.svg` e gerou a composição Open Graph `public/images/og/indicio-cult.png`. `docs/logo.png` permanece; o `Wordmark` tipográfico, o `Symbol` SVG desenhado à mão e o favicon continuam provisórios. A substituição pelos assets oficiais será uma troca de asset, não de componente.
-- **Dependências de runtime adicionadas pelo plano:** `zod` (validação de env, já implícito no exemplo do spec §5), `@sentry/nextjs`, `@supabase/supabase-js`, `@supabase/ssr`, `zustand` (fixar versão, sem uso). Qualquer outra passa por "Perguntar antes".
+- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13 segue pendente de revisão humana e merge.
+- **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instala a CI e T17 exige o status check na `main`.
+- **Uma camada pública.** Coolify gerencia o recurso Git com Dockerfile e Traefik gerencia domínio/TLS. O Next escuta apenas na porta interna 3000; não há proxy próprio nem porta host da aplicação.
+- **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
+- **Tarefas humanas explícitas.** T15 configura o recurso, domínio, variáveis, storage, middleware e segredos de automação. Nenhuma mudança global no Traefik é automática; access logs globais pedem decisão humana.
+- **Logo vetorial.** A T10 exportou o SVG oficial Hero e o Open Graph PNG. `Wordmark`, `Symbol` e favicon continuam provisórios.
+- **Dependências de runtime:** `zod`, `@sentry/nextjs`, `@supabase/supabase-js`, `@supabase/ssr`, `zustand`. Outras passam por “Perguntar antes”.
 
 ## Grafo de dependências
 
-```
-T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Supabase ─→ T6 health + http + rate-limit ─┐
-                        │                                                                           │
-                        ├─→ T7 tokens + copy + brand ─→ T8 páginas de sistema ─→ T9 proxy + grupos ──┤
-                        │                                        │                                  │
-                        │                                        ├─→ T10 metadata/robots/sitemap/track
-                        │                                        └─→ T11 Sentry (precisa de T4)     │
-                        │                                                                           ▼
-                        │                                                              T12 Playwright (T6, T8, T9)
-                        │                                                                           │
-                        └─→ T13 Docker/Compose/Caddy ─→ T14 ci.yml completo (precisa de T12) ─→ T16 deploy.yml ─→ T17 proteção da main ─→ T18 validação
-                                                                    ▲
-                                                 T15 [humano] VPS + segredos (paralelo desde T1)
+```text
+T1–T12 concluídas → T13 Dockerfile + contrato Coolify/Traefik + runbook → T14 CI → T16 pin + deploy API pós-CI → T17 proteção/TLS/rollback → T18 validação
+                                                                                 ↑
+                                               T15 [humano] recurso Coolify + secrets (após T13)
 ```
 
 ## Lista de tarefas (índice; detalhes em `todo.md`)
 
 ### Fase A — Núcleo da aplicação (local)
 
-- [x] T1 · Repositório público `jlima004/indicio-cult` e push da `main`
-- [x] T2 · Scaffold Next.js 16 + TS strict + Tailwind 4 + ESLint/Prettier + scripts npm
-- [x] T3 · Vitest + Testing Library, primeiro teste, `check` inclui `test`
-- [x] T4 · `src/lib/env/` (zod) + `.env.example` + teste de sincronia + falha rápida
-- [x] T5 · Clientes Supabase (server/client/admin), `supabase/config.toml`, `db:types`, `database.types.ts` — inclui `[humano]` token do CLI
-- [x] T6 · `GET /api/health` + `lib/http` + `lib/rate-limit` com testes
-- [x] T7 · Tokens provisórios, `lib/copy.ts`, `Wordmark`/`Symbol`/`EmptyState`
-- [x] T8 · Páginas de sistema: layout raiz, Home placeholder, 404, 500, manutenção
-- [x] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
-- [x] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`
-- [x] T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha) — inclui `[humano]` criar projeto/DSN
-- [x] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
+- [x] T1 · Repositório público e `main`
+- [x] T2 · Scaffold Next.js 16 + TS + tooling
+- [x] T3 · Vitest + Testing Library
+- [x] T4 · `src/lib/env/` + `.env.example`
+- [x] T5 · Clientes Supabase + CLI + tipos
+- [x] T6 · Health + HTTP + rate limit
+- [x] T7 · Tokens, copy e marca
+- [x] T8 · Páginas de sistema
+- [x] T9 · Proxy e grupos de rotas
+- [x] T10 · Metadata, robots, sitemap e analytics
+- [x] T11 · Sentry
+- [x] T12 · Playwright
 
-**Próximo gate:** T13 · Dockerfile, Compose, Caddyfile e guia do VPS. Execução bloqueada até autorização humana explícita.
+### Checkpoint A — Aplicação completa localmente
 
-### Checkpoint A — "Aplicação completa localmente"
+- [x] `npm run check`, build, health e E2E verdes
+- [x] Home, 404, erro e manutenção com copy da marca
+- [x] Revisão com a operadora antes do empacotamento
 
-- [x] `npm run check` verde; `npm run build && npm run start` → health `supabase: 'ok'`
-- [x] `npm run test:e2e` verde nos 8 casos
-- [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
-- [x] Revisão com a operadora antes de empacotar
+**Próximo gate:** T13 · Dockerfile + contrato Coolify/Traefik + runbook. Implementação local em revisão humana; conclusão documental apenas após merge.
 
 ### Fase B — Empacotamento e entrega
 
-- [ ] T13 · Dockerfile multi-stage, `docker-compose.yml`, `Caddyfile`, `deploy/README.md`
-- [ ] T14 · `ci.yml` completo: `check`, `build`, e2e, `db:types` diff, gitleaks, varredura do bundle, `compose config`, build da imagem
-- [ ] T15 · `[humano]` Provisionamento do VPS e segredos no GitHub (pode começar após T1)
-- [ ] T16 · `deploy.yml`: GHCR → SSH → Compose → espera do health → aquecimento
-- [ ] T17 · Proteção da `main` (PR + `ci` obrigatórios) e troca do Let's Encrypt de staging para produção
+- [ ] T13 · Dockerfile multi-stage, `.dockerignore` e runbook Coolify/Traefik; sem Compose/Caddy próprios
+- [ ] T14 · `ci.yml`: `check`, build, E2E, `db:types` diff, gitleaks, varredura de bundle e build da imagem sem publicação
+- [ ] T15 · `[humano]` Configuração do recurso Coolify/API/UUID, domínio/TLS, variáveis, storage, headers, tokens, GitHub secrets e evidência dos access logs
+- [ ] T16 · `deploy.yml`: CI verde → pin SHA via API → verificar pin → deploy por UUID → validar deployment/health → aquecer Home
+- [ ] T17 · Proteção da `main`, certificado público, security headers, access logs e rollback Coolify testado
 
-### Checkpoint B — "Está no ar"
+### Checkpoint B — Está no ar
 
-- [ ] `https://$SITE_HOST/`, `/qualquer-coisa` (404) e `/api/health` respondem via pipeline, certificado válido
-- [ ] Push na `main` redeploya sem intervenção; rollback por tag testado uma vez
-- [ ] Revisão com a operadora: o que o pipeline faz, onde ficam segredos, como fazer rollback
+- [ ] Domínio público responde via Coolify/Traefik com TLS válido; Home e 404 da marca corretas
+- [ ] CI e deploy workflow verdes; evidência de `candidate_sha == git_commit_sha` antes do trigger e `deployment.commit == SOURCE_COMMIT == APP_VERSION == health.version == candidate_sha`
+- [ ] Push/merge na `main` só aciona produção após CI e pin confirmado; Auto Deploy OFF; rollback Coolify testado
+- [ ] Operadora revisou configuração do recurso, secrets, headers e estado dos access logs
 
 ### Fase C — Fechamento
 
-- [ ] T18 · Validação dos 11 critérios do spec §10 com evidências, README "Como rodar", Lighthouse baseline, manutenção testada no VPS
+- [ ] T18 · Evidências dos 11 critérios do spec, README “Como rodar”, Lighthouse e manutenção testada no recurso Coolify
 
-### Checkpoint C — "Fundação pronta"
+### Checkpoint C — Fundação pronta
 
-- [ ] Todos os critérios do spec §10 verdadeiros em produção
-- [ ] `SPEC-foundation.md` reflete o que foi construído (contratos §9 inalterados ou spec atualizado antes do código)
-- [ ] Questões abertas revistas; próximo módulo (`nuvemshop`) liberado
+- [ ] Critérios do spec §10 verdadeiros em produção
+- [ ] Spec registra evidências; questões abertas revistas; módulo `nuvemshop` liberado
 
 ## Paralelização
 
-- **Após T2**, as duas trilhas da Fase A são independentes: T3→T4→T5→T6 (dados/servidor) e T7→T8→T9 (UI/rotas). Podem correr em sessões distintas; T9 precisa de T5 (cliente Supabase no proxy).
-- **T15 `[humano]`** pode começar logo após T1 e correr durante toda a Fase A.
-- **T13 (Docker)** não depende de nada da Fase A além do scaffold; se a operadora quiser adiantar, pode ser feito em paralelo — mas só será validado na CI em T14.
-- **Sequencial obrigatório:** T1 → T2; T4 → T5 → T6; T7 → T8 → T9; T12 → T14 → T16 → T17 → T18.
+- T1–T12 foram executadas na Fase A. T13 permanece o gate antes da configuração humana T15 e da CI T14.
+- T14 e T15 podem avançar em paralelo **após** T13 revisada/mesclada; T16 depende de ambos. T17 depende de T16, e T18 fecha as evidências.
 
 ## Riscos e mitigações
 
-| Risco                                                                                                                           | Impacto                        | Mitigação                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cadeia de deploy só é exercitada na Fase B; problemas de TLS/GHCR/SSH aparecem tarde                                            | Médio                          | T13 valida `compose config` e build da imagem na CI (T14) antes de T16; T15 pode ser adiantado; Fase A não produz nada que dependa da forma de entrega                                             |
-| Let's Encrypt limita emissões para `*.sslip.io` (domínio compartilhado)                                                         | Alto — bloqueia o Checkpoint B | Emissor de staging no `Caddyfile` até o pipeline estabilizar (troca em T17); volume `caddy_data` persiste o certificado. Plano B: ZeroSSL (Caddy alterna sozinho) ou domínio definitivo antecipado |
-| Deploy via SSH falha silenciosamente (`up -d` sobe container quebrado)                                                          | Médio                          | `deploy.yml` espera `/api/health` 200 em ≤ 90s e falha o job; `HEALTHCHECK` no Dockerfile                                                                                                          |
-| `create-next-app` gera estrutura divergente do spec                                                                             | Baixo                          | T2 ajusta a árvore antes de qualquer outra tarefa; spec §4 é o critério de aceite                                                                                                                  |
-| `cacheComponents: true` exige `Suspense` em tudo que lê `cookies()`; `proxy.ts` + Supabase SSR podem gerar erro de build tardio | Médio                          | T8 já entrega `Suspense` no slot do layout; T9 é a primeira tarefa a tocar `cookies()` e valida `npm run build`                                                                                    |
-| Sem CI na Fase A, um PR pode entrar com `check` vermelho                                                                        | Baixo                          | Regra explícita em `todo.md`: `npm run check` local antes do PR; T17 torna isso obrigatório                                                                                                        |
-| Supabase CLI precisa de `SUPABASE_ACCESS_TOKEN` e projeto ativo                                                                 | Baixo                          | Falha ruidosa é desejável; `deploy/README.md` documenta                                                                                                                                            |
-| Componentes da marca e favicon ainda sem assets vetoriais oficiais integrados                                                   | Baixo                          | SVG oficial da variante Hero disponível para Open Graph; `Wordmark`, `Symbol` e favicon seguem provisórios                                                                                         |
+| Risco                                                     | Impacto                          | Mitigação                                                                                                           |
+| --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Coolify ou API indisponível                               | Deploy bloqueado                 | Monitorar estado; falha de API bloqueia workflow; nenhum bypass por Auto Deploy                                     |
+| Deploy aceito, deployment degradado                       | Produção incorreta               | T16 aguarda e consulta deployment, health público, Supabase e SHA esperado                                          |
+| Branch móvel avança entre check e checkout                | SHA sem CI entra em produção     | Pin `git_commit_sha` antes do deployment, reler pin, serializar produção e conferir deployment/health               |
+| Proxy Traefik é compartilhado; labels geradas podem mudar | Outras rotas ou headers afetados | T15 aplica middleware específico com revisão humana; preserva labels existentes; mudança global requer gate próprio |
+| `SOURCE_COMMIT` fora do build ou cache reutilizado        | `APP_VERSION` divergente         | Habilitar Include Source Commit in Build; exigir `SOURCE_COMMIT=APP_VERSION=health.version=candidate_sha`           |
+| Domínio/TLS não roteia para porta 3000                    | Site indisponível                | T15 valida domínio, porta interna e certificado real via Traefik                                                    |
+| VPS único continua ponto único de falha                   | Indisponibilidade                | Monitor externo e procedimento de rollback/recuperação Coolify                                                      |
+| Docker local indisponível                                 | Imagem só validada em T14        | CI constrói o Dockerfile em PR antes de deployment                                                                  |
+| Sem CI na Fase A                                          | PR defeituoso                    | `npm run check` local; T17 exige CI na `main`                                                                       |
 
 ## Questões abertas
 
-1. **Logo vetorial:** a variante Hero oficial já foi exportada do Figma para Open Graph. Ainda falta integrar as variantes vetoriais oficiais ao `Wordmark`, ao `Symbol` e ao favicon, que permanecem provisórios.
-2. **Provedor de analytics, monitor de uptime, fonte provisória, recursos do KVM 2** — herdadas do spec §12; nenhuma bloqueia este plano.
-3. **Acesso ao VPS:** IP público, usuário inicial e método de acesso (senha ou chave) — necessários em T15.
+1. Integrar variantes vetoriais oficiais ao `Wordmark`, `Symbol` e favicon.
+2. Provedor de analytics, monitor de uptime, fonte provisória e recursos do KVM 2, conforme spec §12.
+3. Domínio definitivo e DNS apontado para a VPS — verificar em T15; `NEXT_PUBLIC_SITE_URL` acompanha o domínio.
+4. Estado e política de access logs do Traefik compartilhado — evidência ausente; decidir em gate humano T15/T17, sem edição global nesta tarefa.
