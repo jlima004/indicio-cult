@@ -2,7 +2,7 @@
 
 Plano: [`tasks/plan.md`](./plan.md) · Spec: [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md)
 
-Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde **localmente** antes de abrir o PR (não há CI até T14); tarefas `[humano]` são executadas pela operadora com o agente apoiando. Tamanhos: XS 1 arquivo · S 1–2 · M 3–5 (arquivos gerados/boilerplate não contam).
+Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde **localmente** antes de abrir o PR; desde T14, a CI também valida PRs e pushes para `main`; tarefas `[humano]` são executadas pela operadora com o agente apoiando. Tamanhos: XS 1 arquivo · S 1–2 · M 3–5 (arquivos gerados/boilerplate não contam).
 
 ---
 
@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Próximo gate:** T14 · `ci.yml` completo. Execução bloqueada até autorização humana explícita.
+**Checkpoint A:** concluído. T13 e T14 também estão concluídas; o próximo gate ativo é T15.
 
 ---
 
@@ -246,14 +246,16 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Aceite:**
 
-- [ ] Job comum `ci` verde em PR sem token privilegiado e em push para `main`; job `db-types` verde em push para `main` após `ci`; tempo total ≤ 10 min com cache quente.
-- [ ] Docker build falha quando o Dockerfile quebra; gitleaks e varredura do bundle bloqueiam segredos.
-- [ ] `db:types` diff falha se os tipos estiverem desatualizados, em teste local controlado ou contexto remoto confiável.
-- [ ] Build usa as variáveis públicas; E2E usa Supabase público real e sentinela não secreta apenas no runtime, sem chamar `admin.ts`.
-- [ ] `db-types` recebe project id e access token apenas no passo de tipos; o Secret do repositório está ausente, o Secret do ambiente está presente e a política do ambiente permite somente `main`; nenhuma service role real está na CI.
-- [ ] Docker build recebe apenas os três `NEXT_PUBLIC_*` obrigatórios, o DSN público opcional e `APP_VERSION`; exclui `SUPABASE_SERVICE_ROLE_KEY`, `SENTRY_DSN`, `SUPABASE_ACCESS_TOKEN`.
+- [x] Job comum `ci` verde em PR sem token privilegiado e em push para `main`; job `db-types` verde em push para `main` após `ci`; tempo total ≤ 10 min com cache quente.
+- [x] Docker build falha quando o Dockerfile quebra; gitleaks e varredura do bundle bloqueiam segredos.
+- [x] `db:types` diff falha se os tipos estiverem desatualizados, em teste local controlado ou contexto remoto confiável.
+- [x] Build usa as variáveis públicas; E2E usa Supabase público real e sentinela não secreta apenas no runtime, sem chamar `admin.ts`.
+- [x] `db-types` recebe project id e access token apenas no passo de tipos; o Secret do repositório está ausente, o Secret do ambiente está presente e a política do ambiente permite somente `main`; nenhuma service role real está na CI.
+- [x] Docker build recebe apenas os três `NEXT_PUBLIC_*` obrigatórios, o DSN público opcional e `APP_VERSION`; exclui `SUPABASE_SERVICE_ROLE_KEY`, `SENTRY_DSN`, `SUPABASE_ACCESS_TOKEN`.
 
 **Verificação:** `gh run list --workflow ci.yml`; `gh run view <id>`; casos negativos de Dockerfile quebrado, fixture Gitleaks e marcador no bundle podem rodar em branch/PR descartável sem token. O caso negativo de tipos desatualizados deve rodar somente em contexto confiável; teste local controlado com o mesmo comando é aceitável antes do merge. Nunca executar código de PR com PAT Supabase nem afrouxar a política do ambiente para testar o ambiente.
+
+**Fechamento T14:** PR #13 mesclada em `main` no commit `611a880404f064dcc074f0aa0fd0a09d17e60fa9`; casos negativos de Docker, Gitleaks, bundle e `db:types` passaram; o push de `main` executou a CI run #8 (`36042674785`) com os jobs `ci` e `db-types` verdes em menos de 10 minutos. Revisão humana concluída.
 
 **Dependências:** T12, T13 · **Arquivos:** `.github/workflows/ci.yml`, `.gitleaks.toml` (se necessário) · **Tamanho:** S
 
@@ -269,7 +271,7 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 - [ ] Build/runtime vars e secrets têm escopo correto; `SOURCE_COMMIT` alcança o build e `APP_VERSION` expõe o SHA.
 - [ ] Auto Deploy OFF, API Access/UUID/tokens e GitHub secrets/variables corretos; headers aplicados e estado dos access logs registrado.
 
-**Verificação:** operadora inspeciona configuração Coolify, DNS/TLS, logs, health e GitHub secrets; não executar nesta T13.
+**Verificação:** operadora inspeciona configuração Coolify, DNS/TLS, logs, health e GitHub secrets. T15 é o próximo gate e permanece bloqueada até autorização humana explícita.
 
 **Dependências:** T13 · **Arquivos:** nenhum de runtime; configuração humana · **Tamanho:** M
 

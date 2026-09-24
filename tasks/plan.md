@@ -5,7 +5,7 @@
 | Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
 | Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
 | Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
-| Status           | Em execução — T14 é o próximo gate                                                                                              |
+| Status           | Em execução — T14 concluída; T15 é o próximo gate                                                                               |
 
 ## Visão geral
 
@@ -13,8 +13,8 @@ Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `stand
 
 ## Decisões de arquitetura do plano
 
-- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13 foi revisada e mesclada; T14 é o próximo gate.
-- **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instala a CI e T17 exige o status check na `main`.
+- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13 e T14 foram revisadas, validadas e mescladas; T15 é o próximo gate.
+- **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instalou a CI para PRs e pushes em `main`, e T17 exigirá o status check na proteção da `main`.
 - **Uma camada pública.** Coolify gerencia o recurso Git com Dockerfile e Traefik gerencia domínio/TLS. O Next escuta apenas na porta interna 3000; não há proxy próprio nem porta host da aplicação.
 - **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
 - **Tarefas humanas explícitas.** T15 configura o recurso, domínio, variáveis, storage, middleware e segredos de automação. Nenhuma mudança global no Traefik é automática; access logs globais pedem decisão humana.
@@ -24,9 +24,7 @@ Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `stand
 ## Grafo de dependências
 
 ```text
-T1–T13 concluídas → T14 CI → T16 pin + deploy API pós-CI → T17 proteção/TLS/rollback → T18 validação
-                                      ↑
-              T15 [humano] recurso Coolify + secrets (após T13)
+T1–T14 concluídas → T15 [humano] recurso Coolify + secrets → T16 pin + deploy API pós-CI → T17 proteção/TLS/rollback → T18 validação
 ```
 
 ## Lista de tarefas (índice; detalhes em `todo.md`)
@@ -52,12 +50,12 @@ T1–T13 concluídas → T14 CI → T16 pin + deploy API pós-CI → T17 proteç
 - [x] Home, 404, erro e manutenção com copy da marca
 - [x] Revisão com a operadora antes do empacotamento
 
-**Próximo gate:** T14 · `ci.yml` completo. Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T15 · `[humano]` Configuração do recurso Coolify/API/UUID, domínio/TLS, variáveis, storage, headers, tokens, GitHub secrets e evidência dos access logs. Execução bloqueada até autorização humana explícita.
 
 ### Fase B — Empacotamento e entrega
 
 - [x] T13 · Dockerfile multi-stage, `.dockerignore` e runbook Coolify/Traefik; sem Compose/Caddy próprios
-- [ ] T14 · `ci.yml`: `check`, build, E2E, `db:types` diff, gitleaks, varredura de bundle e build da imagem sem publicação
+- [x] T14 · `ci.yml`: `check`, build, E2E, `db:types` diff, gitleaks, varredura de bundle e build da imagem sem publicação
 - [ ] T15 · `[humano]` Configuração do recurso Coolify/API/UUID, domínio/TLS, variáveis, storage, headers, tokens, GitHub secrets e evidência dos access logs
 - [ ] T16 · `deploy.yml`: CI verde → pin SHA via API → verificar pin → deploy por UUID → validar deployment/health → aquecer Home
 - [ ] T17 · Proteção da `main`, certificado público, security headers, access logs e rollback Coolify testado
@@ -80,8 +78,8 @@ T1–T13 concluídas → T14 CI → T16 pin + deploy API pós-CI → T17 proteç
 
 ## Paralelização
 
-- T1–T13 estão concluídas. T14 é o próximo gate; T15 continua como gate humano independente após T13.
-- T14 e T15 podem avançar em paralelo; T16 depende de ambos. T17 depende de T16, e T18 fecha as evidências.
+- T1–T14 estão concluídas. T15 é o próximo gate humano.
+- T16 depende de T14 e T15; com T14 concluída, resta concluir T15 antes de iniciar T16. T17 depende de T16, e T18 fecha as evidências.
 
 ## Riscos e mitigações
 
