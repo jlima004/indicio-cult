@@ -4,6 +4,8 @@ import { publicEnv, publicRelease } from '@/lib/env/public'
 import { isDevelopment } from '@/lib/env/runtime'
 import { sentryDataCollection } from '@/lib/sentry/privacy'
 
+console.info('[T14 negative] SUPABASE_SERVICE_ROLE_KEY')
+
 if (publicEnv.NEXT_PUBLIC_SENTRY_DSN) {
   Sentry.init({
     dsn: publicEnv.NEXT_PUBLIC_SENTRY_DSN,
