@@ -96,7 +96,7 @@ jobs:
         run: |
           test -d .next/static
           status=0
-          rg --fixed-strings --quiet \
+          grep --recursive --fixed-strings --quiet \
             -e 'ci-unused-foundation-e2e' \
             -e 'SUPABASE_SERVICE_ROLE_KEY' \
             .next/static || status=$?
