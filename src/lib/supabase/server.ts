@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
-import { publicEnv } from '@/lib/env'
+import { publicEnv } from '@/lib/env/public'
 
 import type { Database } from './database.types'
 

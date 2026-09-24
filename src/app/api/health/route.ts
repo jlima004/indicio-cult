@@ -1,6 +1,5 @@
 import { connection } from 'next/server'
 
-import { env } from '@/lib/env'
 import { json, problem } from '@/lib/http'
 import { clientIp, memoryRateLimiter } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
@@ -42,6 +41,9 @@ async function isSupabaseHealthy(): Promise<boolean> {
 
 export async function GET(request: Request): Promise<Response> {
   await connection()
+  // O build coleta a configuração da rota sem segredos de servidor.
+  // A validação de env permanece no runtime, após a fronteira dinâmica.
+  const { env } = await import('@/lib/env')
 
   const rateLimit = memoryRateLimiter.limit(clientIp(request), RATE_LIMIT)
 

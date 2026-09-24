@@ -1,0 +1,10 @@
+# Traefik Headers middleware: https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/headers/
+# Coolify Dynamic Configurations: https://coolify.io/docs/core/networking/proxy/traefik/dynamic-config
+http:
+  middlewares:
+    indicio-cult-security-headers:
+      headers:
+        stsSeconds: 300
+        contentTypeNosniff: true
+        referrerPolicy: strict-origin-when-cross-origin
+        permissionsPolicy: 'camera=(), microphone=(), geolocation=(), payment=()'
