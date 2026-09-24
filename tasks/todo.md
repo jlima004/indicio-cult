@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Próximo gate:** T13 · Dockerfile + contrato Coolify/Traefik + runbook. Implementação local em revisão humana; T13 só fecha após merge.
+**Próximo gate:** T14 · `ci.yml` completo. Execução bloqueada até autorização humana explícita.
 
 ---
 
@@ -222,11 +222,11 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] Imagem multi-stage usa Node 22, Next `standalone`, usuário não-root, porta interna 3000 e healthcheck real; cache é gravável pelo usuário `node`.
-- [ ] `APP_VERSION` recebe o commit implantado via `SOURCE_COMMIT`, com configuração de build documentada; somente variáveis públicas e o SHA entram no build, sem segredo de servidor.
-- [ ] `.dockerignore` exclui `node_modules`, `.next`, `.env*`, testes e docs; nenhum proxy próprio ou porta host 80/443 é criado.
-- [ ] Runbook documenta recurso Coolify, domínio/TLS, storage, headers, Auto Deploy OFF, pin e deploy por API somente após CI e acesso a logs sem afirmar habilitação atual.
-- [ ] Nenhum deploy real executado. T13 permanece desmarcada até merge/sincronização.
+- [x] Imagem multi-stage usa Node 22, Next `standalone`, usuário não-root, porta interna 3000 e healthcheck real; cache é gravável pelo usuário `node`.
+- [x] `APP_VERSION` recebe o commit implantado via `SOURCE_COMMIT`, com configuração de build documentada; somente variáveis públicas e o SHA entram no build, sem segredo de servidor.
+- [x] `.dockerignore` exclui `node_modules`, `.next`, `.env*`, testes e docs; nenhum proxy próprio ou porta host 80/443 é criado.
+- [x] Runbook documenta recurso Coolify, domínio/TLS, storage, headers, Auto Deploy OFF, pin e deploy por API somente após CI e acesso a logs sem afirmar habilitação atual.
+- [x] Nenhum deploy real executado; T13 concluída após revisão, merge da PR #12 e sincronização documental.
 
 **Verificação:** revisão estática e gates locais; T14 constrói a imagem na CI, T15 configura a plataforma e T16 valida deploy real.
 
