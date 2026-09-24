@@ -52,16 +52,16 @@ T1 repo ─→ T2 scaffold ─┬─→ T3 Vitest ─→ T4 env.ts ─→ T5 Sup
 - [x] T9 · `proxy.ts` (manutenção, sessão, proteção) + layouts `(vitrine)`/`(conta)`/`admin`
 - [x] T10 · Metadata padrão, Open Graph, `robots.ts`, `sitemap.ts`, `lib/analytics/track`
 - [x] T11 · Sentry (`instrumentation*.ts`, `error.tsx`, `release` = sha) — inclui `[humano]` criar projeto/DSN
-- [ ] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
+- [x] T12 · Playwright: 4 cenários × mobile/desktop contra `next start`
 
-**Próximo gate:** T12 · Playwright: smoke E2E (4 cenários × mobile/desktop contra `next start`). Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T13 · Dockerfile, Compose, Caddyfile e guia do VPS. Execução bloqueada até autorização humana explícita.
 
 ### Checkpoint A — "Aplicação completa localmente"
 
-- [ ] `npm run check` verde; `npm run build && npm run start` → health `supabase: 'ok'`
-- [ ] `npm run test:e2e` verde nos 8 casos
-- [ ] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
-- [ ] Revisão com a operadora antes de empacotar
+- [x] `npm run check` verde; `npm run build && npm run start` → health `supabase: 'ok'`
+- [x] `npm run test:e2e` verde nos 8 casos
+- [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
+- [x] Revisão com a operadora antes de empacotar
 
 ### Fase B — Empacotamento e entrega
 

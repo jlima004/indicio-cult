@@ -193,9 +193,9 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 **Aceite:**
 
-- [ ] `npm run test:e2e` passa localmente nos 4 cenários × 2 projetos
-- [ ] Falha se a copy da 404 mudar (asserção textual exata)
-- [ ] Relatório HTML gerado e ignorado pelo git
+- [x] `npm run test:e2e` passa localmente nos 4 cenários × 2 projetos
+- [x] Falha se a copy da 404 mudar (asserção textual exata)
+- [x] Relatório HTML gerado e ignorado pelo git
 
 **Verificação:** `npm run test:e2e`.
 
@@ -205,10 +205,12 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 
 ## Checkpoint A — "Aplicação completa localmente"
 
-- [ ] `npm run check` verde; `npm run build && npm run start` → health `supabase: 'ok'`
-- [ ] `npm run test:e2e` verde nos 8 casos
-- [ ] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
-- [ ] Revisão com a operadora antes de empacotar
+- [x] `npm run check` verde; `npm run build && npm run start` → health `supabase: 'ok'`
+- [x] `npm run test:e2e` verde nos 8 casos
+- [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
+- [x] Revisão com a operadora antes de empacotar
+
+**Próximo gate:** T13 · Dockerfile, Compose, Caddyfile e guia do VPS. Execução bloqueada até autorização humana explícita.
 
 ---
 
