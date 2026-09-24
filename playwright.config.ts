@@ -17,7 +17,8 @@ export default defineConfig({
   webServer: [
     {
       name: 'normal',
-      command: 'npm run build && npm run start -- -H 127.0.0.1 -p 3000',
+      command:
+        'env MAINTENANCE_MODE=false npm run build && env MAINTENANCE_MODE=false npm run start -- -H 127.0.0.1 -p 3000',
       url: `${normalUrl}/api/health`,
       reuseExistingServer,
       timeout: 180_000,
