@@ -343,4 +343,3 @@ jobs:
             echo "- health: \`$COOLIFY_HEALTH_URL\`"
             echo "- result: PASS"
           } >> "$GITHUB_STEP_SUMMARY"
-          
