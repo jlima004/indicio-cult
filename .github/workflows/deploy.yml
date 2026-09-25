@@ -51,6 +51,22 @@ jobs:
             fi
           done
 
+          case "$COOLIFY_API_URL" in
+            https://*) ;;
+            *)
+              echo "COOLIFY_API_URL must use HTTPS." >&2
+              exit 1
+              ;;
+          esac
+
+          case "$COOLIFY_HEALTH_URL" in
+            https://*) ;;
+            *)
+              echo "COOLIFY_HEALTH_URL must use HTTPS." >&2
+              exit 1
+              ;;
+          esac
+
       - name: Reject superseded candidate
         id: guard
         shell: bash
@@ -100,6 +116,7 @@ jobs:
           )"
 
           curl \
+            --proto '=https' \
             --fail-with-body \
             --silent \
             --show-error \
@@ -118,6 +135,7 @@ jobs:
 
           application="$(
             curl \
+              --proto '=https' \
               --fail \
               --silent \
               --show-error \
@@ -147,6 +165,7 @@ jobs:
 
           response="$(
             curl \
+              --proto '=https' \
               --fail-with-body \
               --silent \
               --show-error \
@@ -181,6 +200,7 @@ jobs:
 
             http_code="$(
               curl \
+                --proto '=https' \
                 --silent \
                 --show-error \
                 --max-time 10 \
@@ -242,6 +262,7 @@ jobs:
 
             http_code="$(
               curl \
+                --proto '=https' \
                 --silent \
                 --show-error \
                 --max-time 10 \
@@ -283,6 +304,7 @@ jobs:
           headers_file="$(mktemp)"
 
           curl \
+            --proto '=https' \
             --fail \
             --silent \
             --show-error \
@@ -316,6 +338,7 @@ jobs:
 
           http_code="$(
             curl \
+              --proto '=https' \
               --silent \
               --show-error \
               --output /dev/null \
