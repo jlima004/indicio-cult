@@ -20,6 +20,3 @@ export const publicEnv = parseEnv(publicSchema, {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
 })
-
-// next.config.ts injeta este valor a partir de APP_VERSION no build.
-export const publicRelease = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
