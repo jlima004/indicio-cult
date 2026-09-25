@@ -1,8 +1,10 @@
 # Deploy no Coolify — Indicio Cult
 
-Este é o contrato de configuração para o futuro provisionamento (T15), primeiro
-deploy (T16) e ensaio de rollback (T17). T13 somente versiona a imagem e o
-runbook; não cria o recurso no Coolify nem publica a aplicação.
+Este runbook é o contrato de configuração do recurso Coolify. T15 provisionou
+o recurso, T16 fez o primeiro deploy e T17 registrou a proteção da `main`, a
+borda TLS e o ensaio de rollback. A evidência T17 está no final deste arquivo.
+T13 somente versiona a imagem e o runbook; não cria o recurso no Coolify nem
+publica a aplicação.
 
 ## Arquitetura e pré-requisitos
 
@@ -115,25 +117,30 @@ entre réplicas sem um cache handler compatível. Veja
 [Persistent Storage](https://coolify.io/docs/applications/configuration/persistent-storage)
 e [Next.js self-hosting](https://nextjs.org/docs/app/guides/self-hosting#caching-and-isr).
 
-Em T17, para rollback, abra **Configuration > Rollback**, escolha uma imagem
+Para rollback, abra **Configuration > Rollback**, escolha uma imagem
 anterior retida, execute a ação e acompanhe **Deployments**. Valide domínio,
-logs, health e identidade da imagem selecionada. Registre o commit da imagem
-anterior e confira separadamente `NEXT_PUBLIC_APP_VERSION`, embutido pelo
-`next.config.ts` no build da imagem selecionada. O rollback troca a imagem,
-mas usa as variáveis runtime atuais: `APP_VERSION=$SOURCE_COMMIT`
-pode expor no health um SHA diferente do código restaurado. Não aceite o teste
-com essa divergência; ajuste a configuração de runtime ao SHA da imagem sob
-controle humano, aplique a mudança sem reconstruir ou substituir a imagem
-restaurada e confira o ID da imagem antes/depois. Se a plataforma não permitir
-provar isso, bloqueie o aceite do rollback. Confirme novamente health e
-`NEXT_PUBLIC_APP_VERSION`, e restaure a configuração da release vigente ao
-terminar o ensaio. O rollback não restaura banco ou volume; retenção de imagens
-limita as opções.
+logs, health e a identidade da imagem selecionada. O rollback troca a imagem,
+mas reutiliza as variáveis runtime atuais: `APP_VERSION=$SOURCE_COMMIT` pode
+fazer `/api/health` (`health.version`) mostrar um SHA diferente do código
+restaurado, ou coincidir com o SHA alvo mesmo quando outra imagem está em
+execução. Por isso `health.version` sozinho é evidência insuficiente da
+imagem restaurada. Não aceite o ensaio só com health. O aceite exige as duas
+identidades ao mesmo tempo: a release pública embutida no build
+(`NEXT_PUBLIC_APP_VERSION` em `.next/static` da imagem retida) e a identidade
+runtime de health (`status=ok`, `supabase=ok` e `version` igual ao SHA dessa
+imagem). Registre também o commit do histórico de deployment do Coolify, a
+tag da imagem Docker retida, o ID da imagem e `APP_VERSION` no Config da
+imagem. Ajuste a configuração de runtime ao SHA da imagem sob controle
+humano, aplique a mudança sem reconstruir ou substituir a imagem restaurada
+e confira o ID da imagem antes e depois. Se não for possível provar a
+release embutida e o health juntos, bloqueie o aceite do rollback. Ao
+terminar o ensaio, restaure a configuração da release vigente. O rollback
+não restaura banco ou volume; a retenção de imagens limita as opções.
 Veja [Rollbacks](https://coolify.io/docs/applications/deployments/rollbacks).
 
 ## Automação pós-CI (T15/T16)
 
-O futuro fluxo é `push/merge main → CI verde → pin do commit via API → deploy
+O fluxo validado em T16 é `push/merge main → CI verde → pin do commit via API → deploy
 por UUID → health`. Auto Deploy continua desligado. Em T15, habilite
 **Settings > Configuration > Advanced > API Access**, identifique o UUID da
 Application e crie, na equipe proprietária, um token `read` + `write` para
@@ -195,12 +202,12 @@ altere o Compose principal do proxy. Consulte
 [Dynamic Configuration](https://coolify.io/docs/core/networking/proxy/traefik/dynamic-config)
 e [Custom Middlewares](https://coolify.io/docs/core/networking/proxy/traefik/custom-middlewares).
 
-Access logs são responsabilidade do Traefik compartilhado e a evidência atual
-**não comprova** que estejam ativos. Habilitá-los em JSON, se aprovado, é uma
-operação de configuração estática/global do proxy que pode afetar todos os
-recursos. T13 não altera essa configuração. O gate humano/plataforma em T15 ou
-T17 deve inspecionar a configuração e decidir ativação, destino, rotação e
-retenção. Logs da aplicação no Coolify não substituem access logs do proxy.
+Access logs são responsabilidade do Traefik compartilhado. T15 e T17
+inspecionaram a configuração e os mantiveram DISABLED; habilitá-los em JSON,
+se aprovado no futuro, continua sendo operação de configuração estática/global
+do proxy e pode afetar todos os recursos. Não altere o Compose principal do
+proxy sem gate humano próprio. Logs da aplicação no Coolify não substituem
+access logs do proxy. A evidência T17 está no final deste runbook.
 
 T16 agora materializa: .github/workflows/deploy.yml
 Workflow:
@@ -217,3 +224,66 @@ exige health.version == candidate_sha
 valida TLS sem -k
 valida headers
 aquece Home
+
+## Evidência T17 / estado validado
+
+Branch protection:
+
+- ruleset `main-protection` (`24014122`), enforcement active, alvo `~DEFAULT_BRANCH`
+- pull request obrigatório
+- status check `ci` obrigatório, com `strict_required_status_checks_policy`
+- deletion bloqueada
+- non-fast-forward bloqueado
+- `bypass_actors` vazio
+- zero reviewers obrigatórios
+
+Testes negativos:
+
+- push direto `HEAD:main` do commit `5272742` rejeitado com `GH013` (PR obrigatório e check `ci` esperado); `main` permaneceu `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- PR #19 (`948eeb5`, CI run `36178323433`) ficou com `CI/ci` FAILURE, `CI/db-types` SKIPPED, `mergeStateStatus` BLOCKED e foi fechada sem merge
+
+Borda:
+
+- HTTPS canônico validado sem `-k`
+- certificado Let's Encrypt, subject `CN = indiciocult.com.br`, issuer Let's Encrypt / YR2, notBefore Sep 25 17:07:45 2026 GMT, notAfter Dec 24 17:07:44 2026 GMT
+- Home HTTP/2 200
+- 404 da marca, HTTP 404, copy "Esse rastro não leva a lugar nenhum."
+- `/api/health`: `status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- quatro security headers: `permissions-policy` `camera=(), microphone=(), geolocation=(), payment=()`; `referrer-policy` `strict-origin-when-cross-origin`; `strict-transport-security` `max-age=300`; `x-content-type-options` `nosniff`
+
+Access logs:
+
+- DISABLED
+- KEEP DISABLED
+- Traefik v3.6 sem `--accesslog=true` nem `--accesslog.*` no command do proxy
+- nenhuma mutação global do proxy
+
+Rollback:
+
+- release vigente antes do ensaio: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- alvo do rollback: `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- o rollback reutiliza as variáveis runtime atuais; `health.version` sozinho não prova a imagem restaurada. O ensaio só foi aceito com as duas identidades: release pública embutida e health runtime iguais ao SHA da imagem retida
+
+Identidade do rollback `95f16f6cbb62db273f3c00bc33389efbe25774d7`:
+
+- commit no histórico de deployment do Coolify: Source Rollback, commit `95f16f6cbb62db273f3c00bc33389efbe25774d7`, Status Success
+- tag da imagem Docker retida: `ly3lndsfdmzbe6z5ubun1q5d:95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- image ID: `sha256:bfc8c03d6d3a9904a7af6c2f565ebe83752c9b3ae806157202c7efd5742b50de`
+- `APP_VERSION` no Config da imagem (`docker image inspect`): `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- release pública embutida em `.next/static`: o SHA `95f16f6cbb62db273f3c00bc33389efbe25774d7` foi encontrado em `/app/.next/static/chunks/2lnj293pd02rk.js`; gate PASS
+- runtime `health.version`: `95f16f6cbb62db273f3c00bc33389efbe25774d7` (`status=ok`, `supabase=ok`; HTTPS PASS; Home 200; quatro headers; 404 da marca HTTP 404)
+- a prova da release embutida veio de um container efêmero da imagem retida com `--entrypoint sh` e não alterou produção
+- identidade coincidente: commit do Coolify = tag da imagem retida = Config `APP_VERSION` = release pública em `.next/static` = `health.version` = `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+
+Restauração `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`:
+
+- commit no histórico de deployment do Coolify: Source Rollback, commit `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`, Status Success
+- tag da imagem Docker retida: `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- image ID: `sha256:2439fd613b1f23a69690f99ffd1d8d9e7ddd9cc6ee0758d27aaf71274b142c17`
+- `APP_VERSION` no Config da imagem (`docker image inspect`): `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- release pública embutida em `.next/static`: PASS `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- imagem do container em execução: `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- container ID em execução: `826fd51cdfc72f4a9ead8caa6b2fb9fc39e43f49037f84f2da898af392ef6a93`
+- runtime `health.version`: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (`status=ok`, `supabase=ok`; HTTPS PASS; Home 200; quatro headers)
+- a restauração reutilizou a imagem retida e pulou o build: o log do Coolify importou `jlima004/indicio-cult:main` no commit `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`, encontrou `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` com o mesmo Git Commit SHA, marcou o build step como skipped, iniciou rolling update, healthcheck healthy e concluiu o rolling update
+- identidade final coincidente: commit restaurado = tag da imagem retida = imagem do container em execução = Config `APP_VERSION` = release pública em `.next/static` = `health.version` = `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
