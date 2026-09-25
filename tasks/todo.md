@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Checkpoint A:** concluído. T13–T16 também estão concluídas; o próximo gate ativo é T17.
+**Checkpoint A:** concluído. T13–T17 também estão concluídas; o próximo gate ativo é T18, que ainda não foi iniciado.
 
 ---
 
@@ -293,7 +293,7 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Verificação:** PR #18 mesclada em `main` no commit `95f16f6cbb62db273f3c00bc33389efbe25774d7`; CI run #16 (`36170635738`) PASS; Deploy Production #1 (`36170999151`) PASS; deployment UUID `ref3vayi4ee6sbywqx7uycp3`. O workflow comprovou `candidate_sha == configured_git_commit_sha == deployment.commit == health.version`; T15 já havia configurado `APP_VERSION=$SOURCE_COMMIT`, e o Coolify importou/construiu exatamente o mesmo commit. Health público confirmou `status=ok`, `supabase=ok` e versão correta; os quatro security headers e a Home 200 foram validados sobre HTTPS sem bypass. O Dockerfile healthcheck ficou `healthy`. O volume `/app/.next/cache` foi confirmado gravável pelo processo `uid=1000(node) gid=1000(node)` com criação/leitura/remoção de arquivo de teste.
 
-**Fechamento T16:** `HUMAN APPROVED`; implementação PASS; runtime validation PASS; primeiro deploy de produção PASS. T16 encerrada e T17 definido como próximo gate, ainda não iniciado.
+**Fechamento T16:** `HUMAN APPROVED`; implementação PASS; runtime validation PASS; primeiro deploy de produção PASS. T16 encerrada; o gate seguinte, naquele momento, era T17.
 
 **Dependências:** T14, T15 · **Arquivos:** `.github/workflows/deploy.yml`, `deploy/README.md` · **Tamanho:** S
 
@@ -305,11 +305,13 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Aceite:**
 
-- [ ] Push direto na `main` rejeitado; PR sem CI verde não é mesclado.
-- [ ] HTTPS sem `-k`, 404 da marca, TLS e headers corretos.
-- [ ] Rollback do Coolify para imagem anterior testado e revertido, com evidência do commit da imagem, release embutida e health coerente; estado dos access logs registrado.
+- [x] Push direto na `main` rejeitado; PR sem CI verde não é mesclado.
+- [x] HTTPS sem `-k`, 404 da marca, TLS e headers corretos.
+- [x] Rollback do Coolify para imagem/release anterior testado e revertido, com identidade coerente; estado dos access logs registrado.
 
-**Verificação:** proteção GitHub, `curl` público, tela/logs Coolify e registro do teste de rollback.
+**Verificação:** Ruleset `main-protection` (`24014122`) ativo em `~DEFAULT_BRANCH`, enforcement active, `bypass_actors` vazio. Deletion, non-fast-forward e pull request ativos; zero reviewers obrigatórios; status check `ci` obrigatório com `strict_required_status_checks_policy`. Push direto `git push origin HEAD:main` do commit vazio `5272742` (`test: prove main rejects direct push`, branch `test/t17-direct-push`) rejeitado com `GH013`: changes must be made through a pull request; required status check `ci` is expected. A branch local de teste foi removida depois e `main` permaneceu `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`. PR #19 (`test/t17-required-ci`, `948eeb5`, `test: prove main requires CI`) teve a CI run `36178323433` com `CI/ci` FAILURE e `CI/db-types` SKIPPED; `mergeStateStatus` BLOCKED, `mergeable_state` blocked e `merged` false. A PR #19 foi fechada sem merge e a branch remota removida. Borda pública `https://indiciocult.com.br` sem `-k`: Home HTTP/2 200; certificado Let's Encrypt, subject `CN = indiciocult.com.br`, issuer Let's Encrypt / YR2, notBefore Sep 25 17:07:45 2026 GMT, notAfter Dec 24 17:07:44 2026 GMT; 404 HTTP 404 com a copy "Esse rastro não leva a lugar nenhum."; `/api/health` com `status=ok`, `supabase=ok` e `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`. Headers: `permissions-policy` `camera=(), microphone=(), geolocation=(), payment=()`; `referrer-policy` `strict-origin-when-cross-origin`; `strict-transport-security` `max-age=300`; `x-content-type-options` `nosniff`. Traefik v3.6 inspecionado em `/data/coolify/proxy/docker-compose.yml` e em `docker inspect coolify-proxy`: o command não contém `--accesslog=true` nem `--accesslog.*`. Decisão humana: access logs DISABLED e KEEP DISABLED; nenhuma mutação global do proxy. Rollback oficial do Coolify da release `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` para `95f16f6cbb62db273f3c00bc33389efbe25774d7`: `/api/health` `status=ok`, `supabase=ok`, `version=95f16f6cbb62db273f3c00bc33389efbe25774d7` (jq true); HTTPS PASS; Home HTTP 200; os quatro security headers; 404 da marca HTTP 404. Restauração para `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`: `/api/health` `status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (jq true); HTTPS PASS; Home HTTP 200; os quatro security headers. O Coolify registrou Success Rollback dessa restauração (deployment `4ikv6rueybefxojl6cbwst8r`), reutilizando a imagem já existente `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`, com healthcheck healthy. Produção final permanece em `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`.
+
+**Fechamento T17:** `HUMAN APPROVED`; branch protection PASS; edge/TLS PASS; access-log adjudication PASS; rollback PASS; restoration PASS. T17 encerrada. T18 é o próximo gate e ainda não foi iniciado.
 
 **Dependências:** T16 · **Arquivos:** `deploy/README.md`, documentação/evidências · **Tamanho:** S
 
@@ -317,10 +319,12 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 ## Checkpoint B — “Está no ar”
 
-- [ ] Domínio público responde via Coolify/Traefik com TLS válido; Home, 404 e `/api/health` corretos.
-- [ ] CI e deploy workflow verdes; evidência de `candidate_sha == configured git_commit_sha == deployment.commit == SOURCE_COMMIT == APP_VERSION == health.version`.
-- [ ] Push/merge na `main` só aciona pin/deploy por API após CI; Auto Deploy OFF; rollback Coolify testado.
-- [ ] Operadora revisou configuração, secrets, headers e estado real dos access logs.
+- [x] Domínio público responde via Coolify/Traefik com TLS válido; Home, 404 e `/api/health` corretos.
+- [x] CI e deploy workflow verdes; evidência de `candidate_sha == configured git_commit_sha == deployment.commit == SOURCE_COMMIT == APP_VERSION == health.version`.
+- [x] Push/merge na `main` só aciona pin/deploy por API após CI; Auto Deploy OFF; rollback Coolify testado.
+- [x] Operadora revisou configuração, secrets, headers e estado real dos access logs.
+
+**Checkpoint B:** concluído.
 
 ---
 

@@ -1,8 +1,10 @@
 # Deploy no Coolify — Indicio Cult
 
-Este é o contrato de configuração para o futuro provisionamento (T15), primeiro
-deploy (T16) e ensaio de rollback (T17). T13 somente versiona a imagem e o
-runbook; não cria o recurso no Coolify nem publica a aplicação.
+Este runbook é o contrato de configuração do recurso Coolify. T15 provisionou
+o recurso, T16 fez o primeiro deploy e T17 registrou a proteção da `main`, a
+borda TLS e o ensaio de rollback. A evidência T17 está no final deste arquivo.
+T13 somente versiona a imagem e o runbook; não cria o recurso no Coolify nem
+publica a aplicação.
 
 ## Arquitetura e pré-requisitos
 
@@ -115,7 +117,7 @@ entre réplicas sem um cache handler compatível. Veja
 [Persistent Storage](https://coolify.io/docs/applications/configuration/persistent-storage)
 e [Next.js self-hosting](https://nextjs.org/docs/app/guides/self-hosting#caching-and-isr).
 
-Em T17, para rollback, abra **Configuration > Rollback**, escolha uma imagem
+Para rollback, abra **Configuration > Rollback**, escolha uma imagem
 anterior retida, execute a ação e acompanhe **Deployments**. Valide domínio,
 logs, health e identidade da imagem selecionada. Registre o commit da imagem
 anterior e confira separadamente `NEXT_PUBLIC_APP_VERSION`, embutido pelo
@@ -133,7 +135,7 @@ Veja [Rollbacks](https://coolify.io/docs/applications/deployments/rollbacks).
 
 ## Automação pós-CI (T15/T16)
 
-O futuro fluxo é `push/merge main → CI verde → pin do commit via API → deploy
+O fluxo validado em T16 é `push/merge main → CI verde → pin do commit via API → deploy
 por UUID → health`. Auto Deploy continua desligado. Em T15, habilite
 **Settings > Configuration > Advanced > API Access**, identifique o UUID da
 Application e crie, na equipe proprietária, um token `read` + `write` para
@@ -195,12 +197,12 @@ altere o Compose principal do proxy. Consulte
 [Dynamic Configuration](https://coolify.io/docs/core/networking/proxy/traefik/dynamic-config)
 e [Custom Middlewares](https://coolify.io/docs/core/networking/proxy/traefik/custom-middlewares).
 
-Access logs são responsabilidade do Traefik compartilhado e a evidência atual
-**não comprova** que estejam ativos. Habilitá-los em JSON, se aprovado, é uma
-operação de configuração estática/global do proxy que pode afetar todos os
-recursos. T13 não altera essa configuração. O gate humano/plataforma em T15 ou
-T17 deve inspecionar a configuração e decidir ativação, destino, rotação e
-retenção. Logs da aplicação no Coolify não substituem access logs do proxy.
+Access logs são responsabilidade do Traefik compartilhado. T15 e T17
+inspecionaram a configuração e os mantiveram DISABLED; habilitá-los em JSON,
+se aprovado no futuro, continua sendo operação de configuração estática/global
+do proxy e pode afetar todos os recursos. Não altere o Compose principal do
+proxy sem gate humano próprio. Logs da aplicação no Coolify não substituem
+access logs do proxy. A evidência T17 está no final deste runbook.
 
 T16 agora materializa: .github/workflows/deploy.yml
 Workflow:
@@ -217,3 +219,45 @@ exige health.version == candidate_sha
 valida TLS sem -k
 valida headers
 aquece Home
+
+## Evidência T17 / estado validado
+
+Branch protection:
+
+- ruleset `main-protection` (`24014122`), enforcement active, alvo `~DEFAULT_BRANCH`
+- pull request obrigatório
+- status check `ci` obrigatório, com `strict_required_status_checks_policy`
+- deletion bloqueada
+- non-fast-forward bloqueado
+- `bypass_actors` vazio
+- zero reviewers obrigatórios
+
+Testes negativos:
+
+- push direto `HEAD:main` do commit `5272742` rejeitado com `GH013` (PR obrigatório e check `ci` esperado); `main` permaneceu `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- PR #19 (`948eeb5`, CI run `36178323433`) ficou com `CI/ci` FAILURE, `CI/db-types` SKIPPED, `mergeStateStatus` BLOCKED e foi fechada sem merge
+
+Borda:
+
+- HTTPS canônico validado sem `-k`
+- certificado Let's Encrypt, subject `CN = indiciocult.com.br`, issuer Let's Encrypt / YR2, notBefore Sep 25 17:07:45 2026 GMT, notAfter Dec 24 17:07:44 2026 GMT
+- Home HTTP/2 200
+- 404 da marca, HTTP 404, copy "Esse rastro não leva a lugar nenhum."
+- `/api/health`: `status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- quatro security headers: `permissions-policy` `camera=(), microphone=(), geolocation=(), payment=()`; `referrer-policy` `strict-origin-when-cross-origin`; `strict-transport-security` `max-age=300`; `x-content-type-options` `nosniff`
+
+Access logs:
+
+- DISABLED
+- KEEP DISABLED
+- Traefik v3.6 sem `--accesslog=true` nem `--accesslog.*` no command do proxy
+- nenhuma mutação global do proxy
+
+Rollback:
+
+- release vigente antes do ensaio: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- alvo do rollback: `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- identidade de health no rollback: PASS (`status=ok`, `supabase=ok`, `version=95f16f6cbb62db273f3c00bc33389efbe25774d7`; HTTPS PASS; Home 200; quatro headers; 404 da marca HTTP 404)
+- release restaurada: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- identidade final de health: PASS (`status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`; HTTPS PASS; Home 200; quatro headers)
+- o rollback reutiliza as variáveis runtime atuais; o ensaio só foi aceito com `health.version` igual ao SHA da release em execução
