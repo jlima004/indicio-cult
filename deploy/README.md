@@ -119,18 +119,23 @@ e [Next.js self-hosting](https://nextjs.org/docs/app/guides/self-hosting#caching
 
 Para rollback, abra **Configuration > Rollback**, escolha uma imagem
 anterior retida, execute a ação e acompanhe **Deployments**. Valide domínio,
-logs, health e identidade da imagem selecionada. Registre o commit da imagem
-anterior e confira separadamente `NEXT_PUBLIC_APP_VERSION`, embutido pelo
-`next.config.ts` no build da imagem selecionada. O rollback troca a imagem,
-mas usa as variáveis runtime atuais: `APP_VERSION=$SOURCE_COMMIT`
-pode expor no health um SHA diferente do código restaurado. Não aceite o teste
-com essa divergência; ajuste a configuração de runtime ao SHA da imagem sob
-controle humano, aplique a mudança sem reconstruir ou substituir a imagem
-restaurada e confira o ID da imagem antes/depois. Se a plataforma não permitir
-provar isso, bloqueie o aceite do rollback. Confirme novamente health e
-`NEXT_PUBLIC_APP_VERSION`, e restaure a configuração da release vigente ao
-terminar o ensaio. O rollback não restaura banco ou volume; retenção de imagens
-limita as opções.
+logs, health e a identidade da imagem selecionada. O rollback troca a imagem,
+mas reutiliza as variáveis runtime atuais: `APP_VERSION=$SOURCE_COMMIT` pode
+fazer `/api/health` (`health.version`) mostrar um SHA diferente do código
+restaurado, ou coincidir com o SHA alvo mesmo quando outra imagem está em
+execução. Por isso `health.version` sozinho é evidência insuficiente da
+imagem restaurada. Não aceite o ensaio só com health. O aceite exige as duas
+identidades ao mesmo tempo: a release pública embutida no build
+(`NEXT_PUBLIC_APP_VERSION` em `.next/static` da imagem retida) e a identidade
+runtime de health (`status=ok`, `supabase=ok` e `version` igual ao SHA dessa
+imagem). Registre também o commit do histórico de deployment do Coolify, a
+tag da imagem Docker retida, o ID da imagem e `APP_VERSION` no Config da
+imagem. Ajuste a configuração de runtime ao SHA da imagem sob controle
+humano, aplique a mudança sem reconstruir ou substituir a imagem restaurada
+e confira o ID da imagem antes e depois. Se não for possível provar a
+release embutida e o health juntos, bloqueie o aceite do rollback. Ao
+terminar o ensaio, restaure a configuração da release vigente. O rollback
+não restaura banco ou volume; a retenção de imagens limita as opções.
 Veja [Rollbacks](https://coolify.io/docs/applications/deployments/rollbacks).
 
 ## Automação pós-CI (T15/T16)
@@ -257,7 +262,28 @@ Rollback:
 
 - release vigente antes do ensaio: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
 - alvo do rollback: `95f16f6cbb62db273f3c00bc33389efbe25774d7`
-- identidade de health no rollback: PASS (`status=ok`, `supabase=ok`, `version=95f16f6cbb62db273f3c00bc33389efbe25774d7`; HTTPS PASS; Home 200; quatro headers; 404 da marca HTTP 404)
-- release restaurada: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
-- identidade final de health: PASS (`status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`; HTTPS PASS; Home 200; quatro headers)
-- o rollback reutiliza as variáveis runtime atuais; o ensaio só foi aceito com `health.version` igual ao SHA da release em execução
+- o rollback reutiliza as variáveis runtime atuais; `health.version` sozinho não prova a imagem restaurada. O ensaio só foi aceito com as duas identidades: release pública embutida e health runtime iguais ao SHA da imagem retida
+
+Identidade do rollback `95f16f6cbb62db273f3c00bc33389efbe25774d7`:
+
+- commit no histórico de deployment do Coolify: Source Rollback, commit `95f16f6cbb62db273f3c00bc33389efbe25774d7`, Status Success
+- tag da imagem Docker retida: `ly3lndsfdmzbe6z5ubun1q5d:95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- image ID: `sha256:bfc8c03d6d3a9904a7af6c2f565ebe83752c9b3ae806157202c7efd5742b50de`
+- `APP_VERSION` no Config da imagem (`docker image inspect`): `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+- release pública embutida em `.next/static`: o SHA `95f16f6cbb62db273f3c00bc33389efbe25774d7` foi encontrado em `/app/.next/static/chunks/2lnj293pd02rk.js`; gate PASS
+- runtime `health.version`: `95f16f6cbb62db273f3c00bc33389efbe25774d7` (`status=ok`, `supabase=ok`; HTTPS PASS; Home 200; quatro headers; 404 da marca HTTP 404)
+- a prova da release embutida veio de um container efêmero da imagem retida com `--entrypoint sh` e não alterou produção
+- identidade coincidente: commit do Coolify = tag da imagem retida = Config `APP_VERSION` = release pública em `.next/static` = `health.version` = `95f16f6cbb62db273f3c00bc33389efbe25774d7`
+
+Restauração `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`:
+
+- commit no histórico de deployment do Coolify: Source Rollback, commit `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`, Status Success
+- tag da imagem Docker retida: `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- image ID: `sha256:2439fd613b1f23a69690f99ffd1d8d9e7ddd9cc6ee0758d27aaf71274b142c17`
+- `APP_VERSION` no Config da imagem (`docker image inspect`): `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- release pública embutida em `.next/static`: PASS `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- imagem do container em execução: `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
+- container ID em execução: `826fd51cdfc72f4a9ead8caa6b2fb9fc39e43f49037f84f2da898af392ef6a93`
+- runtime `health.version`: `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (`status=ok`, `supabase=ok`; HTTPS PASS; Home 200; quatro headers)
+- a restauração reutilizou a imagem retida e pulou o build: o log do Coolify importou `jlima004/indicio-cult:main` no commit `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`, encontrou `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` com o mesmo Git Commit SHA, marcou o build step como skipped, iniciou rolling update, healthcheck healthy e concluiu o rolling update
+- identidade final coincidente: commit restaurado = tag da imagem retida = imagem do container em execução = Config `APP_VERSION` = release pública em `.next/static` = `health.version` = `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`
