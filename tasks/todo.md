@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Checkpoint A:** concluído. T13 e T14 também estão concluídas; o próximo gate ativo é T15.
+**Checkpoint A:** concluído. T13–T15 também estão concluídas; o próximo gate ativo é T16.
 
 ---
 
@@ -267,11 +267,13 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Aceite:**
 
-- [ ] Recurso Git Dockerfile e domínio apontam internamente à porta 3000; processo acessível por HTTPS válido, sem porta host da aplicação.
-- [ ] Build/runtime vars e secrets têm escopo correto; `SOURCE_COMMIT` alcança o build e `APP_VERSION` expõe o SHA.
-- [ ] Auto Deploy OFF, API Access/UUID/tokens e GitHub secrets/variables corretos; headers aplicados e estado dos access logs registrado.
+- [x] Recurso Git Dockerfile e domínio configurados para a porta interna 3000, sem porta host da aplicação; DNS público/autoritativo validado para `indiciocult.com.br → 2.25.231.34`. Prova do processo/HTTPS/certificado em runtime fica explicitamente deferida à T16 porque nenhum primeiro deploy foi disparado.
+- [x] Build/runtime vars e secrets têm escopo correto; Include Source Commit in Build está habilitado e `APP_VERSION=$SOURCE_COMMIT` está configurado com interpolação. A prova runtime `SOURCE_COMMIT == APP_VERSION` fica deferida à T16.
+- [x] Auto Deploy OFF, API Access/UUID/tokens e GitHub secrets/variables corretos; middleware `indicio-cult-security-headers@file` configurado preservando os middlewares existentes; access logs globais verificados como DISABLED e não alterados.
 
-**Verificação:** operadora inspeciona configuração Coolify, DNS/TLS, logs, health e GitHub secrets. T15 é o próximo gate e permanece bloqueada até autorização humana explícita.
+**Verificação:** revisão humana da configuração Coolify/GitHub e do DNS concluída. Aplicação UUID `ly3lndsfdmzbe6z5ubun1q5d`; config token com `read+write`, deploy token com `deploy`, ambos sem `root`/\`read:sensitive\`; GET com config token retornou 200 e o deploy token retornou 403 para leitura. Nenhum deploy, redeploy, PATCH de `git_commit_sha` ou workflow de deploy foi executado. Evidências de runtime (health, HTTPS/TLS, cache gravável, headers públicos e identidade do SHA implantado) ficam deferidas à T16.
+
+**Fechamento T15:** `HUMAN APPROVED`; configuração PASS; runtime evidence deferred to T16; revisão adversarial P0=0, P1=0, P2=0, P3=5 não bloqueantes. O processo local temporário usado para armazenar os tokens no GitHub foi encerrado após os dois Secrets já terem sido persistidos.
 
 **Dependências:** T13 · **Arquivos:** nenhum de runtime; configuração humana · **Tamanho:** M
 
