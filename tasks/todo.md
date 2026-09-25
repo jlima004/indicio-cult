@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Checkpoint A:** concluído. T13–T15 também estão concluídas; o próximo gate ativo é T16.
+**Checkpoint A:** concluído. T13–T16 também estão concluídas; o próximo gate ativo é T17.
 
 ---
 
@@ -285,13 +285,15 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Aceite:**
 
-- [ ] Push/merge na `main` só chega à produção após CI verde; Auto Deploy permanece OFF.
-- [ ] Candidato obsoleto não deploya; concurrency impede dois workflows de alterarem `git_commit_sha` simultaneamente.
-- [ ] Pin igual ao candidato é relido antes do deploy; deployment parte desse pin e expõe commit igual ao candidato.
-- [ ] Workflow falha se API, deployment, TLS, saúde, Supabase ou versão divergir; 2xx não é prova de sucesso.
-- [ ] Home responde 200 com certificado público válido e aquecimento executado.
+- [x] Push/merge na `main` só chega à produção após CI verde; Auto Deploy permanece OFF.
+- [x] Candidato obsoleto não deploya; concurrency impede dois workflows de alterarem `git_commit_sha` simultaneamente.
+- [x] Pin igual ao candidato é relido antes do deploy; deployment parte desse pin e expõe commit igual ao candidato.
+- [x] Workflow falha se API, deployment, TLS, saúde, Supabase ou versão divergir; 2xx não é prova de sucesso.
+- [x] Home responde 200 com certificado público válido e aquecimento executado.
 
-**Verificação:** `gh run view`, logs do deployment Coolify e `curl` HTTPS sem `-k`.
+**Verificação:** PR #18 mesclada em `main` no commit `95f16f6cbb62db273f3c00bc33389efbe25774d7`; CI run #16 (`36170635738`) PASS; Deploy Production #1 (`36170999151`) PASS; deployment UUID `ref3vayi4ee6sbywqx7uycp3`. O workflow comprovou `candidate_sha == configured_git_commit_sha == deployment.commit == health.version`; T15 já havia configurado `APP_VERSION=$SOURCE_COMMIT`, e o Coolify importou/construiu exatamente o mesmo commit. Health público confirmou `status=ok`, `supabase=ok` e versão correta; os quatro security headers e a Home 200 foram validados sobre HTTPS sem bypass. O Dockerfile healthcheck ficou `healthy`. O volume `/app/.next/cache` foi confirmado gravável pelo processo `uid=1000(node) gid=1000(node)` com criação/leitura/remoção de arquivo de teste.
+
+**Fechamento T16:** `HUMAN APPROVED`; implementação PASS; runtime validation PASS; primeiro deploy de produção PASS. T16 encerrada e T17 definido como próximo gate, ainda não iniciado.
 
 **Dependências:** T14, T15 · **Arquivos:** `.github/workflows/deploy.yml`, `deploy/README.md` · **Tamanho:** S
 

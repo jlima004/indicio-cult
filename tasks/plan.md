@@ -5,7 +5,7 @@
 | Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
 | Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
 | Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
-| Status           | Em execução — T15 concluída e aprovada; T16 é o próximo gate                                                                    |
+| Status           | Em execução — T16 concluída e aprovada; T17 é o próximo gate                                                                    |
 
 ## Visão geral
 
@@ -13,18 +13,18 @@ Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `stand
 
 ## Decisões de arquitetura do plano
 
-- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T15 foram revisadas e validadas; T16 é o próximo gate.
+- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T16 foram revisadas e validadas; T17 é o próximo gate.
 - **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instalou a CI para PRs e pushes em `main`, e T17 exigirá o status check na proteção da `main`.
 - **Uma camada pública.** Coolify gerencia o recurso Git com Dockerfile e Traefik gerencia domínio/TLS. O Next escuta apenas na porta interna 3000; não há proxy próprio nem porta host da aplicação.
-- **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
-- **Tarefas humanas explícitas.** T15 configurou o recurso, domínio, variáveis, storage, middleware e segredos de automação sem disparar o primeiro deploy. Nenhuma mudança global no Traefik é automática; os access logs globais foram verificados como DISABLED e permaneceram inalterados.
+- **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 implementou e validou o fluxo que recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
+- **Tarefas humanas explícitas.** T15 configurou o recurso, domínio, variáveis, storage, middleware e segredos de automação; T16 executou e validou o primeiro deploy controlado. Nenhuma mudança global no Traefik é automática; os access logs globais foram verificados como DISABLED e permaneceram inalterados.
 - **Logo vetorial.** A T10 exportou o SVG oficial Hero e o Open Graph PNG. `Wordmark`, `Symbol` e favicon continuam provisórios.
 - **Dependências de runtime:** `zod`, `@sentry/nextjs`, `@supabase/supabase-js`, `@supabase/ssr`, `zustand`. Outras passam por “Perguntar antes”.
 
 ## Grafo de dependências
 
 ```text
-T1–T15 concluídas → T16 pin + deploy API pós-CI → T17 proteção/TLS/rollback → T18 validação
+T1–T16 concluídas → T17 proteção/TLS/rollback → T18 validação
 ```
 
 ## Lista de tarefas (índice; detalhes em `todo.md`)
@@ -50,15 +50,17 @@ T1–T15 concluídas → T16 pin + deploy API pós-CI → T17 proteção/TLS/rol
 - [x] Home, 404, erro e manutenção com copy da marca
 - [x] Revisão com a operadora antes do empacotamento
 
-**Próximo gate:** T16 · `deploy.yml`: CI verde → pin SHA via API → verificar pin → deploy por UUID → validar deployment/health → aquecer Home. Execução bloqueada até autorização humana explícita.
+**Próximo gate:** T17 · Proteção da `main`, certificado público/TLS, security headers, estado dos access logs e rollback Coolify. Execução não iniciada; permanece bloqueada até autorização humana explícita.
 
 ### Fase B — Empacotamento e entrega
 
 - [x] T13 · Dockerfile multi-stage, `.dockerignore` e runbook Coolify/Traefik; sem Compose/Caddy próprios
 - [x] T14 · `ci.yml`: `check`, build, E2E, `db:types` diff, gitleaks, varredura de bundle e build da imagem sem publicação
-- [x] T15 · `[humano]` Configuração do recurso Coolify/API/UUID, domínio/TLS, variáveis, storage, headers, tokens, GitHub secrets e evidência dos access logs — configuração PASS; runtime evidence deferida à T16
-- [ ] T16 · `deploy.yml`: CI verde → pin SHA via API → verificar pin → deploy por UUID → validar deployment/health → aquecer Home
+- [x] T15 · `[humano]` Configuração do recurso Coolify/API/UUID, domínio/TLS, variáveis, storage, headers, tokens, GitHub secrets e evidência dos access logs — configuração PASS; runtime evidence comprovada pela T16
+- [x] T16 · `deploy.yml`: CI verde → pin SHA via API → verificar pin → deploy por UUID → validar deployment/health → aquecer Home
 - [ ] T17 · Proteção da `main`, certificado público, security headers, access logs e rollback Coolify testado
+
+**Fechamento T16:** PR #18 mesclada no SHA `95f16f6cbb62db273f3c00bc33389efbe25774d7`; CI run #16 (`36170635738`) PASS; Deploy Production #1 (`36170999151`) PASS; deployment `ref3vayi4ee6sbywqx7uycp3`. O pin configurado e relido, `deployment.commit` e `health.version` coincidiram com o candidato; o Coolify importou o mesmo commit, com `APP_VERSION=$SOURCE_COMMIT` previamente configurado. Health/Supabase, TLS/HTTPS, security headers, Home e Docker healthcheck passaram. `/app/.next/cache` foi comprovado gravável pelo usuário `node` (`uid/gid 1000`). Revisão humana: APPROVED.
 
 ### Checkpoint B — Está no ar
 
@@ -78,8 +80,8 @@ T1–T15 concluídas → T16 pin + deploy API pós-CI → T17 proteção/TLS/rol
 
 ## Paralelização
 
-- T1–T15 estão concluídas. T16 é o próximo gate e permanece bloqueado até autorização humana explícita.
-- T16 depende de T14 e T15; ambas estão concluídas. T17 depende de T16, e T18 fecha as evidências.
+- T1–T16 estão concluídas. T17 é o próximo gate e permanece bloqueado até autorização humana explícita.
+- T17 depende de T16, já concluída; T18 depende de T17 e fecha as evidências.
 
 ## Riscos e mitigações
 
