@@ -201,3 +201,19 @@ operação de configuração estática/global do proxy que pode afetar todos os
 recursos. T13 não altera essa configuração. O gate humano/plataforma em T15 ou
 T17 deve inspecionar a configuração e decidir ativação, destino, rotação e
 retenção. Logs da aplicação no Coolify não substituem access logs do proxy.
+
+T16 agora materializa: .github/workflows/deploy.yml
+Workflow:
+usa workflow_run da CI
+filtra push/main/success
+serializa produção
+verifica main antes de mutar
+fixa git_commit_sha
+relê o pin
+dispara deploy por UUID
+acompanha deployment_uuid
+exige deployment.commit == candidate_sha
+exige health.version == candidate_sha
+valida TLS sem -k
+valida headers
+aquece Home
