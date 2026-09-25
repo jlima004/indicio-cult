@@ -21,7 +21,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 105
 
     env:
       CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -183,6 +183,7 @@ jobs:
               curl \
                 --silent \
                 --show-error \
+                --max-time 10 \
                 --output "$response_file" \
                 --write-out '%{http_code}' \
                 -H "Authorization: Bearer $COOLIFY_CONFIG_TOKEN" \
