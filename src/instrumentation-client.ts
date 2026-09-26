@@ -1,16 +1,21 @@
 import * as Sentry from '@sentry/nextjs'
 
-import { publicEnv, publicRelease } from '@/lib/env/public'
 import { isDevelopment } from '@/lib/env/runtime'
 import { sentryDataCollection } from '@/lib/sentry/privacy'
 
-if (publicEnv.NEXT_PUBLIC_SENTRY_DSN) {
+// Não importar `@/lib/env/public`. Esse módulo avalia Zod no carregamento e
+// entraria no chunk inicial de toda página. O layout já valida NEXT_PUBLIC_*.
+// As referências literais a `process.env.NEXT_PUBLIC_*` são o que o Next inline.
+const sentryDsn = process.env.NEXT_PUBLIC_SENTRY_DSN
+const release = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
+
+if (sentryDsn) {
   Sentry.init({
-    dsn: publicEnv.NEXT_PUBLIC_SENTRY_DSN,
+    dsn: sentryDsn,
     tracesSampleRate: 0.1,
     dataCollection: sentryDataCollection,
     environment: isDevelopment() ? 'development' : 'production',
-    release: publicRelease,
+    release,
   })
 }
 
@@ -18,7 +23,7 @@ export function onRouterTransitionStart(
   url: string,
   navigationType: 'push' | 'replace' | 'traverse',
 ) {
-  if (publicEnv.NEXT_PUBLIC_SENTRY_DSN) {
+  if (sentryDsn) {
     const suffixStart = url.search(/[?#]/)
     const safeUrl = suffixStart < 0 ? url : url.slice(0, suffixStart)
     Sentry.captureRouterTransitionStart(safeUrl, navigationType)

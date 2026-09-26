@@ -44,6 +44,31 @@ describe('instrumentation do navegador', () => {
     expect(sentry.replayIntegration).not.toHaveBeenCalled()
   })
 
+  it('não inicializa o Sentry quando o DSN público é vazio', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', '')
+
+    await loadClientInstrumentation()
+
+    expect(sentry.init.mock.calls.length).toBe(0)
+  })
+
+  it('inicializa o Sentry sem exigir as demais variáveis públicas no navegador', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', undefined)
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', undefined)
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', undefined)
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'https://public@example.invalid/2')
+    vi.stubEnv('NEXT_PUBLIC_APP_VERSION', undefined)
+
+    await loadClientInstrumentation()
+
+    expect(sentry.init.mock.calls.length).toBe(1)
+    const options = sentry.init.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(options?.dsn).toBe('https://public@example.invalid/2')
+    expect(options?.tracesSampleRate).toBe(0.1)
+    expect(options?.release).toBe('dev')
+    expect(options?.environment).toBe('development')
+  })
+
   it('usa o DSN público, release do build e configuração de privacidade', async () => {
     vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'https://public@example.invalid/2')
 
