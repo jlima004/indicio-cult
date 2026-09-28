@@ -6,6 +6,35 @@ Loja virtual de **arte impressa** — camisetas com estampas autorais no primeir
 
 A marca se posiciona como _marca de arte impressa para pessoas de repertório específico_, não como "loja de camisetas cult". Trata alienação, corpo fragmentado, futuro opaco, memória cultural e ruído tecnológico como sintomas do presente — sem transformar sofrimento em estética vazia.
 
+## Como rodar localmente
+
+Use Node.js **22.23.1** (versão fixada em `.nvmrc` e `.node-version`) e npm. A faixa aceita pelo projeto é `>=22.22.2 <23`. A partir de um clone limpo:
+
+```sh
+npm ci
+```
+
+Crie `.env` como cópia de `.env.example` (por exemplo, `cp .env.example .env` em um shell POSIX ou `Copy-Item .env.example .env` no PowerShell). Preencha os campos obrigatórios antes de iniciar:
+
+| Variável                        | Configuração local                                                                                                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`          | Mantenha `http://localhost:3000`, já preenchido no exemplo.                                                                                                                |
+| `NEXT_PUBLIC_SUPABASE_URL`      | URL do seu projeto Supabase, no painel do projeto em **Settings → API Keys**.                                                                                              |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave **publishable** (ou `anon` legada) do mesmo projeto, no mesmo painel. É pública e pode chegar ao navegador.                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Chave **secret** (ou `service_role` legada) do mesmo projeto, no mesmo painel. É obrigatória no bootstrap do servidor, mesmo para abrir a Home. Mantenha apenas no `.env`. |
+
+As variáveis `NEXT_PUBLIC_*` são públicas: nunca coloque nelas a chave secreta. Não use credenciais fictícias nem versione `.env`. A chave secreta ignora RLS; obtenha acesso ao projeto Supabase autorizado para desenvolvimento com a equipe responsável.
+
+Os DSNs `NEXT_PUBLIC_SENTRY_DSN` e `SENTRY_DSN` são opcionais e podem ficar vazios. Mantenha `MAINTENANCE_MODE=false` para ver a Home; `APP_VERSION` pode ficar vazio (usa `dev`). `SUPABASE_PROJECT_ID` é necessário apenas para os comandos de tooling `db:types` e `db:migrate`, não para `npm run dev`.
+
+```sh
+npm run dev
+```
+
+Abra [http://localhost:3000](http://localhost:3000) e confirme a Home com o título **“Arte para quem reconhece o indício.”**. `GET http://localhost:3000/api/health` responde 200 com `status: ok` e `supabase: ok` quando o Supabase real está acessível; caso contrário, pode responder 503. Se o servidor encerrar na inicialização, confira os nomes das variáveis indicados no erro e os valores obrigatórios no `.env`.
+
+Para a configuração e operação em produção no Coolify, consulte o [runbook de deploy](./deploy/README.md).
+
 ## Documentação
 
 | Arquivo                           | Conteúdo                                                                                                                                                                                                                                                                                                                                    |
