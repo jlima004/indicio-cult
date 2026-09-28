@@ -1,11 +1,11 @@
 # Plano de implementação: módulo `foundation`
 
-| Campo            | Valor                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24)      |
-| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                          |
-| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                         |
-| Status           | T18-07 documental preparada — 11/11 critérios `PASS supportable`; Checkpoint C `OPEN`, pendente de merge humano e CI final da `main` |
+| Campo            | Valor                                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
+| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
+| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
+| Status           | Foundation `COMPLETE`; T18 `COMPLETE`; 11/11 `PASS`; Checkpoint C `CLOSED` após PR #24, CI final, deploy e saúde pública        |
 
 ## Visão geral
 
@@ -50,7 +50,7 @@ T1–T17 concluídas → T18 validação final
 - [x] Home, 404, erro e manutenção com copy da marca
 - [x] Revisão com a operadora antes do empacotamento
 
-**Gate atual:** T18-07 · fechamento documental. O ledger em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07) reconcilia C1–C11 como `PASS supportable`; o histórico T18-03D/D1 preserva a emenda humana do critério 8. O Checkpoint C permanece aberto até merge e CI final da `main`.
+**Estado atual:** Foundation `COMPLETE`. O ledger em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07) reconcilia C1–C11 como `PASS`; o histórico T18-03D/D1 preserva a emenda humana do critério 8. O Checkpoint C foi fechado após a PR #24 ser mergeada na `main` em `51695449ae5cfbf85a281b8eef49b5b1efdb7685`, a CI #30 passar, o Deploy Production #15 passar e Home/health públicos permanecerem saudáveis.
 
 ### Fase B — Empacotamento e entrega
 
@@ -77,17 +77,19 @@ T1–T17 concluídas → T18 validação final
 
 - [x] T18 · Evidências dos 11 critérios do spec, README “Como rodar”, Lighthouse e manutenção testada no recurso Coolify
 
-**Estado T18:** `11/11 PASS supportable`; T18-07 `PASS / READY_FOR_HUMAN_MERGE`. A branch contém apenas sincronização documental; o Checkpoint C é `OPEN / PENDING MERGE + FINAL MAIN CI`. T18-03D1 permanece como histórico da emenda do contrato Lighthouse, sem nova medição nesta tarefa.
+**Estado T18:** `COMPLETE`; T18-07 `PASS / MERGED`; `11/11 PASS`. A PR #24 (`51695449ae5cfbf85a281b8eef49b5b1efdb7685`) foi mergeada na `main`; a CI #30 e o Deploy Production #15 passaram, e a produção confirmou Home 200 e `/api/health` 200 com `status=ok`, `supabase=ok` e `version=51695449ae5cfbf85a281b8eef49b5b1efdb7685`. T18-03D1 permanece como histórico da emenda do contrato Lighthouse, sem nova medição nesta tarefa.
 
 ### Checkpoint C — Fundação pronta
 
-- [ ] Critérios do spec §10 verdadeiros em produção
-- [ ] Spec registra evidências; questões abertas revistas; módulo `nuvemshop` liberado
+- [x] Critérios do spec §10 verdadeiros em produção
+- [x] Spec registra evidências; questões abertas revistas; a Foundation não bloqueia os próximos capabilities (`nuvemshop`, `email` e `consent`)
+
+**Fechamento:** PR #24 mergeada na `main`; CI #30 e Deploy Production #15 `PASS`; Home público `200`; `/api/health` `200`, `status=ok`, `supabase=ok`, `version=51695449ae5cfbf85a281b8eef49b5b1efdb7685`. Conforme o mapa, `nuvemshop`, `email` e `consent` estão desbloqueados em paralelo. Como `SPEC-nuvemshop.md` ainda não existe, o próximo passo para esse capability é materializá-la conforme o processo atual; nenhuma implementação de Nuvemshop é declarada.
 
 ## Paralelização
 
-- T1–T17 estão concluídas. T18-03 a T18-06R fecharam as evidências; T18-07 reconcilia os documentos e aguarda controle humano de integração.
-- T18 depende de T17, já concluída. Os critérios estão `11/11 PASS supportable`, mas o Checkpoint C permanece `OPEN` até o merge e a CI final da `main`.
+- T1–T17 estão concluídas. T18-03 a T18-06R fecharam as evidências; T18-07 registrou a conclusão após a integração da PR #24.
+- T18 depende de T17, já concluída. Os critérios estão `11/11 PASS`; o Checkpoint C está `CLOSED` e a Foundation `COMPLETE`.
 
 ## Riscos e mitigações
 

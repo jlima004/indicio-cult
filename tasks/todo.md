@@ -334,7 +334,7 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Descrição:** Percorrer os 11 critérios do spec §10 com evidência; validar Lighthouse mobile na Home de produção pelo protocolo do critério 8; documentar o cold start; testar `MAINTENANCE_MODE=true` no recurso Coolify e restaurar; reconciliar o estado documental em T18-07.
 
-**Estado corrente:** `11/11 PASS supportable`; T18-07 `PASS / READY_FOR_HUMAN_MERGE`. O Checkpoint C permanece `OPEN / PENDING MERGE + FINAL MAIN CI`.
+**Estado corrente:** T18 `COMPLETE`; `11/11 PASS`; T18-07 `PASS / MERGED` pela PR #24 na `main`. CI #30 e Deploy Production #15 passaram no SHA `51695449ae5cfbf85a281b8eef49b5b1efdb7685`; Home e `/api/health` públicos estão saudáveis. O Checkpoint C está `CLOSED` e a Foundation `COMPLETE`.
 
 **Histórico e fechamento:**
 
@@ -346,9 +346,9 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 - **T18-05:** maintenance PASS; ativação produziu Home 503 e health 200, restauração produziu Home 200 e health 200, sem release drift. O `503/degraded/error` transitório do preflight foi registrado, recuperou em três probes e não foi material.
 - **T18-06:** Criterion 6 PASS com cadeia main → CI → deploy efetivo, pin, deployment, Home/404/TLS e Auto Deploy OFF.
 - **T18-06R:** Criteria 5 e 7 PASS com observação direta do usuário/container e cadeia direta `candidate_sha = configured_git_commit_sha = deployment.commit = SOURCE_COMMIT = APP_VERSION = health.version`; T18 chegou a `11/11 PASS supportable`.
-- **T18-07:** ledger C1–C11, sincronização documental e adjudicação das questões abertas materializados no spec; nenhuma alteração técnica ou de produção.
+- **T18-07:** ledger C1–C11, sincronização documental e adjudicação das questões abertas materializados no spec; PR #24 mergeada na `main` em `51695449ae5cfbf85a281b8eef49b5b1efdb7685`; CI #30 e Deploy Production #15 `PASS`; nenhuma alteração técnica ou de produção.
 
-**Verificação executada nesta branch:** ledger final em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07); `git diff --check`; `npm run check`; revisão adversarial pós-edição, sem P0/P1 e com P2 documental corrigido antes do commit. **Verificação dependente da integração:** CI da PR e, após o merge humano, CI final da `main`.
+**Verificação desta sincronização:** ledger final em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07); `git diff --check`; `npm run check`; revisão adversarial pós-edição, sem P0/P1/P2 material antes do commit. A CI desta PR valida apenas a sincronização documental e não reabre o Checkpoint C.
 
 **Dependências:** T10, T11, T17 · **Arquivos:** `README.md`, `docs/specs/SPEC-foundation.md`, `tasks/todo.md`, `tasks/plan.md` · **Tamanho:** M
 
@@ -359,7 +359,7 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 - [x] T18 reconcilia os 11 critérios do spec §10 como `PASS`, com evidência no ledger; os contratos §9 não foram alterados.
 - [x] `SPEC-foundation.md`, `tasks/todo.md` e `tasks/plan.md` refletem a adjudicação e as exceções históricas.
 - [x] Questões abertas foram classificadas; as deferidas são explicitamente `NON-BLOCKING FOR FOUNDATION`.
-- [ ] PR T18-07 mergeada na `main` e CI final da `main` verde.
-- [ ] Liberação para `SPEC-nuvemshop.md` (etapa 2 do mapa), após o merge humano.
+- [x] PR #24 (T18-07) mergeada na `main` e CI final da `main` verde; Deploy Production #15 `PASS` e produção saudável.
+- [x] Foundation não bloqueia os próximos capabilities (`nuvemshop`, `email` e `consent`); como `SPEC-nuvemshop.md` ainda não existe, o próximo passo para esse capability é materializá-la conforme o processo atual.
 
-**Estado durante T18-07:** `OPEN / PENDING MERGE + FINAL MAIN CI`. Não fechar este checkpoint na branch ou na PR.
+**Estado atual:** Checkpoint C `CLOSED`; a PR documental corrente apenas sincroniza esse fato e não é requisito para o fechamento. A Foundation está `COMPLETE`.
