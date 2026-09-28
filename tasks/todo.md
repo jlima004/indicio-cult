@@ -210,7 +210,7 @@ Convenções: uma tarefa por PR (`feat(foundation): ...`); `npm run check` verde
 - [x] Home, 404, erro e manutenção com copy da marca; `(conta)`/`admin` redirecionam
 - [x] Revisão com a operadora antes de empacotar
 
-**Checkpoint A:** concluído. T13–T17 também estão concluídas; o próximo gate ativo é T18, que ainda não foi iniciado.
+**Checkpoint A (registro à época):** concluído. T13–T17 também estavam concluídas; naquele momento o próximo gate ativo era T18, ainda não iniciado.
 
 ---
 
@@ -311,7 +311,7 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 **Verificação:** Ruleset `main-protection` (`24014122`) ativo em `~DEFAULT_BRANCH`, enforcement active, `bypass_actors` vazio. Deletion, non-fast-forward e pull request ativos; zero reviewers obrigatórios; status check `ci` obrigatório com `strict_required_status_checks_policy`. Push direto `git push origin HEAD:main` do commit vazio `5272742` (`test: prove main rejects direct push`, branch `test/t17-direct-push`) rejeitado com `GH013`: changes must be made through a pull request; required status check `ci` is expected. A branch local de teste foi removida depois e `main` permaneceu `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`. PR #19 (`test/t17-required-ci`, `948eeb5`, `test: prove main requires CI`) teve a CI run `36178323433` com `CI/ci` FAILURE e `CI/db-types` SKIPPED; `mergeStateStatus` BLOCKED, `mergeable_state` blocked e `merged` false. A PR #19 foi fechada sem merge e a branch remota removida. Borda pública `https://indiciocult.com.br` sem `-k`: Home HTTP/2 200; certificado Let's Encrypt, subject `CN = indiciocult.com.br`, issuer Let's Encrypt / YR2, notBefore Sep 25 17:07:45 2026 GMT, notAfter Dec 24 17:07:44 2026 GMT; 404 HTTP 404 com a copy "Esse rastro não leva a lugar nenhum."; `/api/health` com `status=ok`, `supabase=ok` e `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`. Headers: `permissions-policy` `camera=(), microphone=(), geolocation=(), payment=()`; `referrer-policy` `strict-origin-when-cross-origin`; `strict-transport-security` `max-age=300`; `x-content-type-options` `nosniff`. Traefik v3.6 inspecionado em `/data/coolify/proxy/docker-compose.yml` e em `docker inspect coolify-proxy`: o command não contém `--accesslog=true` nem `--accesslog.*`. Decisão humana: access logs DISABLED e KEEP DISABLED; nenhuma mutação global do proxy. Rollback oficial do Coolify da release `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` para `95f16f6cbb62db273f3c00bc33389efbe25774d7`. A identidade do rollback foi verificada de forma independente, e não só por `health.version`: commit de rollback no histórico do Coolify `95f16f6cbb62db273f3c00bc33389efbe25774d7` (Source Rollback, Success); tag da imagem retida `ly3lndsfdmzbe6z5ubun1q5d:95f16f6cbb62db273f3c00bc33389efbe25774d7`; image ID `sha256:bfc8c03d6d3a9904a7af6c2f565ebe83752c9b3ae806157202c7efd5742b50de`; `APP_VERSION` no Config da imagem `95f16f6cbb62db273f3c00bc33389efbe25774d7`; release pública embutida em `.next/static` (`/app/.next/static/chunks/2lnj293pd02rk.js`) `95f16f6cbb62db273f3c00bc33389efbe25774d7`; runtime `/api/health` `status=ok`, `supabase=ok`, `version=95f16f6cbb62db273f3c00bc33389efbe25774d7` (jq true); HTTPS PASS; Home HTTP 200; os quatro security headers; 404 da marca HTTP 404. Restauração para `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` com a mesma prova de identidade: commit de rollback no Coolify `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (Source Rollback, Success); tag `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`; image ID `sha256:2439fd613b1f23a69690f99ffd1d8d9e7ddd9cc6ee0758d27aaf71274b142c17`; `APP_VERSION` no Config da imagem `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`; release pública embutida PASS `3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`; container em execução na imagem `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (container `826fd51cdfc72f4a9ead8caa6b2fb9fc39e43f49037f84f2da898af392ef6a93`); `/api/health` `status=ok`, `supabase=ok`, `version=3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba` (jq true); HTTPS PASS; Home HTTP 200; os quatro security headers. O Coolify registrou Success Rollback dessa restauração (deployment `4ikv6rueybefxojl6cbwst8r`), reutilizou a imagem retida e pulou o build, com healthcheck healthy. Produção final permanece na imagem `ly3lndsfdmzbe6z5ubun1q5d:3a7a9984fa3aa33a64d1ba02709f6b78c398f5ba`.
 
-**Fechamento T17:** `HUMAN APPROVED`; branch protection PASS; edge/TLS PASS; access-log adjudication PASS; rollback PASS; restoration PASS. A identidade do rollback e da restauração foi verificada por commit do Coolify, tag e ID da imagem Docker, `APP_VERSION` no Config da imagem, release pública embutida em `.next/static` e `health.version`; `health.version` sozinho não fecha o ensaio. T17 encerrada. T18 é o próximo gate e ainda não foi iniciado.
+**Fechamento T17 (registro à época):** `HUMAN APPROVED`; branch protection PASS; edge/TLS PASS; access-log adjudication PASS; rollback PASS; restoration PASS. A identidade do rollback e da restauração foi verificada por commit do Coolify, tag e ID da imagem Docker, `APP_VERSION` no Config da imagem, release pública embutida em `.next/static` e `health.version`; `health.version` sozinho não fecha o ensaio. T17 encerrada. Naquele momento T18 era o próximo gate e ainda não havia sido iniciado.
 
 **Dependências:** T16 · **Arquivos:** `deploy/README.md`, documentação/evidências · **Tamanho:** S
 
@@ -332,25 +332,34 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 ### T18 · Validação final, README e baseline Lighthouse
 
-**Descrição:** Percorrer os 11 critérios do spec §10 com evidência; validar Lighthouse mobile na Home de produção pelo protocolo do critério 8; adicionar ao README “Como rodar” e link ao runbook Coolify; testar `MAINTENANCE_MODE=true` no recurso Coolify e reverter; atualizar este arquivo e o status do spec somente após validação.
+**Descrição:** Percorrer os 11 critérios do spec §10 com evidência; validar Lighthouse mobile na Home de produção pelo protocolo do critério 8; documentar o cold start; testar `MAINTENANCE_MODE=true` no recurso Coolify e restaurar; reconciliar o estado documental em T18-07.
 
-**Aceite:**
+**Estado corrente:** `11/11 PASS supportable`; T18-07 `PASS / READY_FOR_HUMAN_MERGE`. O Checkpoint C permanece `OPEN / PENDING MERGE + FINAL MAIN CI`.
 
-- [ ] 11/11 critérios do spec §10 com evidência.
-- [x] Critério 8 Lighthouse revisado: três execuções formais consecutivas na Home de produção, todas com Performance ≥ 80, Acessibilidade ≥ 95, Boas práticas ≥ 95 e TBT ≤ 600 ms, conforme protocolo do spec §10.
-- [ ] Outra pessoa consegue rodar `npm run dev` apenas com o README.
+**Histórico e fechamento:**
 
-**Verificação:** Reteste formal de produção T18-03 na release `4f243772396440c5c7f63c62db1280ecf52e2360`, reavaliado pelo protocolo do spec §10; leitura cega do README em sessão nova; health/maintenance públicos.
+- **T18-03:** falha sob o contrato original de Performance ≥ 95.
+- **T18-03R:** remediação segura do bundle; Zod removido do client bundle, redução de 37,0% no JS inicial, sem perda de observabilidade.
+- **T18-03R2:** `BLOCKED_NO_SAFE_REMEDIATION`; experimentos que retiravam ou reduziam Sentry/tracing não foram adotados.
+- **T18-03D/D1:** decisão humana C emendou o critério 8 para três execuções formais consecutivas, Performance ≥ 80, Accessibility ≥ 95, Best Practices ≥ 95 e TBT ≤ 600 ms. Evidência: `82/87/81`, `100/100/100`, `100/100/100` e `590/390/350 ms`; resultado `PASS` sem novo Lighthouse.
+- **T18-04:** README cold start PASS; Node `22.23.1`, `npm ci`, `.env.example`, `npm run dev`, Home 200, health 200 e nenhum passo não documentado; Criterion 11 passou de `PARTIAL` a `PASS`.
+- **T18-05:** maintenance PASS; ativação produziu Home 503 e health 200, restauração produziu Home 200 e health 200, sem release drift. O `503/degraded/error` transitório do preflight foi registrado, recuperou em três probes e não foi material.
+- **T18-06:** Criterion 6 PASS com cadeia main → CI → deploy efetivo, pin, deployment, Home/404/TLS e Auto Deploy OFF.
+- **T18-06R:** Criteria 5 e 7 PASS com observação direta do usuário/container e cadeia direta `candidate_sha = configured_git_commit_sha = deployment.commit = SOURCE_COMMIT = APP_VERSION = health.version`; T18 chegou a `11/11 PASS supportable`.
+- **T18-07:** ledger C1–C11, sincronização documental e adjudicação das questões abertas materializados no spec; nenhuma alteração técnica ou de produção.
 
-**Histórico T18:** T18-03 `COMPLETE / FAIL` sob o contrato original de Performance ≥ 95; T18-03R `PASS / MERGED / DEPLOYED` (correção do bundle do navegador); reteste formal T18-03 `COMPLETE / FAIL` sob o contrato original; T18-03R2 `BLOCKED_NO_SAFE_REMEDIATION`; T18-03D decisão humana C de emendar o critério; T18-03D1 materializa a emenda e reavalia o critério 8 como `PASS` com os três resultados existentes (Performance 82/87/81; Acessibilidade 100/100/100; Boas práticas 100/100/100; TBT 590/390/350 ms). São 6/11 critérios integralmente `PASS`: 1–4, 8 e 10. Os critérios 5, 6, 7 e 11 permanecem `PARTIAL`; o 9, `PENDING`. T18 permanece `IN PROGRESS` e o Checkpoint C, `OPEN`.
+**Verificação executada nesta branch:** ledger final em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07); `git diff --check`; `npm run check`; revisão adversarial pós-edição, sem P0/P1 e com P2 documental corrigido antes do commit. **Verificação dependente da integração:** CI da PR e, após o merge humano, CI final da `main`.
 
-**Dependências:** T10, T11, T17 · **Arquivos:** `README.md`, `docs/specs/SPEC-foundation.md`, `tasks/todo.md` · **Tamanho:** S
+**Dependências:** T10, T11, T17 · **Arquivos:** `README.md`, `docs/specs/SPEC-foundation.md`, `tasks/todo.md`, `tasks/plan.md` · **Tamanho:** M
 
 ---
 
 ## Checkpoint C — "Fundação pronta"
 
-- [ ] Todos os critérios do spec §10 verdadeiros em produção
-- [ ] `SPEC-foundation.md` reflete o que foi construído (contratos §9 inalterados ou spec atualizado antes do código)
-- [ ] Questões abertas revistas com a operadora
-- [ ] Liberação para `SPEC-nuvemshop.md` (etapa 2 do mapa)
+- [x] T18 reconcilia os 11 critérios do spec §10 como `PASS`, com evidência no ledger; os contratos §9 não foram alterados.
+- [x] `SPEC-foundation.md`, `tasks/todo.md` e `tasks/plan.md` refletem a adjudicação e as exceções históricas.
+- [x] Questões abertas foram classificadas; as deferidas são explicitamente `NON-BLOCKING FOR FOUNDATION`.
+- [ ] PR T18-07 mergeada na `main` e CI final da `main` verde.
+- [ ] Liberação para `SPEC-nuvemshop.md` (etapa 2 do mapa), após o merge humano.
+
+**Estado durante T18-07:** `OPEN / PENDING MERGE + FINAL MAIN CI`. Não fechar este checkpoint na branch ou na PR.
