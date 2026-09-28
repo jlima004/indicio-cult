@@ -1,11 +1,11 @@
 # Plano de implementação: módulo `foundation`
 
-| Campo            | Valor                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
-| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
-| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
-| Status           | Em execução — T17 concluída e aprovada; T18 `IN PROGRESS` (6/11 critérios integralmente `PASS`); Checkpoint C `OPEN`            |
+| Campo            | Valor                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24)      |
+| Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                          |
+| Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                         |
+| Status           | T18-07 documental preparada — 11/11 critérios `PASS supportable`; Checkpoint C `OPEN`, pendente de merge humano e CI final da `main` |
 
 ## Visão geral
 
@@ -13,7 +13,7 @@ Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `stand
 
 ## Decisões de arquitetura do plano
 
-- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T17 foram revisadas e validadas; T18 está em andamento.
+- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T17 foram revisadas e validadas; T18-03 a T18-06R fecharam as evidências e T18-07 faz a sincronização documental.
 - **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instalou a CI para PRs e pushes em `main`, e T17 passou a exigir o status check `ci` na proteção da `main`.
 - **Uma camada pública.** Coolify gerencia o recurso Git com Dockerfile e Traefik gerencia domínio/TLS. O Next escuta apenas na porta interna 3000; não há proxy próprio nem porta host da aplicação.
 - **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 implementou e validou o fluxo que recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
@@ -50,7 +50,7 @@ T1–T17 concluídas → T18 validação final
 - [x] Home, 404, erro e manutenção com copy da marca
 - [x] Revisão com a operadora antes do empacotamento
 
-**Gate atual:** T18 · Validação final, README e baseline Lighthouse. T18-03D1 materializa a decisão humana C: o critério 8 passa pela reavaliação do reteste formal de produção sob o contrato emendado do spec §10. O histórico e os critérios pendentes estão em [`todo.md`](./todo.md#t18--validação-final-readme-e-baseline-lighthouse).
+**Gate atual:** T18-07 · fechamento documental. O ledger em [`SPEC-foundation.md`](../docs/specs/SPEC-foundation.md#13-adjudicação-final-t18-t18-07) reconcilia C1–C11 como `PASS supportable`; o histórico T18-03D/D1 preserva a emenda humana do critério 8. O Checkpoint C permanece aberto até merge e CI final da `main`.
 
 ### Fase B — Empacotamento e entrega
 
@@ -75,9 +75,9 @@ T1–T17 concluídas → T18 validação final
 
 ### Fase C — Fechamento
 
-- [ ] T18 · Evidências dos 11 critérios do spec, README “Como rodar”, Lighthouse e manutenção testada no recurso Coolify
+- [x] T18 · Evidências dos 11 critérios do spec, README “Como rodar”, Lighthouse e manutenção testada no recurso Coolify
 
-**Estado T18:** `IN PROGRESS`; 6/11 critérios integralmente `PASS` (1–4, 8 e 10). Critérios 5, 6, 7 e 11 `PARTIAL`; 9 `PENDING`. T18-03D1 é a emenda documental do contrato Lighthouse, sem nova medição nem mudança em produção.
+**Estado T18:** `11/11 PASS supportable`; T18-07 `PASS / READY_FOR_HUMAN_MERGE`. A branch contém apenas sincronização documental; o Checkpoint C é `OPEN / PENDING MERGE + FINAL MAIN CI`. T18-03D1 permanece como histórico da emenda do contrato Lighthouse, sem nova medição nesta tarefa.
 
 ### Checkpoint C — Fundação pronta
 
@@ -86,8 +86,8 @@ T1–T17 concluídas → T18 validação final
 
 ## Paralelização
 
-- T1–T17 estão concluídas. T18 está `IN PROGRESS`; sua conclusão depende dos critérios ainda abertos e de controle humano.
-- T18 depende de T17, já concluída. O Checkpoint C permanece `OPEN`.
+- T1–T17 estão concluídas. T18-03 a T18-06R fecharam as evidências; T18-07 reconcilia os documentos e aguarda controle humano de integração.
+- T18 depende de T17, já concluída. Os critérios estão `11/11 PASS supportable`, mas o Checkpoint C permanece `OPEN` até o merge e a CI final da `main`.
 
 ## Riscos e mitigações
 
@@ -105,6 +105,8 @@ T1–T17 concluídas → T18 validação final
 
 ## Questões abertas
 
-1. Integrar variantes vetoriais oficiais ao `Wordmark`, `Symbol` e favicon.
-2. Provedor de analytics, monitor de uptime, fonte provisória e recursos do KVM 2, conforme spec §12.
-3. Estado/política futura dos access logs do Traefik compartilhado — T15 confirmou `DISABLED` e T17 adjudicou KEEP DISABLED, sem alteração global do proxy. Qualquer ativação futura continua exigindo decisão humana própria.
+1. **Resolvidas:** owner do GitHub; domínio público e borda `indiciocult.com.br`; estado dos access logs do Traefik (`DISABLED / KEEP DISABLED`, sem mutação global).
+2. **Deferidas, não bloqueantes para a Foundation:** provedor de analytics, monitor externo de uptime e sizing formal do KVM 2.
+3. **Ainda aberta, não bloqueante:** confirmação do redirect URL do Supabase Auth, quando o fluxo de autenticação for entregue.
+4. **Documentação obsoleta removida da lista de Foundation:** fonte tipográfica provisória, pois Inter e Cormorant Garamond já estão carregadas via `next/font` e registradas nos tokens.
+5. **Futuras:** variantes vetoriais oficiais do `Wordmark`, `Symbol` e favicon, além das questões de produto do PRD. Nenhuma bloqueia o Checkpoint C da Foundation.

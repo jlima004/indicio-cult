@@ -61,7 +61,7 @@ Para a configuração e operação em produção no Coolify, consulte o [runbook
 
 ## Decisões pendentes
 
-- **Paleta de cores e tipografia** — serão definidas em etapa de design.
+- **Variantes vetoriais finais da marca** — integrar `Wordmark`, `Symbol` e favicon quando o pacote visual autorizado estiver disponível; a paleta, Inter e Cormorant Garamond da Foundation já estão fixadas nos tokens e no layout.
 - URL de retorno pós-compra da Nuvemshop para o domínio da vitrine.
 - Prazo de produção padrão e modelagens disponíveis na Reserva Ink.
 
