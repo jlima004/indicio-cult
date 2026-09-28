@@ -404,10 +404,18 @@ Todos verificáveis; a fundação está pronta quando **todos** forem verdadeiro
 5. `deploy/Dockerfile` constrói na CI, roda como `node`, escuta `0.0.0.0:3000` e tem `HEALTHCHECK` saudável; nenhuma porta host da aplicação é publicada.
 6. Push/merge na `main` executa CI; somente CI verde aciona `deploy.yml` e pin/deploy por API, com Auto Deploy OFF. O domínio configurado no Coolify responde Home 200, 404 da marca e TLS público válido via Traefik.
 7. Evidência mostra `candidate_sha` aprovado na CI igual a `git_commit_sha` configurado antes do deploy, commit registrado no deployment, `SOURCE_COMMIT`, `APP_VERSION` e `GET /api/health.version`; health responde `status: 'ok'` e `supabase: 'ok'`. Erro forçado de desenvolvimento aparece no Sentry com `release` igual ao SHA.
-8. Lighthouse mobile na Home placeholder ≥ 95 em Performance, Acessibilidade e Boas práticas.
+8. Lighthouse mobile na Home de produção: três execuções formais consecutivas na mesma release e metodologia, todas com Performance ≥ 80, Acessibilidade ≥ 95, Boas práticas ≥ 95 e TBT ≤ 600 ms; sem descarte de execução válida ou best-of-N.
 9. `MAINTENANCE_MODE=true` no recurso Coolify e redeploy controlado → vitrine em 503 com página de manutenção; `/api/health` continua 200; depois restaurar `false`.
 10. Gitleaks na CI sem achados e nenhuma ocorrência do valor de `SUPABASE_SERVICE_ROLE_KEY` em bundles do cliente; segredos de servidor ausentes dos build args/layers.
 11. `README.md` e `deploy/README.md` permitem a outro desenvolvedor rodar localmente e à operadora reproduzir a configuração da aplicação no Coolify. Security headers e estado real dos access logs são verificados; rollback Coolify foi testado.
+
+**Protocolo do critério 8.** As três execuções formais consecutivas usam a mesma URL canônica da Home de produção, a mesma release candidata, o mesmo Lighthouse e navegador (incluindo versões), e o mesmo form factor mobile e throttling. Cada execução deve atingir todos os quatro limites do item 8. Nenhuma execução válida pode ser descartada; best-of-N é proibido. Mudança de release durante o protocolo invalida o conjunto de medições.
+
+**Emenda T18-03D (decisão humana C).** O contrato original exigia Performance ≥ 95 e foi reprovado pela T18-03 e pelo reteste de produção após T18-03R. A linha de base original teve Performance 60/85/83 e TBT 1530/570/560 ms. T18-03R removeu Zod do bundle do navegador: o JS inicial da Home caiu de 1.060.248 para 667.914 B (−37,0%), o chunk dominante de ~766 para ~374 KB e os marcadores Zod de 520 para zero. O reteste formal na release `4f243772396440c5c7f63c62db1280ecf52e2360` mediu Performance 82/87/81, Acessibilidade e Boas práticas 100/100/100, e TBT 590/390/350 ms.
+
+Em T18-03R2, os experimentos diagnósticos E1 (sem Sentry no navegador: Performance 92/94/94, TBT 192/149/138 ms) e E2 (tracing reduzido: Performance 91/90/95, TBT 250/266/174 ms) não foram adotados: violariam, respectivamente, a observabilidade do navegador e `tracesSampleRate` 0.1. A T18-03R2 terminou `BLOCKED_NO_SAFE_REMEDIATION`. A decisão C substitui o limite agregado de Performance ≥ 95, inadequado como gate rígido para a arquitetura Next/React/Sentry aprovada, e acrescenta TBT ≤ 600 ms como limite direto para impedir que bloqueios graves da thread principal, como os 1530 ms originais, fiquem ocultos pela pontuação agregada.
+
+O registro formal de produção fornecido para T18-03 declara três execuções consecutivas na mesma URL canônica e release, com Lighthouse 13.5.0, Chrome 153.0.8010.12, viewport mobile 412×823, escala 1,75 e throttling simulado (RTT 150 ms, 1638,4 kbps, CPU 4×), sem descarte de execução válida ou best-of-N. A reavaliação dessa evidência existente satisfaz o contrato emendado e torna o critério 8 `PASS`, sem novo Lighthouse.
 
 ---
 

@@ -332,15 +332,17 @@ O script `db:types` usa `dotenv -e .env --`; o job privilegiado `db-types`, some
 
 ### T18 · Validação final, README e baseline Lighthouse
 
-**Descrição:** Percorrer os 11 critérios do spec §10 com evidência; rodar Lighthouse mobile na Home em produção; adicionar ao README “Como rodar” e link ao runbook Coolify; testar `MAINTENANCE_MODE=true` no recurso Coolify e reverter; atualizar este arquivo e o status do spec somente após validação.
+**Descrição:** Percorrer os 11 critérios do spec §10 com evidência; validar Lighthouse mobile na Home de produção pelo protocolo do critério 8; adicionar ao README “Como rodar” e link ao runbook Coolify; testar `MAINTENANCE_MODE=true` no recurso Coolify e reverter; atualizar este arquivo e o status do spec somente após validação.
 
 **Aceite:**
 
 - [ ] 11/11 critérios do spec §10 com evidência.
-- [ ] Lighthouse mobile ≥ 95 em Performance, Acessibilidade e Boas práticas na Home.
+- [x] Critério 8 Lighthouse revisado: três execuções formais consecutivas na Home de produção, todas com Performance ≥ 80, Acessibilidade ≥ 95, Boas práticas ≥ 95 e TBT ≤ 600 ms, conforme protocolo do spec §10.
 - [ ] Outra pessoa consegue rodar `npm run dev` apenas com o README.
 
-**Verificação:** `npx lighthouse <url-publica> --form-factor=mobile`; leitura cega do README em sessão nova; health/maintenance públicos.
+**Verificação:** Reteste formal de produção T18-03 na release `4f243772396440c5c7f63c62db1280ecf52e2360`, reavaliado pelo protocolo do spec §10; leitura cega do README em sessão nova; health/maintenance públicos.
+
+**Histórico T18:** T18-03 `COMPLETE / FAIL` sob o contrato original de Performance ≥ 95; T18-03R `PASS / MERGED / DEPLOYED` (correção do bundle do navegador); reteste formal T18-03 `COMPLETE / FAIL` sob o contrato original; T18-03R2 `BLOCKED_NO_SAFE_REMEDIATION`; T18-03D decisão humana C de emendar o critério; T18-03D1 materializa a emenda e reavalia o critério 8 como `PASS` com os três resultados existentes (Performance 82/87/81; Acessibilidade 100/100/100; Boas práticas 100/100/100; TBT 590/390/350 ms). São 6/11 critérios integralmente `PASS`: 1–4, 8 e 10. Os critérios 5, 6, 7 e 11 permanecem `PARTIAL`; o 9, `PENDING`. T18 permanece `IN PROGRESS` e o Checkpoint C, `OPEN`.
 
 **Dependências:** T10, T11, T17 · **Arquivos:** `README.md`, `docs/specs/SPEC-foundation.md`, `tasks/todo.md` · **Tamanho:** S
 
