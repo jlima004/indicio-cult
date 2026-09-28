@@ -5,7 +5,7 @@
 | Spec             | [`docs/specs/SPEC-foundation.md`](../docs/specs/SPEC-foundation.md) (aprovado em 2026-09-16; deploy readjudicado em 2026-09-24) |
 | Mapa             | [`docs/specs/CAPABILITY-MAP.md`](../docs/specs/CAPABILITY-MAP.md) — etapa 1                                                     |
 | Lista de tarefas | [`tasks/todo.md`](./todo.md)                                                                                                    |
-| Status           | Em execução — T17 concluída e aprovada; T18 é o próximo gate                                                                    |
+| Status           | Em execução — T17 concluída e aprovada; T18 `IN PROGRESS` (6/11 critérios integralmente `PASS`); Checkpoint C `OPEN`            |
 
 ## Visão geral
 
@@ -13,7 +13,7 @@ Construir a base técnica da vitrine — Next.js 16, Supabase, Dockerfile `stand
 
 ## Decisões de arquitetura do plano
 
-- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T17 foram revisadas e validadas; T18 é o próximo gate e ainda não foi iniciado.
+- **Código primeiro, entrega depois.** A Fase A constrói a aplicação localmente; a Fase B empacota, valida e configura o recurso Coolify. Checkpoint A passou; T13–T17 foram revisadas e validadas; T18 está em andamento.
 - **Sem CI durante a Fase A.** `npm run check` local precede PR; T14 instalou a CI para PRs e pushes em `main`, e T17 passou a exigir o status check `ci` na proteção da `main`.
 - **Uma camada pública.** Coolify gerencia o recurso Git com Dockerfile e Traefik gerencia domínio/TLS. O Next escuta apenas na porta interna 3000; não há proxy próprio nem porta host da aplicação.
 - **Deploy após CI.** Auto Deploy no Coolify fica **OFF**. T16 implementou e validou o fluxo que recebe o SHA da CI verde, descarta candidato obsoleto, fixa e relê `git_commit_sha` no recurso, aciona deployment por API e valida commit/saúde/SHA. A serialização exclusiva cobre a mutação; resposta HTTP 2xx não comprova saúde.
@@ -50,7 +50,7 @@ T1–T17 concluídas → T18 validação final
 - [x] Home, 404, erro e manutenção com copy da marca
 - [x] Revisão com a operadora antes do empacotamento
 
-**Próximo gate:** T18 · Validação final, README e baseline Lighthouse. Execução não iniciada; permanece bloqueada até autorização humana explícita.
+**Gate atual:** T18 · Validação final, README e baseline Lighthouse. T18-03D1 materializa a decisão humana C: o critério 8 passa pela reavaliação do reteste formal de produção sob o contrato emendado do spec §10. O histórico e os critérios pendentes estão em [`todo.md`](./todo.md#t18--validação-final-readme-e-baseline-lighthouse).
 
 ### Fase B — Empacotamento e entrega
 
@@ -77,6 +77,8 @@ T1–T17 concluídas → T18 validação final
 
 - [ ] T18 · Evidências dos 11 critérios do spec, README “Como rodar”, Lighthouse e manutenção testada no recurso Coolify
 
+**Estado T18:** `IN PROGRESS`; 6/11 critérios integralmente `PASS` (1–4, 8 e 10). Critérios 5, 6, 7 e 11 `PARTIAL`; 9 `PENDING`. T18-03D1 é a emenda documental do contrato Lighthouse, sem nova medição nem mudança em produção.
+
 ### Checkpoint C — Fundação pronta
 
 - [ ] Critérios do spec §10 verdadeiros em produção
@@ -84,8 +86,8 @@ T1–T17 concluídas → T18 validação final
 
 ## Paralelização
 
-- T1–T17 estão concluídas. T18 é o próximo gate e permanece bloqueado até autorização humana explícita.
-- T18 depende de T17, já concluída. T18 ainda não foi iniciado.
+- T1–T17 estão concluídas. T18 está `IN PROGRESS`; sua conclusão depende dos critérios ainda abertos e de controle humano.
+- T18 depende de T17, já concluída. O Checkpoint C permanece `OPEN`.
 
 ## Riscos e mitigações
 
