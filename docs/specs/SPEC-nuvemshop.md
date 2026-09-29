@@ -1,17 +1,34 @@
 # Spec: `nuvemshop`
 
-| Campo               | Valor                                                               |
-| ------------------- | ------------------------------------------------------------------- |
-| Status              | **DRAFT / AWAITING HUMAN REVIEW**                                   |
-| Capability          | `nuvemshop`                                                         |
-| Tipo                | Adapter de integração server-only, sem UI                           |
-| Base do repositório | `origin/main` em `399dbfa0ec22b457da9a4e61a0b1cb1a082303c6`         |
-| Data da pesquisa    | 2026-09-28                                                          |
-| Próximo gate        | Revisão e adjudicação humana; não iniciar implementação antes disso |
+| Campo               | Valor                                                         |
+| ------------------- | ------------------------------------------------------------- |
+| Status              | **HUMAN APPROVED / PLANNING ALLOWED**                         |
+| Capability          | `nuvemshop`                                                   |
+| Tipo                | Adapter de integração server-only, sem UI                     |
+| Base do repositório | `origin/main` em `399dbfa0ec22b457da9a4e61a0b1cb1a082303c6`   |
+| Data da pesquisa    | 2026-09-28                                                    |
+| Próximo gate        | Planejamento após merge; implementação sujeita aos `NUV-HR-*` |
 
-Este documento é uma especificação inicial. Ele separa contratos já fixados no
+Este documento separa contratos já fixados no
 repositório, fatos externos verificados na documentação oficial e decisões de
 design propostas. Uma decisão proposta não é uma garantia da Nuvemshop.
+
+## Adjudicação humana da spec
+
+Em 2026-09-29, a arquitetura descrita nesta spec foi **HUMAN APPROVED**. A
+decisão autoriza `planning-and-task-breakdown` como próximo passo após o merge
+da spec. Foram aprovados os limites do módulo, o contrato de API e versão, o
+modelo de autenticação e scopes, a fronteira server-only de secrets, o cliente
+tipado, o desenho de webhooks e HMAC, durabilidade e idempotência, o modelo de
+erros, observabilidade, estratégia de testes e contratos dos consumidores.
+
+A adjudicação não autoriza implementação. As open questions mantêm seus status
+e blocking scopes, e `NUV-HR-01` a `NUV-HR-08` continuam aplicáveis e abertos
+para configuração da conta, scopes efetivos, secret e rotação de HMAC, modo de
+inventário, checkout, registro de webhooks, infraestrutura de durabilidade e
+callbacks de privacidade. A implementação exige os checkpoints aplicáveis e
+autorização futura. Nenhuma mutação da conta Nuvemshop, de secrets, produção ou
+infraestrutura foi autorizada.
 
 ## 1. Objetivo
 
@@ -838,8 +855,7 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
 | `NUV-OPEN-RETURN-URL`         | OPEN   | NON-BLOCKING / DEFERRED | PRD/conta confirmation URL decision                                                                                                                                                              | `cart` post-purchase UX                    | `cart`/product later |
 
 Nenhuma dessas perguntas deve ser resolvida por assumir comportamento da conta
-real. Questões abertas não mudam o status da spec para APPROVED ou READY FOR
-IMPLEMENTATION.
+real. A aprovação da spec não resolve essas questões nem autoriza implementação.
 
 ## 24. Referências do repositório
 
@@ -858,10 +874,10 @@ IMPLEMENTATION.
 
 ## 25. Status e próximo passo humano
 
-**DRAFT / AWAITING HUMAN REVIEW**.
+**HUMAN APPROVED / PLANNING ALLOWED**.
 
-O próximo passo é revisar e adjudicar este documento, em especial
-`NUV-OPEN-CHECKOUT`, `NUV-OPEN-INVENTORY-MODE`, scopes, durabilidade e rotação
-de segredo. Só após uma decisão humana explícita a spec pode alimentar
-`planning-and-task-breakdown`. Não criar tasks de implementação nem código do
-capability nesta execução.
+O próximo passo, após o merge desta spec, é `planning-and-task-breakdown`.
+Esta adjudicação documental não autoriza implementação: os checkpoints
+`NUV-HR-*` aplicáveis permanecem abertos e a implementação exige autorização
+posterior. Não criar tasks de implementação nem código do capability nesta
+execução.
