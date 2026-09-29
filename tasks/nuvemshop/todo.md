@@ -148,8 +148,8 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 - **Estado/tamanho:** READY_AFTER_AUTH_AND_HR_01 · S. **Racional:** separar eventos de recurso dos callbacks de privacidade.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-07/14; HR-02 antes de tópicos reais. **Escopo/arquivos prováveis:** `src/modules/nuvemshop/schemas/webhook.ts`, `tests/unit/modules/nuvemshop/webhook-schema.test.ts`.
-- **RED:** quatro eventos, loja errada, ID de recurso inválido, unknown event e privacy body no parser de negócio falham. **GREEN:** união discriminada de quatro eventos autenticados; unknown opcional ignorado sem efeito após HMAC, callback obrigatório não é ignorado. **REFACTOR:** allowlist fechada.
-- **Aceite:** [ ] `id` tratado como recurso, nunca delivery ID; [ ] não buscar API por URL do body; [ ] sem raw fields públicos.
+- **RED:** quatro eventos, loja errada, ID de recurso inválido, unknown event e privacy body no parser de negócio falham; classificar unknown como elegível a ACK sem decisão do owner falha. **GREEN:** união discriminada de quatro eventos autenticados; unknown só é elegível à política `ignored_unknown_event`/2xx sem efeito após HMAC quando não for callback obrigatório de privacidade **e** o owner tiver validado e registrado essa política. Sem validação do owner, a política de ACK para unknown permanece bloqueada. **REFACTOR:** allowlist fechada.
+- **Aceite:** [ ] `id` tratado como recurso, nunca delivery ID; [ ] decisão do owner registrada antes de habilitar ACK 2xx para unknown; [ ] não buscar API por URL do body; [ ] sem raw fields públicos.
 - **Validação:** `npm run test -- tests/unit/modules/nuvemshop/webhook-schema.test.ts`; `npm run check`. **Segurança/privacidade:** store assinado coincide com config. **Fora:** dispatcher e privacy parser.
 - **PR/evidência:** `codex/nuv-15-event-schema`; `feat(nuvemshop): type verified business events`; revisão segurança, fixtures e CI.
 
@@ -157,8 +157,8 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** 2xx antes de persistência perde eventos.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-15, **HR-07**. **Escopo/arquivos prováveis:** interface em `src/modules/nuvemshop/server/durability/**` e backend/schema/migration **TBD somente após HR-07**; `tests/unit/modules/nuvemshop/durability-intake.test.ts`.
-- **RED:** persistência falha → sem ACK; entrega aceita → registro durável com ID local e estado `received`; duplicata ganha rastreio sem hash permanente. **GREEN:** implementar backend adjudicado, retenção e transação/commit verificáveis. **REFACTOR:** isolar adapter de backend.
-- **Aceite:** [ ] 2xx somente após commit; [ ] falha de store permite 5xx/retry provedor; [ ] payload bruto não persistido por default; [ ] teste usa backend selecionado.
+- **RED:** persistência falha → sem ACK; entrega de negócio aceita → recibo `received` com ID local e trabalho mínimo verificado (evento, loja, recurso e correlação) persistidos atomicamente; após perda do processo, o trabalho ainda pode ser recuperado; duplicata ganha rastreio sem hash permanente. **GREEN:** implementar backend adjudicado, retenção e transação/commit verificáveis do recibo e da intenção normalizada; callbacks de privacidade mantêm seu contrato mínimo próprio sob HR-08. **REFACTOR:** isolar adapter de backend.
+- **Aceite:** [ ] 2xx somente após commit atômico do recibo e trabalho recuperável; [ ] falha de store permite 5xx/retry provedor; [ ] payload bruto não persistido por default; [ ] teste usa backend selecionado.
 - **Validação:** `npm run test -- tests/unit/modules/nuvemshop/durability-intake.test.ts`; `npm run check`. **Segurança/privacidade:** retenção/PII/segredo conforme HR-07. **Fora:** escolha automática Supabase/Redis/Postgres ou fila.
 - **PR/evidência:** `codex/nuv-16-ledger`; `feat(nuvemshop): persist webhook receipt`; revisão arquitetura/security, HR-07 anexado e CI. **DEPENDENCY_DECISION_REQUIRED; Perguntar antes** se pacote.
 
@@ -166,7 +166,7 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** registro durável sem worker recuperável não prova processamento.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-16, HR-07. **Escopo/arquivos prováveis:** `src/modules/nuvemshop/server/durability/**` e `tests/unit/modules/nuvemshop/durability-worker.test.ts`; caminho real depende do backend escolhido.
-- **RED:** dois workers, lease expirado, crash pós-ACK, retry limitado, replay e quarentena falham. **GREEN:** claim atômico, `claimed/processing/succeeded/retryable/quarantined`, reclaim e recovery observáveis. **REFACTOR:** reduzir transições duplicadas.
+- **RED:** dois workers, lease expirado, crash pós-ACK com reclaim e despacho do trabalho normalizado persistido, retry limitado, replay e quarentena falham. **GREEN:** claim atômico, `claimed/processing/succeeded/retryable/quarantined`, reclaim e recovery observáveis. **REFACTOR:** reduzir transições duplicadas.
 - **Aceite:** [ ] sem claim duplo ativo; [ ] falha não some; [ ] operador pode reconciliar/quarentenar; [ ] retenção supera janela aprovada.
 - **Validação:** `npm run test -- tests/unit/modules/nuvemshop/durability-worker.test.ts`; `npm run check`. **Segurança/privacidade:** acesso mínimo à fila e logs sem payload. **Fora:** consumer effect/analytics.
 - **PR/evidência:** `codex/nuv-17-recovery`; `feat(nuvemshop): recover durable webhook work`; revisão concorrência/ops, crash test e CI.
@@ -186,8 +186,8 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** endpoint público precisa autenticar, persistir e sobreviver a manutenção.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-14/15/16; HR-07, HR-03 apenas para uso operacional. **Escopo/arquivos prováveis:** `src/app/api/webhooks/nuvemshop/events/route.ts`, `src/lib/proxy/rules.ts`, `src/proxy.ts`, `tests/unit/app/api/webhooks/nuvemshop/events.test.ts` e proxy tests.
-- **RED:** assinatura/body/schema inválidos 4xx, JSON assinado profundamente aninhado ou com objetos abusivos, storage down 5xx, ACK antes de commit e manutenção 503 sem intake falham com custo limitado. **GREEN:** POST fino, HMAC → parse com limite de profundidade/nós e tamanho → ledger → 2xx; exceção exata de manutenção para webhook com mesma segurança; sem chamada lenta antes do ACK. Fixar limites de estrutura com fixtures e teste de custo antes do merge. **REFACTOR:** compartilhar error response via `problem()`.
-- **Aceite:** [ ] health permanece 200 em manutenção; [ ] demais rotas seguem 503; [ ] quatro eventos permitidos; [ ] corpo válido porém abusivo é rejeitado sem persistência e dentro do budget; [ ] tempo de ACK medido contra 3 s.
+- **RED:** assinatura/body/schema inválidos 4xx, JSON assinado profundamente aninhado ou com objetos abusivos, storage down 5xx, ACK antes de commit, unknown sem validação do owner ou callback de privacidade indevidamente roteado recebendo 2xx, e manutenção 503 sem intake falham com custo limitado. **GREEN:** POST fino, HMAC → parse com limite de profundidade/nós e tamanho → ledger → 2xx somente para evento permitido; unknown só recebe `ignored_unknown_event`/2xx após decisão registrada do owner e exclusão dos callbacks obrigatórios, sem efeito externo; sem essa decisão, não habilitar o ACK de unknown. Exceção exata de manutenção para webhook com mesma segurança; sem chamada lenta antes do ACK. Fixar limites de estrutura com fixtures e teste de custo antes do merge. **REFACTOR:** compartilhar error response via `problem()`.
+- **Aceite:** [ ] health permanece 200 em manutenção; [ ] demais rotas seguem 503; [ ] quatro eventos permitidos; [ ] unknown recebe `ignored_unknown_event`/2xx só após validação registrada do owner e nunca para callback obrigatório de privacidade; [ ] corpo válido porém abusivo é rejeitado sem persistência e dentro do budget; [ ] tempo de ACK medido contra 3 s.
 - **Validação:** `npm run test -- tests/unit/app/api/webhooks/nuvemshop/events.test.ts`; `npm run test -- tests/unit/lib/proxy.test.ts`; `npm run check`. **Segurança/privacidade:** HMAC obrigatório, body cap, sem raw log. **Fora:** registro na app.
 - **PR/evidência:** `codex/nuv-19-business-route`; `feat(nuvemshop): accept durable business webhooks`; revisão security/proxy, testes normal/manutenção e CI.
 
@@ -195,8 +195,8 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_08 · M. **Racional:** payload, retenção e resposta precisam de owner humano.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-14/16, **HR-08**, HR-07; HR-03 para operação. **Escopo/arquivos prováveis:** três `src/app/api/webhooks/nuvemshop/{store-redact,customers-redact,customers-data-request}/route.ts`, schema e `tests/unit/app/api/webhooks/nuvemshop/privacy.test.ts`.
-- **RED:** três payloads distintos, parser cruzado, HMAC ausente, resposta/retention e falha de handler testados primeiro. **GREEN:** endpoints separados com verificador comum, owner/retention/response aprovados e recovery. **REFACTOR:** boundary HTTP compartilhado sem fundir parsers.
-- **Aceite:** [ ] três callbacks obrigatórios têm comportamento documentado; [ ] nenhum deles cai em unknown business event; [ ] ensaio autorizado antes de instalação.
+- **RED:** três payloads distintos, parser cruzado, HMAC ausente, resposta/retention, falha de handler e perda do processo após ACK testados primeiro. **GREEN:** endpoints separados com verificador comum, owner/retention/response aprovados em HR-08 e intenção de privacidade mínima e recuperável persistida antes do ACK, sem forçar o envelope `{event,id}` dos eventos de negócio. **REFACTOR:** boundary HTTP compartilhado sem fundir parsers.
+- **Aceite:** [ ] três callbacks obrigatórios têm comportamento documentado e recuperação após crash; [ ] nenhum deles cai em unknown business event; [ ] ensaio autorizado antes de instalação.
 - **Validação:** `npm run test -- tests/unit/app/api/webhooks/nuvemshop/privacy.test.ts`; `npm run check`. **Segurança/privacidade:** exclusão/acesso e PII por política HR-08, sem raw default. **Fora:** decidir política sem humano.
 - **PR/evidência:** `codex/nuv-20-privacy`; `feat(nuvemshop): handle approved privacy callbacks`; revisão privacy/security, HR-08 e CI.
 
