@@ -32,7 +32,8 @@ donos de sua própria semântica.
 - Cliente HTTP tipado e exclusivamente de servidor para a API REST da
   Nuvemshop.
 - Pin de versão da API, base URL, `Authorization` e `User-Agent`.
-- Leitura tipada de produtos, variantes, categorias, clientes e pedidos.
+- Leitura tipada de produtos, variantes, categorias e pedidos; leitura de
+  clientes apenas se `read_customers` for adjudicado e concedido.
 - Paginação explícita e tratamento de limites de uso.
 - Recepção de webhooks por Route Handler, preservando o corpo bruto.
 - Verificação HMAC antes de interpretar o JSON.
@@ -100,22 +101,23 @@ dependências do Capability Map.
 ## 4. Fontes normativas e matriz de pesquisa
 
 As URLs abaixo são documentação oficial Nuvemshop/Tiendanube ou documentação
-oficial do repositório do provedor. Acesso e verificação: 2026-09-28.
+oficial do repositório do provedor. Acesso e verificação: 2026-09-29 para os
+contratos de Order/scopes, headers e app ID; 2026-09-28 para os demais.
 
-| Fato/decisão       | Fonte oficial                                                                                                                                                                                                                                                                                                      | Valor verificado                                                                                                                                                                  | Confiança                                    | Impacto                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Base e versão      | [Introduction](https://tiendanube.github.io/api-documentation/intro), [Versioning](https://tiendanube.github.io/api-documentation/versioning)                                                                                                                                                                      | API REST versionada por `YYYY-MM`; referência estável consultada: `2025-03`; base Nuvemshop `https://api.nuvemshop.com.br/2025-03/{store_id}` e equivalente Tiendanube            | Alta                                         | Toda chamada deve usar a versão pinada; não usar `/v1` legado sem decisão explícita |
-| OAuth e store id   | [Authentication](https://tiendanube.github.io/api-documentation/authentication)                                                                                                                                                                                                                                    | Authorization Code; código expira em 5 min; retorno traz `user_id`/ID da loja; conferir `state`; token não tem expiração fixa documentada                                         | Alta                                         | Bootstrap humano separado do runtime; não criar OAuth UI no MVP                     |
-| Autorização        | [Authentication / scopes](https://tiendanube.github.io/api-documentation/authentication#scopes)                                                                                                                                                                                                                    | Há permissões de leitura/escrita por recurso; escrita implica leitura; registro de webhook depende da permissão do recurso                                                        | Alta                                         | Solicitar somente leituras necessárias; confirmar scopes no app real                |
-| Headers            | [Introduction](https://tiendanube.github.io/api-documentation/intro)                                                                                                                                                                                                                                               | `Authorization: Bearer`; `User-Agent` com nome do app e contato; `Content-Type: application/json; charset=utf-8` para JSON                                                        | Alta                                         | Header obrigatório e redacted em logs                                               |
-| Paginação          | [Introduction / pagination](https://tiendanube.github.io/api-documentation/intro#pagination)                                                                                                                                                                                                                       | `page` começa em 1, `per_page` até 200, `x-total-count` e `Link`; produtos/pedidos documentam 30 como padrão                                                                      | Alta                                         | Expor página normalizada; não carregar tudo implicitamente                          |
-| Rate limit         | [Introduction / rate limiting](https://tiendanube.github.io/api-documentation/intro#rate-limiting)                                                                                                                                                                                                                 | Leaky bucket padrão 40, vazão 2/s, por loja/app; Next/Evolution multiplica por 10; headers `x-rate-limit-limit`, `x-rate-limit-remaining`, `x-rate-limit-reset` em ms             | Alta                                         | Tratar 429 usando os headers disponíveis; não assumir `Retry-After`                 |
-| Recursos           | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Category](https://tiendanube.github.io/api-documentation/resources/category), [Customer](https://tiendanube.github.io/api-documentation/resources/customer), [Order](https://tiendanube.github.io/api-documentation/resources/order) | Existem list/get para produtos, variantes, categorias, clientes e pedidos; `order.id` é distinto de `number`; customer em pedido depende de `read_customers`                      | Alta                                         | Schemas de runtime e tipos internos; IDs internos nos contratos                     |
-| Produto/inventário | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Product variant](https://tiendanube.github.io/api-documentation/resources/product-variant), [Multiple inventory](https://tiendanube.github.io/api-documentation/guides/multi-inventory/products)                                     | Produtos têm variantes; variante tem preço, SKU e estoque; a documentação descreve formatos distintos para estoque agregado e `inventory_levels`, conforme a configuração da loja | Alta para os formatos; modo da loja aberto   | Não fixar schema operacional sem confirmar o modo da loja                           |
-| Webhooks           | [Webhook](https://tiendanube.github.io/api-documentation/resources/webhook)                                                                                                                                                                                                                                        | Registro via `/webhooks`; envelope comum contém `store_id`, `event` e `id`; não é snapshot; HMAC-SHA256 no header `x-linkedstore-hmac-sha256` sobre o corpo com segredo da app    | Alta                                         | Ler corpo bruto, validar HMAC e só depois parsear                                   |
-| Entrega de webhook | [Webhook / retry and ordering](https://tiendanube.github.io/api-documentation/resources/webhook#retry-policies)                                                                                                                                                                                                    | Responder 2xx em até 3 s; documentação descreve repetição por até 48 h e até 16 tentativas; ordem não é garantida e duplicatas são possíveis                                      | Alta, com conflito de timeout anotado abaixo | Persistir trabalho antes do 2xx; não presumir exactly-once                          |
-| Privacidade        | [Webhook / required webhooks](https://tiendanube.github.io/api-documentation/resources/webhook#required-webhooks)                                                                                                                                                                                                  | Apps que guardam dados podem ter de tratar `store/redact`, `customers/redact` e `customers/data_request`, com payloads próprios                                                   | Alta                                         | Contrato separado e checkpoint antes da instalação                                  |
-| Cart/checkout      | [Cart](https://tiendanube.github.io/api-documentation/resources/cart), [Checkout](https://tiendanube.github.io/api-documentation/resources/checkout), [Draft Order](https://tiendanube.github.io/api-documentation/resources/draft-order)                                                                          | Cart documenta consulta/remoção de carrinho existente; Draft Order mostra `checkout_url`; não foi comprovado que isso é o mecanismo do handoff normal da vitrine                  | Alta                                         | Manter `NUV-OPEN-CHECKOUT`; não escolher Draft Order por inferência                 |
+| Fato/decisão       | Fonte oficial                                                                                                                                                                                                                                                                                                      | Valor verificado                                                                                                                                                                                                                     | Confiança                                    | Impacto                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Base e versão      | [Introduction](https://tiendanube.github.io/api-documentation/intro), [Versioning](https://tiendanube.github.io/api-documentation/versioning)                                                                                                                                                                      | API REST versionada por `YYYY-MM`; referência estável consultada: `2025-03`; base Nuvemshop `https://api.nuvemshop.com.br/2025-03/{store_id}` e equivalente Tiendanube                                                               | Alta                                         | Toda chamada deve usar a versão pinada; não usar `/v1` legado sem decisão explícita |
+| OAuth e store id   | [Authentication](https://tiendanube.github.io/api-documentation/authentication)                                                                                                                                                                                                                                    | Authorization Code; URL de instalação usa `app_id` e troca de código usa `client_id`/segredo; código expira em 5 min; retorno traz `user_id`/ID da loja; conferir `state`; token não tem expiração fixa documentada                  | Alta                                         | Bootstrap humano separado do runtime; não criar OAuth UI no MVP                     |
+| Autorização        | [Authentication / scopes](https://tiendanube.github.io/api-documentation/authentication#scopes)                                                                                                                                                                                                                    | Há permissões de leitura/escrita por recurso; escrita implica leitura; registro de webhook depende da permissão do recurso                                                                                                           | Alta                                         | Solicitar somente leituras necessárias; confirmar scopes no app real                |
+| Headers            | [Introduction](https://tiendanube.github.io/api-documentation/intro)                                                                                                                                                                                                                                               | Requests store-scoped usam `Authorization: Bearer` e `User-Agent` com nome da app e URL ou e-mail de contato, sem `app_id` no header; `Content-Type: application/json; charset=utf-8` para JSON                                      | Alta                                         | Headers obrigatórios; token redacted em logs                                        |
+| Paginação          | [Introduction / pagination](https://tiendanube.github.io/api-documentation/intro#pagination)                                                                                                                                                                                                                       | `page` começa em 1, `per_page` até 200, `x-total-count` e `Link`; produtos/pedidos documentam 30 como padrão                                                                                                                         | Alta                                         | Expor página normalizada; não carregar tudo implicitamente                          |
+| Rate limit         | [Introduction / rate limiting](https://tiendanube.github.io/api-documentation/intro#rate-limiting)                                                                                                                                                                                                                 | Leaky bucket padrão 40, vazão 2/s, por loja/app; Next/Evolution multiplica por 10; headers `x-rate-limit-limit`, `x-rate-limit-remaining`, `x-rate-limit-reset` em ms                                                                | Alta                                         | Tratar 429 usando os headers disponíveis; não assumir `Retry-After`                 |
+| Recursos           | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Category](https://tiendanube.github.io/api-documentation/resources/category), [Customer](https://tiendanube.github.io/api-documentation/resources/customer), [Order](https://tiendanube.github.io/api-documentation/resources/order) | Existem list/get para produtos, variantes, categorias, clientes e pedidos; `order.id` é distinto de `number`; `Order.contact_email` é campo direto do pedido, enquanto o objeto `Order.customer` só é fornecido com `read_customers` | Alta                                         | E-mail de vínculo vem de Order; Customer é capability condicional                   |
+| Produto/inventário | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Product variant](https://tiendanube.github.io/api-documentation/resources/product-variant), [Multiple inventory](https://tiendanube.github.io/api-documentation/guides/multi-inventory/products)                                     | Produtos têm variantes; variante tem preço, SKU e estoque; a documentação descreve formatos distintos para estoque agregado e `inventory_levels`, conforme a configuração da loja                                                    | Alta para os formatos; modo da loja aberto   | Não fixar schema operacional sem confirmar o modo da loja                           |
+| Webhooks           | [Webhook](https://tiendanube.github.io/api-documentation/resources/webhook)                                                                                                                                                                                                                                        | Registro via `/webhooks`; envelope comum contém `store_id`, `event` e `id`; não é snapshot; HMAC-SHA256 no header `x-linkedstore-hmac-sha256` sobre o corpo com segredo da app                                                       | Alta                                         | Ler corpo bruto, validar HMAC e só depois parsear                                   |
+| Entrega de webhook | [Webhook / retry and ordering](https://tiendanube.github.io/api-documentation/resources/webhook#retry-policies)                                                                                                                                                                                                    | Responder 2xx em até 3 s; documentação descreve repetição por até 48 h e até 16 tentativas; ordem não é garantida e duplicatas são possíveis                                                                                         | Alta, com conflito de timeout anotado abaixo | Persistir trabalho antes do 2xx; não presumir exactly-once                          |
+| Privacidade        | [Webhook / required webhooks](https://tiendanube.github.io/api-documentation/resources/webhook#required-webhooks)                                                                                                                                                                                                  | Apps que guardam dados podem ter de tratar `store/redact`, `customers/redact` e `customers/data_request`, com payloads próprios                                                                                                      | Alta                                         | Contrato separado e checkpoint antes da instalação                                  |
+| Cart/checkout      | [Cart](https://tiendanube.github.io/api-documentation/resources/cart), [Checkout](https://tiendanube.github.io/api-documentation/resources/checkout), [Draft Order](https://tiendanube.github.io/api-documentation/resources/draft-order)                                                                          | Cart documenta consulta/remoção de carrinho existente; Draft Order mostra `checkout_url`; não foi comprovado que isso é o mecanismo do handoff normal da vitrine                                                                     | Alta                                         | Manter `NUV-OPEN-CHECKOUT`; não escolher Draft Order por inferência                 |
 
 ### Divergências e limites das fontes
 
@@ -163,8 +165,10 @@ de loja fixo, validado por configuração. Não haverá tela OAuth nem endpoint 
 instalação no MVP do adapter. O bootstrap humano registra a app e instala na
 loja; depois fornece apenas a configuração necessária ao runtime.
 
-O cliente envia `Authorization: Bearer <token>` e `User-Agent` com nome da app e
-contato operacional. Não expõe token, client secret ou assinatura em retorno,
+O cliente envia `Authorization: Bearer <token>` e `User-Agent` no formato
+documentado `Nome da app (URL ou e-mail de contato)`, derivado de constante
+interna ou configuração própria, sem depender de `NUVEMSHOP_APP_ID`. Não expõe
+token, client secret ou assinatura em retorno,
 logs, erros, analytics, bundle ou headers de resposta para o browser.
 
 Scopes propostos para o core de leitura, sujeitos à necessidade campo a campo:
@@ -174,9 +178,12 @@ read_products
 read_orders
 ```
 
-`read_customers` fica condicional: só deve ser solicitado se a implementação
-provar que o vínculo de pedidos exige o objeto completo de customer, em vez do
-e-mail disponível no recurso de pedido. O core não expõe `listCustomers` por
+O vínculo de pedidos da conta usa `Order.contact_email`, campo direto do
+recurso Order sob `read_orders`, comparado por `orders`/`identity` apenas com um
+e-mail verificado da identidade. Ele não depende do objeto `Order.customer`.
+`read_customers` permanece fora do core: só deve ser solicitado se um consumer
+provar necessidade de campos adicionais do recurso Customer e o scope for
+adjudicado e concedido. O core não expõe `getCustomer` nem `listCustomers` por
 default.
 
 Não solicitar `write_products`, `write_customers` ou `write_orders` nesta etapa.
@@ -189,19 +196,22 @@ PRD.
 As variáveis abaixo são a proposta de contrato para a implementação futura. A
 spec não altera `.env.example` nem o schema nesta execução.
 
-| Variável                  | Classificação                             | Uso                                                 | Browser/build                               |
-| ------------------------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------- |
-| `NUVEMSHOP_STORE_ID`      | runtime, required, non-public             | Loja única autorizada; validação do envelope e path | Nunca pública; não build arg                |
-| `NUVEMSHOP_ACCESS_TOKEN`  | runtime, required, secret                 | Bearer para leituras API                            | Nunca pública; nunca build arg              |
-| `NUVEMSHOP_APP_ID`        | runtime, required, non-secret operacional | Identificação e `User-Agent`/bootstrap              | Server-only; não `NEXT_PUBLIC_`             |
-| `NUVEMSHOP_CLIENT_SECRET` | runtime, required, secret                 | Verificação HMAC e eventual bootstrap autorizado    | Nunca pública; nunca build arg              |
-| `NUVEMSHOP_API_VERSION`   | código/config interna, fixed              | `2025-03`                                           | Nunca browser; não controlável pelo usuário |
+| Variável                  | Classificação                                           | Uso                                                      | Browser/build                                               |
+| ------------------------- | ------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| `NUVEMSHOP_STORE_ID`      | runtime, required, non-public                           | Loja única autorizada; validação do envelope e path      | Nunca pública; não build arg                                |
+| `NUVEMSHOP_ACCESS_TOKEN`  | runtime, required, secret                               | Bearer para leituras API                                 | Nunca pública; nunca build arg                              |
+| `NUVEMSHOP_APP_ID`        | bootstrap/tooling, non-secret; fora do contrato runtime | URL de instalação OAuth e `client_id` na troca de código | Não necessário em requests store-scoped; não `NEXT_PUBLIC_` |
+| `NUVEMSHOP_CLIENT_SECRET` | runtime, required, secret                               | Verificação HMAC e eventual bootstrap autorizado         | Nunca pública; nunca build arg                              |
+| `NUVEMSHOP_API_VERSION`   | código/config interna, fixed                            | `2025-03`                                                | Nunca browser; não controlável pelo usuário                 |
 
 `NUVEMSHOP_CLIENT_SECRET` não deve ser confundido com o access token. A
 documentação do webhook atribui a assinatura ao segredo da app; a rotação e o
 procedimento de coexistência de segredo anterior precisam de confirmação
 humana. O PRD não autoriza armazenar credenciais em `/admin/configuracoes`; até
 que esse desenho exista, configuração significa runtime secret manager/env.
+`NUVEMSHOP_APP_ID` pertence ao bootstrap/instalação e não vira requisito de
+runtime sem uma operação concreta que o consuma. O ID da app não substitui o
+segredo usado na verificação HMAC.
 
 O módulo deve importar `server-only` no entrypoint que alcança credenciais. O
 CI deverá receber somente fixtures/sentinelas não secretas nos testes locais;
@@ -219,14 +229,14 @@ src/modules/nuvemshop/
 │   ├── request.ts      # transporte, versão, headers, retry e parse
 │   ├── products.ts     # products e variants
 │   ├── categories.ts   # categories
-│   ├── customers.ts    # customers; uso mínimo de PII
+│   ├── customers.ts    # opcional; somente após read_customers adjudicado
 │   ├── orders.ts       # orders; somente leitura no MVP
 │   ├── webhooks.ts     # corpo bruto, HMAC, envelope e dispatcher
 │   └── index.ts        # superfície server-only do módulo
 ├── schemas/
 │   ├── product.ts
 │   ├── category.ts
-│   ├── customer.ts
+│   ├── customer.ts     # opcional; somente com customers.ts
 │   ├── order.ts
 │   └── webhook.ts
 ├── types.ts            # tipos normalizados exportáveis ao server consumers
@@ -349,15 +359,18 @@ política de séries do `content`.
 
 ### Customers
 
+Capability opcional, indisponível na configuração core. `getCustomer` só fica
+habilitado se `read_customers` tiver sido adjudicado e concedido:
+
 ```ts
 getCustomer(input: { customerId: CustomerId }): Promise<Customer>
 ```
 
-O acesso a customer é server-only, minimizado e só deve buscar campos
-necessários a `orders`/reconciliação. E-mail é PII e não entra em logs, cache
-compartilhado, analytics ou tipo client-importable. A vinculação da conta da
-vitrine por e-mail verificado é responsabilidade de `orders`/`identity`, não
-do adapter.
+O acesso a Customer é server-only, minimizado e só deve buscar campos
+adicionais comprovadamente necessários ao consumer. Seus dados pessoais não
+entram em logs, cache compartilhado, analytics ou tipo client-importable. O
+vínculo da conta usa o e-mail do Order; a decisão pertence a `orders`/`identity`,
+não ao adapter.
 
 ### Orders
 
@@ -368,9 +381,15 @@ listOrders(input: ListOrdersInput): Promise<Page<Order>>
 
 O contrato usa o ID interno do pedido; o `number` amigável é somente um campo
 de apresentação. `Order` deve conter os campos necessários para estado,
-itens/variantes, valores, pagamento, fulfillment, tracking e customer mínimo,
-com PII explicitamente classificada. O adapter não decide a linha do tempo da
-conta, troca, `purchase`, contador de vendas ou reembolso.
+itens/variantes, valores, pagamento, fulfillment e tracking. Inclui
+`Order.contactEmail`, normalizado do campo oficial `Order.contact_email`, para
+que `orders`/`identity` compare o e-mail do pedido com um e-mail Supabase
+verificado. Esse campo é PII e server-only: não entra em logs, analytics, cache
+compartilhado ou tipo importável pelo cliente. Se o e-mail estiver ausente ou
+inválido, o pedido não pode ser vinculado por essa regra. O contrato não exige
+o objeto Customer completo nem `read_customers`. O adapter fornece o dado,
+mas não decide o vínculo, a linha do tempo da conta, troca, `purchase`,
+contador de vendas ou reembolso.
 
 ### Checkout/cart
 
@@ -605,7 +624,8 @@ de chamadas reais.
 - construção de URL versionada, headers, `User-Agent` e `AbortSignal`;
 - ausência de `Authorization`/segredos em logs e erros;
 - paginação, `Link`, `x-total-count` e limite de `per_page`;
-- schemas de produto, variante, categoria, cliente, pedido e envelope;
+- schemas de produto, variante, categoria, pedido e envelope; cliente somente se a
+  capability opcional for habilitada;
 - taxonomia para 401/402/403/404/429/5xx/timeout/schema inválido;
 - limite de retry, jitter/bounded behavior e ausência de retry inseguro de write;
 - HMAC válido, digest ausente/malformado, corpo alterado e comparação constante;
@@ -653,24 +673,24 @@ manager/env autorizado; o procedimento também deve documentar revogação e
 reinstalação. Não se cria UI OAuth nesta etapa, mas o runbook de bootstrap é
 pré-requisito operacional.
 
-| ID          | Decision/action                                                                        | Why human                                            | Evidence                                                                          | Blocks                            |
-| ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
-| `NUV-HR-01` | Confirmar que a loja/app single-store existem e identificar `store_id` sem expor token | Account-specific                                     | ID seguro e app autorizado                                                        | Implementação e smoke real        |
-| `NUV-HR-02` | Aprovar `2025-03`, modalidade da app e scopes mínimos efetivos                         | A documentação não conhece a configuração real       | Registro de scopes sem valores secretos                                           | Implementação autenticada         |
-| `NUV-HR-03` | Confirmar app secret usado pelo HMAC, rotação e janela de coexistência                 | Secret/account-specific                              | Procedimento documentado, sem valor do segredo                                    | Implementação de HMAC operacional |
-| `NUV-HR-04` | Confirmar se a loja está em inventário simples ou Multiple Locations                   | O modo altera schema e disponibilidade               | Resposta/documentação da conta + fixture correspondente                           | Contrato final de disponibilidade |
-| `NUV-HR-05` | Adjudicar o handoff local cart → checkout hospedado                                    | Cart/Draft Order não provam equivalência             | Fluxo oficial ou ensaio autorizado com cleanup                                    | Consumer `cart`                   |
-| `NUV-HR-06` | Registrar os quatro webhooks de negócio, endpoints e lifecycle                         | Registro muta app/loja                               | Lista de webhooks e eventos confirmada                                            | End-to-end de webhooks            |
-| `NUV-HR-07` | Definir durabilidade, retenção, fila e alerta                                          | É uma decisão operacional da Foundation/infra        | Runbook, owner e evidência de recuperação                                         | Ack/retry seguro                  |
-| `NUV-HR-08` | Definir callbacks de privacidade, owner, retenção e resposta                           | São callbacks obrigatórios para app que guarda dados | Contrato e ensaio de `store/redact`, `customers/redact`, `customers/data_request` | Instalação operacional            |
+| ID          | Decision/action                                                                                                                                                                | Why human                                            | Evidence                                                                          | Blocks                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `NUV-HR-01` | Confirmar que a loja/app single-store existem e identificar `store_id` sem expor token                                                                                         | Account-specific                                     | ID seguro e app autorizado                                                        | Implementação e smoke real                       |
+| `NUV-HR-02` | Aprovar `2025-03`, modalidade da app e scopes efetivos: `read_products`, `read_orders` e apenas adicionais comprovados; confirmar permissão dos tópicos de webhook pretendidos | A documentação não conhece a configuração real       | Registro de scopes e tópicos autorizados, sem valores secretos                    | Implementação autenticada e registro de webhooks |
+| `NUV-HR-03` | Confirmar app secret usado pelo HMAC, rotação e janela de coexistência                                                                                                         | Secret/account-specific                              | Procedimento documentado, sem valor do segredo                                    | Implementação de HMAC operacional                |
+| `NUV-HR-04` | Confirmar se a loja está em inventário simples ou Multiple Locations                                                                                                           | O modo altera schema e disponibilidade               | Resposta/documentação da conta + fixture correspondente                           | Contrato final de disponibilidade                |
+| `NUV-HR-05` | Adjudicar o handoff local cart → checkout hospedado                                                                                                                            | Cart/Draft Order não provam equivalência             | Fluxo oficial ou ensaio autorizado com cleanup                                    | Consumer `cart`                                  |
+| `NUV-HR-06` | Registrar os quatro webhooks de negócio, endpoints e lifecycle                                                                                                                 | Registro muta app/loja                               | Lista de webhooks e eventos confirmada                                            | End-to-end de webhooks                           |
+| `NUV-HR-07` | Definir durabilidade, retenção, fila e alerta                                                                                                                                  | É uma decisão operacional da Foundation/infra        | Runbook, owner e evidência de recuperação                                         | Ack/retry seguro                                 |
+| `NUV-HR-08` | Definir callbacks de privacidade, owner, retenção e resposta                                                                                                                   | São callbacks obrigatórios para app que guarda dados | Contrato e ensaio de `store/redact`, `customers/redact`, `customers/data_request` | Instalação operacional                           |
 
 ## 20. Contracts provided to consumers
 
-| Consumer  | Pode importar                                                                                                                           | Não pode depender de                                                                                |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated` | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                   |
-| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                        | Draft Order presumido, checkout URL inventada, estoque do browser                                   |
-| `orders`  | `getOrder`, `listOrders`, `getCustomer` quando necessário, eventos de pedido verificados                                                | vínculo de e-mail, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
+| Consumer  | Pode importar                                                                                                                                     | Não pode depender de                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`           | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                  |
+| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                  | Draft Order presumido, checkout URL inventada, estoque do browser                                                                  |
+| `orders`  | `getOrder`, `listOrders`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Decisão de vínculo ao e-mail Supabase verificado, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
 
 Todos os métodos são server-only, têm input/output tipados, paginação
 normalizada, erro discriminável e validação de resposta externa. A superfície
@@ -682,8 +702,10 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
    client bundle, build arg, logs, Sentry ou resposta HTTP.
 2. Cada request usa `2025-03`, host allowlisted, Bearer e `User-Agent` válido;
    versão não vem do browser.
-3. Produtos, variantes, categorias, clientes e pedidos são validados por
-   schemas de runtime antes de serem expostos aos consumers.
+3. Produtos, variantes, categorias e pedidos são validados por schemas de
+   runtime antes de serem expostos aos consumers; Customer só é exposto com
+   `read_customers` adjudicado e concedido. `Order.contactEmail` é server-only,
+   validado e nunca autoriza vínculo sem e-mail verificado correspondente.
 4. Listas tratam `page`, `per_page`, `Link` e `x-total-count` sem `listAll`
    implícito.
 5. 429, 5xx, timeout e falha de schema têm erros estáveis; retry é bounded e
@@ -732,17 +754,17 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
 
 ## 23. Open questions e classificação
 
-| ID                            | Status | Classification          | Evidence to resolve                                                      | Blocking scope                             | Owner/gate           |
-| ----------------------------- | ------ | ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | -------------------- |
-| `NUV-OPEN-CHECKOUT`           | OPEN   | BLOCKING CONSUMER       | Documentação/ensaio autorizado do fluxo cart → checkout                  | `cart`                                     | Human `NUV-HR-05`    |
-| `NUV-OPEN-INVENTORY-MODE`     | OPEN   | BLOCKING IMPLEMENTATION | Modo efetivo da loja e fixture                                           | disponibilidade de product/variant         | Human `NUV-HR-04`    |
-| `NUV-OPEN-SCOPES`             | OPEN   | BLOCKING IMPLEMENTATION | Configuração do app e permissões da API                                  | authenticated client/webhook registration  | Human `NUV-HR-02`    |
-| `NUV-OPEN-SECRET-ROTATION`    | OPEN   | BLOCKING IMPLEMENTATION | Procedimento oficial de secret/HMAC rotation                             | production webhook auth                    | Human `NUV-HR-03`    |
-| `NUV-OPEN-DURABILITY`         | OPEN   | BLOCKING IMPLEMENTATION | Escolha de store/fila, retenção, recovery e runbook                      | ack/retry/idempotency                      | Human `NUV-HR-07`    |
-| `NUV-OPEN-TIMEOUT-DIVERGENCE` | OPEN   | HUMAN CHECKPOINT        | Confirmar 3 s versus referências específicas de 10 s                     | operational webhook SLA                    | Human `NUV-HR-06`    |
-| `NUV-OPEN-PRIVACY-WEBHOOKS`   | OPEN   | BLOCKING IMPLEMENTATION | Confirmar payload, owner, retenção e execução dos callbacks obrigatórios | privacy callbacks e instalação operacional | Human `NUV-HR-08`    |
-| `NUV-OPEN-LIFECYCLE`          | OPEN   | NON-BLOCKING / DEFERRED | Decidir uninstall/suspend events além dos callbacks obrigatórios         | lifecycle beyond MVP                       | Product/ops later    |
-| `NUV-OPEN-RETURN-URL`         | OPEN   | NON-BLOCKING / DEFERRED | PRD/conta confirmation URL decision                                      | `cart` post-purchase UX                    | `cart`/product later |
+| ID                            | Status | Classification          | Evidence to resolve                                                                                                                                                                              | Blocking scope                             | Owner/gate           |
+| ----------------------------- | ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------- |
+| `NUV-OPEN-CHECKOUT`           | OPEN   | BLOCKING CONSUMER       | Documentação/ensaio autorizado do fluxo cart → checkout                                                                                                                                          | `cart`                                     | Human `NUV-HR-05`    |
+| `NUV-OPEN-INVENTORY-MODE`     | OPEN   | BLOCKING IMPLEMENTATION | Modo efetivo da loja e fixture                                                                                                                                                                   | disponibilidade de product/variant         | Human `NUV-HR-04`    |
+| `NUV-OPEN-SCOPES`             | OPEN   | BLOCKING IMPLEMENTATION | Confirmar na app `read_products`, `read_orders`, permissão dos tópicos de webhook e somente scopes adicionais comprovados; `read_customers` não é requisito do vínculo por `Order.contact_email` | authenticated client/webhook registration  | Human `NUV-HR-02`    |
+| `NUV-OPEN-SECRET-ROTATION`    | OPEN   | BLOCKING IMPLEMENTATION | Procedimento oficial de secret/HMAC rotation                                                                                                                                                     | production webhook auth                    | Human `NUV-HR-03`    |
+| `NUV-OPEN-DURABILITY`         | OPEN   | BLOCKING IMPLEMENTATION | Escolha de store/fila, retenção, recovery e runbook                                                                                                                                              | ack/retry/idempotency                      | Human `NUV-HR-07`    |
+| `NUV-OPEN-TIMEOUT-DIVERGENCE` | OPEN   | HUMAN CHECKPOINT        | Confirmar 3 s versus referências específicas de 10 s                                                                                                                                             | operational webhook SLA                    | Human `NUV-HR-06`    |
+| `NUV-OPEN-PRIVACY-WEBHOOKS`   | OPEN   | BLOCKING IMPLEMENTATION | Confirmar payload, owner, retenção e execução dos callbacks obrigatórios                                                                                                                         | privacy callbacks e instalação operacional | Human `NUV-HR-08`    |
+| `NUV-OPEN-LIFECYCLE`          | OPEN   | NON-BLOCKING / DEFERRED | Decidir uninstall/suspend events além dos callbacks obrigatórios                                                                                                                                 | lifecycle beyond MVP                       | Product/ops later    |
+| `NUV-OPEN-RETURN-URL`         | OPEN   | NON-BLOCKING / DEFERRED | PRD/conta confirmation URL decision                                                                                                                                                              | `cart` post-purchase UX                    | `cart`/product later |
 
 Nenhuma dessas perguntas deve ser resolvida por assumir comportamento da conta
 real. Questões abertas não mudam o status da spec para APPROVED ou READY FOR
