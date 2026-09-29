@@ -377,10 +377,27 @@ não ao adapter.
 ```ts
 getOrder(input: { orderId: OrderId }): Promise<Order>
 listOrders(input: ListOrdersInput): Promise<Page<Order>>
+findOrderByNumber(input: { number: OrderNumber }): Promise<Order | null>
 ```
 
-O contrato usa o ID interno do pedido; o `number` amigável é somente um campo
-de apresentação. `Order` deve conter os campos necessários para estado,
+`getOrder` usa o ID interno do pedido; `number` é o número visível ao cliente e
+também a chave de busca para `/rastreio`. A [API Order](https://tiendanube.github.io/api-documentation/resources/order)
+documenta `GET /orders?q=<number>` para busca por número, mas `q` também pode
+encontrar texto em nome/e-mail. `findOrderByNumber` faz essa busca apenas no
+servidor, valida o formato decimal do número, percorre explicitamente as
+páginas filtradas dentro de um orçamento finito e aceita somente
+`Order.number` igual ao número informado após normalizar ambos como inteiros
+decimais canônicos, sem coerção de texto arbitrário ou de número inseguro.
+`null` significa que todas as páginas filtradas foram examinadas sem
+correspondência exata. Resultado ambíguo,
+limite de consulta do provedor ou orçamento esgotado antes da conclusão gera
+`NuvemshopLookupIncompleteError`, nunca `null` nem um pedido escolhido por
+aproximação. Se o volume real não permitir busca completa nesse orçamento,
+`orders` deve manter uma projeção
+durável indexada por número antes de disponibilizar `/rastreio`; não se faz
+varredura implícita de todos os pedidos.
+
+`Order` deve conter os campos necessários para estado,
 itens/variantes, valores, pagamento, fulfillment e tracking. Inclui
 `Order.contactEmail`, normalizado do campo oficial `Order.contact_email`, para
 que `orders`/`identity` compare o e-mail do pedido com um e-mail Supabase
@@ -390,6 +407,22 @@ inválido, o pedido não pode ser vinculado por essa regra. O contrato não exig
 o objeto Customer completo nem `read_customers`. O adapter fornece o dado,
 mas não decide o vínculo, a linha do tempo da conta, troca, `purchase`,
 contador de vendas ou reembolso.
+
+Em `/rastreio`, `orders` compara `Order.contactEmail` ao e-mail informado e
+aplica limitação de tentativas. A comparação identifica um candidato, mas não
+comprova posse do e-mail. Antes de divulgar qualquer status ou código,
+`orders`/`identity` exige prova de posse do endereço correspondente: sessão com
+e-mail verificado ou desafio de uso único enviado a esse endereço para o fluxo
+sem login. O desafio deve ser aleatório criptograficamente, vinculado ao e-mail
+e ao pedido consultado, ter expiração curta, limite de envios/tentativas e
+invalidação no sucesso, na expiração ou na substituição; não pode aparecer em
+logs nem ficar armazenado em texto puro ([OWASP OTP](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html#one-time-password-otp-handling-and-storage)).
+Sem essa prova, `/rastreio` não divulga dados do pedido. Após a prova,
+retorna somente a projeção mínima prevista no PRD: status/linha do tempo de
+fulfillment e código de rastreio, nunca o `Order` completo, e-mail de contato,
+endereços, itens, valores ou detalhes de pagamento. Ausência, divergência,
+busca inconclusiva e desafio inválido recebem resposta pública genérica. O
+adapter não autentica o solicitante desse fluxo.
 
 ### Checkout/cart
 
@@ -538,6 +571,7 @@ NuvemshopProtocolError       # resposta/status/JSON/schema incompatível
 NuvemshopRateLimitError      # 429 + metadados seguros de reset
 NuvemshopNetworkError        # timeout, abort ou falha de conexão
 NuvemshopProviderError       # 5xx/erro externo não específico
+NuvemshopLookupIncompleteError # busca por número ambígua ou não concluída
 NuvemshopWebhookError        # assinatura/envelope/loja inválidos
 ```
 
@@ -624,6 +658,11 @@ de chamadas reais.
 - construção de URL versionada, headers, `User-Agent` e `AbortSignal`;
 - ausência de `Authorization`/segredos em logs e erros;
 - paginação, `Link`, `x-total-count` e limite de `per_page`;
+- busca por número com `q`: matches por nome/e-mail rejeitados, número
+  normalizado, paginação incompleta distinguida de ausência;
+- contrato do consumer `/rastreio`: nenhuma divulgação antes da prova de posse,
+  desafio expirado/reutilizado ou com tentativas excedidas rejeitado, resposta
+  limitada à projeção de rastreio;
 - schemas de produto, variante, categoria, pedido e envelope; cliente somente se a
   capability opcional for habilitada;
 - taxonomia para 401/402/403/404/429/5xx/timeout/schema inválido;
@@ -686,11 +725,11 @@ pré-requisito operacional.
 
 ## 20. Contracts provided to consumers
 
-| Consumer  | Pode importar                                                                                                                                     | Não pode depender de                                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`           | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                  |
-| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                  | Draft Order presumido, checkout URL inventada, estoque do browser                                                                  |
-| `orders`  | `getOrder`, `listOrders`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Decisão de vínculo ao e-mail Supabase verificado, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
+| Consumer  | Pode importar                                                                                                                                                          | Não pode depender de                                                                                                                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`                                | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                                                                                                      |
+| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                                       | Draft Order presumido, checkout URL inventada, estoque do browser                                                                                                                                                      |
+| `orders`  | `getOrder`, `listOrders`, `findOrderByNumber`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Decisão de vínculo ao e-mail Supabase verificado, prova de posse do e-mail e projeção mínima em `/rastreio`, limitação de tentativas, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
 
 Todos os métodos são server-only, têm input/output tipados, paginação
 normalizada, erro discriminável e validação de resposta externa. A superfície
@@ -706,6 +745,9 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
    runtime antes de serem expostos aos consumers; Customer só é exposto com
    `read_customers` adjudicado e concedido. `Order.contactEmail` é server-only,
    validado e nunca autoriza vínculo sem e-mail verificado correspondente.
+   `/rastreio` resolve o número exato com busca filtrada e completa dentro do
+   orçamento ou projeção indexada, e só divulga status/linha do tempo de
+   fulfillment e código de rastreio após comparar e comprovar posse do e-mail.
 4. Listas tratam `page`, `per_page`, `Link` e `x-total-count` sem `listAll`
    implícito.
 5. 429, 5xx, timeout e falha de schema têm erros estáveis; retry é bounded e
