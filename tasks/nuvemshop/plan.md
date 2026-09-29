@@ -1,0 +1,136 @@
+# Plano de implementação: capability `nuvemshop`
+
+| Campo              | Valor                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------- |
+| Spec autoritativa  | [SPEC-nuvemshop.md](../../docs/specs/SPEC-nuvemshop.md), HUMAN APPROVED / PLANNING ALLOWED      |
+| Baseline           | `origin/main` = `5b9acec069b31e0b7acde00252b8cdc849bc867f` (2026-09-29; sem drift no preflight) |
+| Status deste plano | **MATERIALIZED / AWAITING HUMAN REVIEW**                                                        |
+| Implementação      | **NOT AUTHORIZED**; cada wave exige autorização humana futura                                   |
+| Tasks              | [todo.md](./todo.md); IDs `NUV-01` a `NUV-25`                                                   |
+| Foundation         | COMPLETE; [plano](../plan.md) e [histórico](../todo.md) preservados                             |
+
+## Objetivo e limites
+
+Converter a spec aprovada em unidades pequenas de implementação e prova para um adapter Nuvemshop exclusivamente de servidor. O adapter fornece leituras tipadas de Product, Variant, Category e Order, contratos de busca completa, autenticação e recebimento durável de webhooks, despacho de eventos verificados e operação recuperável. `catalog`, `cart` e `orders` são consumidores posteriores. Nenhuma task deste plano implementa páginas, SEO, cache de páginas, estado do carrinho, checkout, identidade, OTP, projeção de pedidos, tracking UI, purchase analytics, domínio Customer, Reserva Ink ou administração.
+
+A aprovação deste documento **não** libera nenhuma task. A spec prevalece sobre contratos upstream, código e propostas novas. Contradição material com fonte normativa exige `BLOCKED_SPEC_CONTRADICTION` e adjudicação; não editar a spec silenciosamente. Fatos externos instáveis (API versionada, scopes, payloads e prazos de webhook) devem ser reconfirmados na documentação oficial antes da task dependente, sem reabrir HMAC hexadecimal nem `Authorization: Bearer` sem mudança normativa demonstrada.
+
+## Arquitetura e decisões de execução
+
+- Primeiro módulo em `src/modules/nuvemshop/`, com entrypoint `server-only`, tipos normalizados e nenhuma importação de `next/cache`. Endpoints candidatos estão em `src/app/api/webhooks/nuvemshop/`; `src/lib/http/index.ts` fornece Problem Details. Arquivos listados nas tasks são **prováveis**, não criados agora.
+- `2025-03` é pin interno; host HTTPS oficial, store único, `Authorization: Bearer`, `User-Agent` documentado, IDs validados, redirects proibidos, `AbortSignal` e logs sanitizados. Nenhum consumer fornece URL ou versão. Nenhum `NUVEMSHOP_APP_ID` obrigatório no runtime.
+- `NUVEMSHOP_STORE_ID` é runtime required; `NUVEMSHOP_ACCESS_TOKEN` e `NUVEMSHOP_CLIENT_SECRET` são segredos runtime. Não usar `NEXT_PUBLIC_*`, build arg, CI real ou bundle cliente. A task de env deve conciliar validação em operação/fail-fast de produção com o build e a CI sem credenciais; a inicialização atual de `src/lib/env/index.ts` é eager.
+- Política inicial de transporte a provar em NUV-05: GET/HEAD até **2 tentativas totais**, timeout de **4 s por tentativa**, backoff com jitter até **500 ms**, orçamento total **9 s**; escritas sem retry automático. Limite local provisório de **2 requests concorrentes por loja/app** e coalescing de leituras simultâneas da mesma chave de revalidação não substituem coordenação entre processos. Antes do deploy, NUV-24 confirma topologia de uma instância ou exige decisão/teste de orçamento compartilhado; não presume infraestrutura. Medir e ajustar apenas mediante evidência e revisão do contrato. Webhook busca ACK após persistência dentro do limite estrito de **3 s** enquanto `NUV-OPEN-TIMEOUT-DIVERGENCE` permanece aberto.
+- `Page<T>` tem paginação explícita; `Link` só pode levar a HTTPS, host, versão, store, recurso e filtros esperados. `x-rate-limit-reset` é duração em milissegundos. `402` possui erro próprio e alerta.
+- Ordem do webhook: bytes brutos limitados → HMAC hexadecimal de 64 caracteres, digest de 32 bytes e comparação de mesmo comprimento em tempo constante → parser/envelope de rota → registro durável → 2xx → processamento recuperável. `id` do envelope é ID de recurso, não delivery ID. Nem hash permanente do corpo nem `(store,event,resource)` garantem identidade de entrega.
+- A infraestrutura durável continua **sem escolha**. `NUV-HR-07` deve aprovar store/fila, retenção, claim/lease, worker, recovery, alerta e runbook **antes** de schema, migration, worker ou ACK seguro. `DEPENDENCY_DECISION_REQUIRED` e **Perguntar antes** para qualquer pacote futuro.
+- O adapter emite sinal autenticado/tipado. `catalog` define `cacheTag`/`revalidateTag` e SLA de atualização; `orders` define transições, identidade, vínculo, projeção, disclosure e idempotência de efeitos. `NUV-HR-05` bloqueia métodos de checkout e o consumer `cart`, mas não o core de leitura/webhook.
+
+## Grafo de dependências
+
+`AUTH` = autorização humana de implementação futura. `HR` = checkpoint da tabela abaixo. Dependências de código seguem as arestas; gates operacionais também precisam de autorização específica.
+
+`AUTH → {01,02}`; `01 → {03,07}`; `{01,02,03} → {04,14}`
+
+`{01,02,03} → 04 → {05,06}`
+
+`{04,06,07} → {08,09,11}`; `{08,HR-04} → 10`; `{11,06} → {12,13}`
+
+`{14,07} → 15`; `{15,HR-07} → 16 → 17`; `{15,17} → 18`
+
+`{14,15,16} → 19`; `{14,16,HR-08} → 20`
+
+`{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,19,20} → 22`
+
+`{05,12,13,19,20,21,22} → 23`; `{01…23,HR-01/02/03/04/07/08} → 24; 24 deploy aprovado → HR-06 → smoke webhook → marco operacional`
+
+`{24, evidência efetiva dos consumers orders/catalog para critérios 3/10 e SLA} → 25`
+
+`HR-01/02` precedem uso autenticado real; `HR-03` precede HMAC operacional; `HR-06` ocorre só após deploy aprovado, segurança/durabilidade/privacidade prontas. `NUV-OPEN-LIFECYCLE` e `NUV-OPEN-RETURN-URL` não entram no caminho crítico do core.
+
+## Waves e checkpoints
+
+| Wave                    | Tasks paralelizáveis, após autorização de implementação        | Gate                                                                            | Desbloqueia                                      | Ainda proibido                                 |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------- |
+| 0 — contratos locais    | 01 e 02 em paralelo; depois 03 e 07; depois 14                 | AUTH; fixtures sintéticas                                                       | 04, 08–09, 15                                    | API real, HMAC operacional, migration          |
+| 1 — transporte          | 04; depois 05 e 06 em paralelo                                 | contratos 01–03; reconfirmação oficial antes de codificar                       | recursos e segurança de egress                   | leitura real sem HR-01/02                      |
+| 2 — recursos            | 08, 09 e 11 em paralelo; 12 e 13 após 11; 10 após 08           | HR-04 antes de 10; HR-02 para uso real                                          | contratos de Product/Category/Order              | consumer `orders`/`cart`                       |
+| 3 — intake durável      | 15; depois 16 somente após HR-07; depois 17; depois 18         | HR-07 antes de tecnologia; HR-03 para uso operacional                           | ACK seguro e dispatcher                          | responder 2xx sem persistir; registrar webhook |
+| 4 — rotas e operação    | 19 e 20 em paralelo após 16; depois 21 e 22 após seus blockers | HR-08 antes de callbacks; HR-07; revisão de segurança                           | endpoints e evidência local                      | deploy/registro sem autorização                |
+| 5 — validação e rollout | 23; depois 24 apenas no ambiente aprovado                      | HR-01/02/03/04/07/08 para início; HR-06 após deploy e antes de smoke/fechamento | adapter operacional, com consumer handoff aberto | implementação de consumers nesta wave          |
+| Closure                 | 25: revisão adversarial final e gate humano                    | evidência real 18/18, inclusive consumers onde a spec exige                     | `IMPLEMENTATION COMPLETE`                        | chamar handoff de evidência concluída          |
+
+Waves representam precedência, não permissão para começar. Tasks que tocam `src/lib/env`, `src/lib/proxy` ou CI têm PRs sequenciais/coordenação de merge. Dentro de uma wave, módulos independentes podem ter branches simultâneas após contrato comum estável.
+
+## Human checkpoints
+
+Todos **OPEN**. “Não bloqueia” significa apenas que testes locais com fixtures podem ser planejados; continua exigida autorização futura de implementação.
+
+| Gate        | Quando / executor                                                          | Informação e evidência aceitável                                                                                                  | Bloqueia                                                      | Não bloqueia                                      | Mutação externa / autorização                                                                                        |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `NUV-HR-01` | Antes de integração real; owner da loja/app                                | Confirmação single-store, `store_id` seguro, app autorizada; registro sem token                                                   | uso autenticado e NUV-24 smoke                                | 01–23 locais                                      | Consulta/configuração de conta; autorização humana específica se houver alteração                                    |
+| `NUV-HR-02` | Antes de API real/registro; owner da app                                   | `2025-03`, modalidade, `read_products`, `read_orders`, scopes adicionais comprovados e permissão de tópicos; registro sem segredo | uso real, NUV-24 e HR-06                                      | 01–23 locais                                      | Possível mutação de scopes; autorização específica; `read_customers` não é presumido                                 |
+| `NUV-HR-03` | Antes de HMAC em produção; owner da app/security                           | Procedimento do app secret, rotação e coexistência se suportada; teste de entrega autorizado, sem valor secreto em artefato       | HMAC operacional, NUV-24                                      | NUV-14 e NUV-23 com segredo sintético             | Configuração/rotação pode mutar app; autorização específica; rollback do secret conforme procedimento aprovado       |
+| `NUV-HR-04` | Antes de NUV-10; owner da loja/produto                                     | Modo simples ou Multiple Locations confirmado e fixture correspondente anonimizada                                                | NUV-10 e contrato final de disponibilidade                    | transporte, preço e outros recursos locais        | Consulta pode ser read-only; mudança de modo exige autorização própria                                               |
+| `NUV-HR-05` | Antes de consumer `cart`; product/commerce                                 | Fluxo local cart → hosted checkout documentado ou ensaio autorizado com cleanup                                                   | métodos de checkout e `cart`                                  | core Nuvemshop e fechamento do adapter sem `cart` | Ensaio pode mutar loja; autorização específica                                                                       |
+| `NUV-HR-06` | Após endpoints seguros, deploy autorizado e durabilidade; owner da app/ops | Quatro tópicos de negócio, endpoints, lifecycle e timeout aplicável registrados; IDs/URLs e entrega de teste, sem segredo         | registro operacional e etapa pós-deploy de NUV-24             | implementação/testes locais                       | **Sim**, mutação da app/loja; autorização humana específica, inventário prévio e rollback por desregistro controlado |
+| `NUV-HR-07` | Antes de NUV-16; arquitetura + ops + humano                                | Escolha de store/fila, retenção maior que retry/replay, worker/claim/lease, recovery, alert owner/runbook e ensaio de falha       | schema/queue/ledger, ACK/retry/idempotência seguros; 16–24    | 01–15 com interfaces/fixtures locais              | Decisão material; provisionamento/migration requer autorização posterior específica e rollback aprovado              |
+| `NUV-HR-08` | Antes de NUV-20 e instalação; privacy/ops + humano                         | Payloads, owner, retenção, response semantics, execução/ensaio de três callbacks                                                  | contrato final de callbacks, instalação operacional; 20,23,24 | core read/business local                          | Registro/remoção de dados pode mutar sistemas; autorização específica e rollback/cleanup por runbook                 |
+
+## Open decisions
+
+| ID / classificação preservada                         | Resolver em                             | Pode avançar antes                   | Bloqueia / evidência                                            |
+| ----------------------------------------------------- | --------------------------------------- | ------------------------------------ | --------------------------------------------------------------- |
+| `NUV-OPEN-CHECKOUT` / BLOCKING CONSUMER               | HR-05, plano `cart` futuro              | core inteiro                         | `cart`/checkout; fluxo oficial ou ensaio autorizado com cleanup |
+| `NUV-OPEN-INVENTORY-MODE` / BLOCKING IMPLEMENTATION   | HR-04 antes de 10                       | 01–09, 11–15 locais                  | disponibilidade final; modo da loja + fixture                   |
+| `NUV-OPEN-SCOPES` / BLOCKING IMPLEMENTATION           | HR-02 antes de uso real                 | testes locais                        | cliente autenticado real/HR-06; scopes e tópicos comprovados    |
+| `NUV-OPEN-SECRET-ROTATION` / BLOCKING IMPLEMENTATION  | HR-03 antes de produção                 | HMAC sintético                       | HMAC operacional; procedimento/coexistência evidenciados        |
+| `NUV-OPEN-DURABILITY` / BLOCKING IMPLEMENTATION       | HR-07 antes de 16                       | contratos locais                     | ACK/retry/idempotência; decisão e recovery testáveis            |
+| `NUV-OPEN-TIMEOUT-DIVERGENCE` / HUMAN CHECKPOINT      | HR-06 antes de SLA operacional          | alvo conservador 3 s e testes locais | SLA operacional; evidência oficial/app de 3 s versus 10 s       |
+| `NUV-OPEN-PRIVACY-WEBHOOKS` / BLOCKING IMPLEMENTATION | HR-08 antes de 20                       | business fixtures                    | callbacks/instalação; payload, owner, retenção, resposta        |
+| `NUV-OPEN-LIFECYCLE` / NON-BLOCKING / DEFERRED        | product/ops após MVP, conferir em HR-06 | core e registro dos quatro eventos   | somente lifecycle além MVP; decisão registrada                  |
+| `NUV-OPEN-RETURN-URL` / NON-BLOCKING / DEFERRED       | `cart`/product depois de HR-05          | core                                 | UX pós-compra; PRD/conta/URL confirmada                         |
+
+## Validação e PRs
+
+RED → GREEN → REFACTOR para cada task técnica em [todo.md](./todo.md): começar pelo teste falhando, implementar o menor contrato, limpar sem alterar comportamento. Suites unit, contract/fixture, mock HTTP, integração de Route Handler, testes de durabilidade após HR-07, negativos de segurança e CI ficam em `tests/unit/**` conforme `vitest.config.mts` atual. Testes de PR usam somente dados sintéticos ou exemplos oficiais anonimizados com provenance; nunca token, client secret, PII real ou payload da loja real em commit. Smoke do provedor é humano, separado da CI, com credenciais/cleanup autorizados e evidência redigida. `npm run check` é gate por task; `npm run build` e os gates atuais da CI são gates de PR. Nenhuma dependência nova é autorizada por este plano: marcar `DEPENDENCY_DECISION_REQUIRED` e perguntar antes.
+
+Cada NUV técnica sugere branch `codex/nuv-XX-<slug>`, commit descritivo `feat(nuvemshop): ...` (ou `test`/`docs` quando adequado), uma task por PR, CI `ci` verde e revisão técnica/segurança conforme risco. Human gates não são commits nem automações. Exceção de agrupamento requer motivo e aprovação no PR. Deploy continua pelo contrato Coolify/Traefik do ADR-002, após CI e autorização de release; nenhuma PR deste plano altera produção. `NUV-23` reúne auditoria transversal de testes/CI, e `NUV-24` é evidência e handoff operacional, não um atalho para executar HR-06.
+
+## Matriz de cobertura da spec seção 21
+
+“Consumer” assinala obrigação futura fora desta PR e fora do adapter; a evidência do adapter é somente o contrato oferecido.
+
+| Critério                 | Task owner                                                | Teste/evidência                                                                                                     | Gate                      |
+| ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| 1 secrets                | 01,02,03,21,23                                            | import server-only, env fail-fast, redaction, scan bundle/CI                                                        | HR-01/02/03 para runtime  |
+| 2 versão/host/headers    | 04,23                                                     | mock request + egress negativo                                                                                      | HR-01/02                  |
+| 3 schemas/Order/Customer | 07–13,23; disclosure/OTP/projeção **consumer orders**, 25 | fixture, exact lookup, incompletude; testes reais do consumer antes de 25                                           | HR-02/04; consumer futuro |
+| 4 paginação              | 06,08,09,11–13                                            | Link/count/per-page e página vazia intermediária                                                                    | —                         |
+| 5 erros/retry            | 03,05,23                                                  | 429/5xx/timeout/schema, teto e write sem retry                                                                      | —                         |
+| 6 HMAC                   | 14,19,20                                                  | bytes brutos, hex, header ruim, loja cruzada                                                                        | HR-03, entrega real       |
+| 7 body/JSON              | 14,15,19,20                                               | oversized, malformed, abusive, sem raw persistido                                                                   | HR-07                     |
+| 8 allowlist/ledger       | 15–19                                                     | quatro eventos, desconhecido e registro por entrega                                                                 | HR-07                     |
+| 9 privacy                | 20,21                                                     | três parsers/rotas/owners, resposta e retenção                                                                      | HR-08                     |
+| 10 duplicata/ordem       | 17,18; efeitos **consumer orders**, 25                    | concorrência, geração posterior, reconciliação/quarentena; idempotência de efeito no consumer antes de 25           | HR-07; consumer futuro    |
+| 11 ACK/recovery          | 16–19,21                                                  | falha de storage 5xx, lease, crash pós-ACK, replay                                                                  | HR-07                     |
+| 12 Link/redirect         | 04,06,23                                                  | host/version/store/resource + zero egress externo                                                                   | —                         |
+| 13 preço/estoque         | 08,10                                                     | decimal, promoção, ilimitado, agregado/local                                                                        | HR-04                     |
+| 14 402                   | 03,04,21                                                  | erro distinto; simular 402 com interrupção de entregas e provar detecção/alerta, sem inferir causa só pela ausência | HR-02                     |
+| 15 boundaries            | 01,18,23                                                  | scan import; nenhum `next/cache`, UI ou checkout                                                                    | HR-05 só `cart`           |
+| 16 observability         | 03,21                                                     | correlação, latência, status, resultado sem PII                                                                     | HR-07 owner               |
+| 17 suites                | 07–23                                                     | unit/fixture/mock/route/durability/negative                                                                         | HR-07 para backend        |
+| 18 CI/smoke              | 23,24                                                     | Gitleaks, bundle markers, CI; smoke real redigido                                                                   | HR-01/02/03/06/07/08      |
+
+**18/18 com owner no plano; 0/18 implementados nesta execução.** A parte consumer dos critérios 3 e 10 exige evidência de comportamento efetivo de `orders` antes de NUV-25; handoff documental não satisfaz esses critérios. A meta de cache do `catalog` também exige evidência do consumer. NUV-24 pode registrar `ADAPTER OPERATIONAL / SPEC CLOSURE PENDING CONSUMERS`; somente NUV-25 pode declarar `IMPLEMENTATION COMPLETE`. O critério 15 mantém checkout bloqueado. A aprovação do plano não satisfaz nenhum critério de implementação.
+
+## Riscos, stop conditions e fechamento
+
+- Dados externos mudam: reconfirmar fontes oficiais na task; se houver incompatibilidade normativa com a spec, `BLOCKED_SPEC_CONTRADICTION`.
+- `src/lib/rate-limit.ts` é memória de processo; não provar limite distribuído nem durabilidade com ele. Tecnologia de fila, migration e worker dependem de HR-07.
+- Manutenção atual devolve 503 para todas as rotas exceto health; NUV-19 precisa abrir exceção exata sem perder HMAC/ACK durável, com teste normal/manutenção.
+- HMAC prova origem/integridade, não frescor; o provedor não garante delivery ID universal nem ordem. Replays, duplicatas e leituras canônicas precisam de recovery, não dedupe permanente por hash.
+- `Order.contactEmail` é PII. `q` descobre candidatos; `orders` deverá provar e-mail verificado, cobertura e posse antes de disclosure. O adapter não devolve “lista final” nem `null` quando a busca é incompleta.
+- Pausar se gate requerido aberto, credencial real necessária na CI, dependência não aprovada, fixture com PII, finding P0/P1/P2 material, alteração de escopo para consumer, ou tecnologia de durabilidade presumida.
+
+`nuvemshop` só pode ser **IMPLEMENTATION COMPLETE** em NUV-25 após tasks core aceitas, evidência **efetiva** dos 18 critérios incluindo os comportamentos de `orders` nos critérios 3 e 10 e do `catalog` na atualização por webhook, HR aplicáveis fechados, testes/CI verdes, deploy e smoke real autorizados, quatro webhooks registrados quando aplicável, autenticação/observabilidade/recovery comprovados, runbook e revisão adversarial final sem P0/P1/P2 material, e **human closure gate**. O adapter pode alcançar marco operacional em NUV-24 antes de NUV-25, sem implementar consumers nesta fase. HR-05 pode permanecer aberto para `cart`; isso não autoriza checkout. O humano revisa este plano primeiro e depois autoriza waves explicitamente. O runbook de bootstrap Authorization Code da spec §19, com state de uso único, troca do código em até 5 minutos, secret manager, revogação e reinstalação, é pré-requisito operacional de NUV-24.
