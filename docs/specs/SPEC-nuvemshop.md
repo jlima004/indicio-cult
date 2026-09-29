@@ -397,6 +397,22 @@ aproximação. Se o volume real não permitir busca completa nesse orçamento,
 durável indexada por número antes de disponibilizar `/rastreio`; não se faz
 varredura implícita de todos os pedidos.
 
+Para `/conta/pedidos`, `ListOrdersInput` deve aceitar `q` com o e-mail
+verificado obtido de `identity` no servidor, nunca de filtro arbitrário do
+browser, e paginação explícita. A [API Order](https://tiendanube.github.io/api-documentation/resources/order)
+faz busca textual também em nome/e-mail, sem prometer que esse índice cobre
+todo `Order.contact_email`; `q` é descoberta de candidatos. `orders` deve
+examinar todas as páginas do resultado filtrado dentro de orçamento finito e aceitar apenas
+pedidos cujo `Order.contactEmail` coincida exatamente com o e-mail verificado
+sob a política de normalização de `identity`. Uma página vazia após o filtro
+local não prova fim da busca. Limite do provedor, orçamento esgotado ou falha
+de paginação tornam a listagem incompleta, sem apresentá-la como lista final.
+Se a busca filtrada não puder ser concluída ou sua cobertura de
+`Order.contact_email` não for comprovada, `orders` deve manter projeção durável
+indexada por e-mail, com cobertura e reconciliação comprovadas antes de
+disponibilizar `/conta/pedidos`. O adapter não requer `read_customers` para
+esse fluxo e não registra o e-mail usado em `q`.
+
 `Order` deve conter os campos necessários para estado,
 itens/variantes, valores, pagamento, fulfillment e tracking. Inclui
 `Order.contactEmail`, normalizado do campo oficial `Order.contact_email`, para
@@ -449,6 +465,13 @@ proibidos na implementação até fechar `NUV-OPEN-CHECKOUT`.
   humana.
 - O header de assinatura é `x-linkedstore-hmac-sha256`. Ausente, duplicado ou
   malformado é rejeitado.
+- O [exemplo oficial de verificação](https://tiendanube.github.io/api-documentation/resources/webhook#verifying-a-webhook)
+  compara o header a `hash_hmac('sha256', ...)` sem saída binária. Pelo
+  [contrato do PHP](https://www.php.net/manual/en/function.hash-hmac.php), isso
+  é hexadecimal, não Base64: exigir 64 caracteres hexadecimais, decodificar
+  para 32 bytes e rejeitar encoding diverso. Fixture no formato documentado e
+  confirmação com entrega autorizada são gates antes do uso operacional; a
+  documentação não substitui captura do formato real da app.
 - A assinatura é HMAC-SHA256 dos bytes brutos usando o segredo da app, não o
   access token e não o JSON reserializado.
 - Todos os quatro endpoints, inclusive os callbacks de privacidade, passam por
@@ -660,6 +683,8 @@ de chamadas reais.
 - paginação, `Link`, `x-total-count` e limite de `per_page`;
 - busca por número com `q`: matches por nome/e-mail rejeitados, número
   normalizado, paginação incompleta distinguida de ausência;
+- listagem da conta com `q`: e-mail verificado exato, páginas intermediárias sem
+  matches, limite do provedor e cobertura incompleta sem lista final;
 - contrato do consumer `/rastreio`: nenhuma divulgação antes da prova de posse,
   desafio expirado/reutilizado ou com tentativas excedidas rejeitado, resposta
   limitada à projeção de rastreio;
@@ -667,7 +692,8 @@ de chamadas reais.
   capability opcional for habilitada;
 - taxonomia para 401/402/403/404/429/5xx/timeout/schema inválido;
 - limite de retry, jitter/bounded behavior e ausência de retry inseguro de write;
-- HMAC válido, digest ausente/malformado, corpo alterado e comparação constante;
+- HMAC hexadecimal válido, header Base64/ausente/malformado, corpo alterado e
+  comparação constante de 32 bytes;
 - parse somente depois da assinatura;
 - body oversized, JSON malformado e objeto com campos abusivos;
 - loja errada, evento desconhecido e evento fora da allowlist;
@@ -725,11 +751,11 @@ pré-requisito operacional.
 
 ## 20. Contracts provided to consumers
 
-| Consumer  | Pode importar                                                                                                                                                          | Não pode depender de                                                                                                                                                                                                   |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`                                | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                                                                                                      |
-| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                                       | Draft Order presumido, checkout URL inventada, estoque do browser                                                                                                                                                      |
-| `orders`  | `getOrder`, `listOrders`, `findOrderByNumber`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Decisão de vínculo ao e-mail Supabase verificado, prova de posse do e-mail e projeção mínima em `/rastreio`, limitação de tentativas, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
+| Consumer  | Pode importar                                                                                                                                                                            | Não pode depender de                                                                                                                                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`                                                  | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                                                                                                            |
+| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                                                         | Draft Order presumido, checkout URL inventada, estoque do browser                                                                                                                                                            |
+| `orders`  | `getOrder`, `listOrders` com `q`/paginação, `findOrderByNumber`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Lista completa vinculada ao e-mail Supabase verificado, prova de posse do e-mail e projeção mínima em `/rastreio`, limitação de tentativas, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
 
 Todos os métodos são server-only, têm input/output tipados, paginação
 normalizada, erro discriminável e validação de resposta externa. A superfície
@@ -748,6 +774,9 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
    `/rastreio` resolve o número exato com busca filtrada e completa dentro do
    orçamento ou projeção indexada, e só divulga status/linha do tempo de
    fulfillment e código de rastreio após comparar e comprovar posse do e-mail.
+   `/conta/pedidos` não considera uma página ou busca truncada como lista
+   completa; filtra `contactEmail` exato e exige cobertura completa ou índice
+   reconciliado.
 4. Listas tratam `page`, `per_page`, `Link` e `x-total-count` sem `listAll`
    implícito.
 5. 429, 5xx, timeout e falha de schema têm erros estáveis; retry é bounded e
