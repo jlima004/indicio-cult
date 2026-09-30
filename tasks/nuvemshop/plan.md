@@ -38,7 +38,7 @@ A aprovação deste documento **não** libera nenhuma task. A spec prevalece sob
 
 `{14,07} → 15`; `{15,HR-07} → 16 → 17`; `{15,17} → 18`
 
-`{14,15,16} → 19`; `{14,16,19,HR-08} → 20`
+`{14,15,16} → 19`; `{14,16,17,19,HR-08} → 20`
 
 `{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,19,20} → 22`
 
@@ -56,7 +56,7 @@ A aprovação deste documento **não** libera nenhuma task. A spec prevalece sob
 | 1 — transporte          | 04; depois 05 e 06 em paralelo                          | contratos 01–03; reconfirmação oficial antes de codificar                       | recursos e segurança de egress                   | leitura real sem HR-01/02                       |
 | 2 — recursos            | 08, 09 e 11 em paralelo; 12 e 13 após 11; 10 após 08    | HR-04 antes de 10; HR-02 para uso real                                          | contratos de Product/Category/Order              | consumer `orders`/`cart`                        |
 | 3 — intake durável      | 15; depois 16 somente após HR-07; depois 17; depois 18  | HR-07 antes de tecnologia; HR-03 para uso operacional                           | ACK seguro e dispatcher                          | responder 2xx sem persistir; registrar webhook  |
-| 4 — rotas e operação    | 19 após 16; depois 20; 21 e 22 após seus blockers       | HR-08 antes de callbacks; HR-07; revisão de segurança                           | endpoints e evidência local                      | deploy/registro sem autorização                 |
+| 4 — rotas e operação    | 19 após 16; 20 após 17/19; 21 e 22 após seus blockers   | HR-08 antes de callbacks; HR-07; revisão de segurança                           | endpoints e evidência local                      | deploy/registro sem autorização                 |
 | 5 — validação e rollout | 23; depois 24 apenas no ambiente aprovado               | HR-01/02/03/04/07/08 para início; HR-06 após deploy e antes de smoke/fechamento | adapter operacional, com consumer handoff aberto | implementação de consumers nesta wave           |
 | Closure                 | 25: revisão adversarial final e gate humano             | evidência real 18/18, inclusive consumers onde a spec exige                     | `IMPLEMENTATION COMPLETE`                        | chamar handoff de evidência concluída           |
 
