@@ -40,7 +40,7 @@ A aprovação deste documento **não** libera nenhuma task. A spec prevalece sob
 
 `{14,15,16} → 19`; `{14,16,17,19,HR-08} → 20`
 
-`{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,18,19,20} → 22`
+`{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,18,19,20,21} → 22`
 
 `{05,12,13,19,20,21,22} → 23`; `{01…23,HR-01/02/03/04/07/08} → 24; 24 deploy aprovado → HR-06 → smoke webhook → marco operacional`
 
@@ -50,15 +50,15 @@ A aprovação deste documento **não** libera nenhuma task. A spec prevalece sob
 
 ## Waves e checkpoints
 
-| Wave                    | Tasks paralelizáveis, após autorização de implementação | Gate                                                                            | Desbloqueia                                      | Ainda proibido                                  |
-| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
-| 0 — contratos locais    | 01 e 02 em paralelo; depois 03 e 07; depois 14          | AUTH + HR-01 CLOSED; fixtures sintéticas                                        | 04, 15                                           | API real sem HR-02, HMAC operacional, migration |
-| 1 — transporte          | 04; depois 05 e 06 em paralelo                          | contratos 01–03; reconfirmação oficial antes de codificar                       | recursos e segurança de egress                   | leitura real sem HR-01/02                       |
-| 2 — recursos            | 08, 09 e 11 em paralelo; 12 e 13 após 11; 10 após 08    | HR-04 antes de 10; HR-02 para uso real                                          | contratos de Product/Category/Order              | consumer `orders`/`cart`                        |
-| 3 — intake durável      | 15; depois 16 somente após HR-07; depois 17; depois 18  | HR-07 antes de tecnologia; HR-03 para uso operacional                           | ACK seguro e dispatcher                          | responder 2xx sem persistir; registrar webhook  |
-| 4 — rotas e operação    | 19 após 16; 20 após 17/19; 21 e 22 após seus blockers   | HR-08 antes de callbacks; HR-07; revisão de segurança                           | endpoints e evidência local                      | deploy/registro sem autorização                 |
-| 5 — validação e rollout | 23; depois 24 apenas no ambiente aprovado               | HR-01/02/03/04/07/08 para início; HR-06 após deploy e antes de smoke/fechamento | adapter operacional, com consumer handoff aberto | implementação de consumers nesta wave           |
-| Closure                 | 25: revisão adversarial final e gate humano             | evidência real 18/18, inclusive consumers onde a spec exige                     | `IMPLEMENTATION COMPLETE`                        | chamar handoff de evidência concluída           |
+| Wave                    | Tasks paralelizáveis, após autorização de implementação                         | Gate                                                                            | Desbloqueia                                      | Ainda proibido                                  |
+| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
+| 0 — contratos locais    | 01 e 02 em paralelo; depois 03 e 07; depois 14                                  | AUTH + HR-01 CLOSED; fixtures sintéticas                                        | 04, 15                                           | API real sem HR-02, HMAC operacional, migration |
+| 1 — transporte          | 04; depois 05 e 06 em paralelo                                                  | contratos 01–03; reconfirmação oficial antes de codificar                       | recursos e segurança de egress                   | leitura real sem HR-01/02                       |
+| 2 — recursos            | 08, 09 e 11 em paralelo; 12 e 13 após 11; 10 após 08                            | HR-04 antes de 10; HR-02 para uso real                                          | contratos de Product/Category/Order              | consumer `orders`/`cart`                        |
+| 3 — intake durável      | 15; depois 16 somente após HR-07; depois 17; depois 18                          | HR-07 antes de tecnologia; HR-03 para uso operacional                           | ACK seguro e dispatcher                          | responder 2xx sem persistir; registrar webhook  |
+| 4 — rotas e operação    | 19 após 16; 20 após 17/19; 21 após 05/17/18/19/20; 22 após 21 e demais blockers | HR-08 antes de callbacks; HR-07; revisão de segurança                           | endpoints e evidência local                      | deploy/registro sem autorização                 |
+| 5 — validação e rollout | 23; depois 24 apenas no ambiente aprovado                                       | HR-01/02/03/04/07/08 para início; HR-06 após deploy e antes de smoke/fechamento | adapter operacional, com consumer handoff aberto | implementação de consumers nesta wave           |
+| Closure                 | 25: revisão adversarial final e gate humano                                     | evidência real 18/18, inclusive consumers onde a spec exige                     | `IMPLEMENTATION COMPLETE`                        | chamar handoff de evidência concluída           |
 
 Waves representam precedência, não permissão para começar. Nenhuma branch de implementação ou teste local NUV-01–23 começa só com AUTH enquanto HR-01 estiver OPEN. Tasks que tocam `src/lib/env` ou `src/lib/proxy` têm PRs sequenciais/coordenação de merge; `NUV-23` apenas verifica os gates CI existentes, sem editar workflows. Dentro de uma wave, módulos independentes podem ter branches simultâneas após AUTH, HR-01 CLOSED e contrato comum estável.
 
