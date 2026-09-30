@@ -40,7 +40,7 @@ A aprovação deste documento **não** libera nenhuma task. A spec prevalece sob
 
 `{14,15,16} → 19`; `{14,16,17,19,HR-08} → 20`
 
-`{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,19,20} → 22`
+`{05,17,18,19,20} → 21`; `{04,06,12,13,14,17,18,19,20} → 22`
 
 `{05,12,13,19,20,21,22} → 23`; `{01…23,HR-01/02/03/04/07/08} → 24; 24 deploy aprovado → HR-06 → smoke webhook → marco operacional`
 

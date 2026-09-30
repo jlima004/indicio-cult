@@ -212,9 +212,9 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 ### NUV-22 · Suíte negativa de segurança
 
 - **Estado/tamanho:** READY_AFTER_AUTH_AND_HR_01_AND_DEPENDENCIES · M. **Racional:** ataques cruzam limites de tasks e precisam de prova integrada.
-- **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-04/06/12/13/14/17/19/20; HR-07/08 para backend e privacy. **Escopo/arquivos prováveis:** `tests/unit/modules/nuvemshop/security.test.ts` e `tests/unit/app/api/webhooks/nuvemshop/security.test.ts`, sem runtime novo salvo correção no boundary dono.
-- **RED:** testes hostil Link/redirect, segredo em erro/Sentry, HMAC forjado, body gigante, loja cruzada, replay, busca incompleta e maintenance bypass falham onde houver lacuna. **GREEN:** corrigir somente boundary responsável em PR separada quando a falha for material. **REFACTOR:** reduzir fixture duplicada.
-- **Aceite:** [ ] matriz negativa das seções 16 e 18 da spec coberta; [ ] zero egress externo; [ ] zero secret/PII leak; [ ] nenhum teste depende de API real.
+- **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-04/06/12/13/14/17/18/19/20; HR-07/08 para backend e privacy. **Escopo/arquivos prováveis:** `tests/unit/modules/nuvemshop/security.test.ts` e `tests/unit/app/api/webhooks/nuvemshop/security.test.ts`, sem runtime novo salvo correção no boundary dono.
+- **RED:** testes hostil Link/redirect, segredo em erro/Sentry, HMAC forjado, body gigante, loja cruzada, replay que alcança o dispatcher, despacho concorrente duplicado, sinais verificados fora de ordem, falha de handler na fronteira de reconciliação, busca incompleta e maintenance bypass falham onde houver lacuna. NUV-18 continua owner dos testes específicos do dispatcher; esta suíte prova a integração negativa cross-boundary, sem duplicar aquela suíte. **GREEN:** corrigir somente boundary responsável em PR separada quando a falha for material. **REFACTOR:** reduzir fixture duplicada.
+- **Aceite:** [ ] matriz negativa das seções 16 e 18 da spec coberta somente com durabilidade/recovery, dispatcher NUV-18 e rotas/privacy presentes; [ ] zero egress externo; [ ] zero secret/PII leak; [ ] nenhum teste depende de API real.
 - **Validação:** `npm run test -- tests/unit/modules/nuvemshop/security.test.ts`; `npm run check`; `npm run build`. **Segurança/privacidade:** fixture provenance e revisão adversarial. **Fora:** mudar spec ou decidir infraestrutura.
 - **PR/evidência:** `codex/nuv-22-security-tests`; `test(nuvemshop): cover cross-boundary attacks`; PR teste, failures/proofs e CI.
 
