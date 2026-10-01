@@ -573,6 +573,13 @@ duráveis e recovery/auditabilidade do intake, sem claim, retry ou replay de
 trabalho de consumer que não existe; os contratos de processamento recuperável
 de business/lifecycle e de privacy conforme HR-08 permanecem vigentes.
 
+O mecanismo de storage/recovery durável é genérico e pode ser implementado
+antes da decisão do contrato privacy. A projection normalizada específica de
+receipt/trabalho privacy pertence à implementação dos callbacks (NUV-20),
+somente após HR-08 decidir owner/payload/trigger/retention/response; ela reutiliza
+as primitives genéricas NUV-16/17, com commit antes do ACK e falha de
+storage/commit retornando 5xx/sem ACK, sem persistir raw body por default.
+
 O handler não deve realizar chamadas lentas de catálogo/pedido antes do ack.
 Quando a entrega chega durante manutenção, ela deve seguir a mesma regra de
 durabilidade; a rota não pode ser descartada pelo 503 terminal genérico sem uma
