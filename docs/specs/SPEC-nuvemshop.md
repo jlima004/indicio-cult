@@ -1,34 +1,24 @@
 # Spec: `nuvemshop`
 
-| Campo               | Valor                                                         |
-| ------------------- | ------------------------------------------------------------- |
-| Status              | **HUMAN APPROVED / PLANNING ALLOWED**                         |
-| Capability          | `nuvemshop`                                                   |
-| Tipo                | Adapter de integração server-only, sem UI                     |
-| Base do repositório | `origin/main` em `399dbfa0ec22b457da9a4e61a0b1cb1a082303c6`   |
-| Data da pesquisa    | 2026-09-28                                                    |
-| Próximo gate        | Planejamento após merge; implementação sujeita aos `NUV-HR-*` |
+| Campo                           | Valor                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| Status                          | **REVISED / HUMAN RE-APPROVAL REQUIRED**                                         |
+| Capability                      | `nuvemshop`                                                                      |
+| Tipo                            | Adapter de integração server-only, sem UI                                        |
+| Base do repositório             | `origin/main` = `5b9acec069b31e0b7acde00252b8cdc849bc867f`                       |
+| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                       |
+| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico          |
+| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **RECONCILED / HUMAN REVIEW REQUIRED** |
+| Implementação                   | **NOT AUTHORIZED / NOT READY**                                                   |
+| Próximo gate                    | Reaprovação humana conjunta da spec revisada e do plano reconciliado             |
 
-Este documento separa contratos já fixados no
-repositório, fatos externos verificados na documentação oficial e decisões de
-design propostas. Uma decisão proposta não é uma garantia da Nuvemshop.
+Este documento separa contratos upstream do repositório, **fatos externos verificados**, **decisões de design do projeto** e **decisões humanas/account-specific**. Design do projeto não é garantia do provider.
 
-## Adjudicação humana da spec
+## Adjudicação humana e revisão atual
 
-Em 2026-09-29, a arquitetura descrita nesta spec foi **HUMAN APPROVED**. A
-decisão autoriza `planning-and-task-breakdown` como próximo passo após o merge
-da spec. Foram aprovados os limites do módulo, o contrato de API e versão, o
-modelo de autenticação e scopes, a fronteira server-only de secrets, o cliente
-tipado, o desenho de webhooks e HMAC, durabilidade e idempotência, o modelo de
-erros, observabilidade, estratégia de testes e contratos dos consumidores.
+A revisão anterior foi **HUMAN APPROVED / PLANNING ALLOWED em 2026-09-29**: limites do módulo, API/versionamento, autenticação/scopes, secrets server-only, cliente tipado, webhooks, durabilidade, erros, observabilidade, testes e consumers. Essa aprovação histórica permitiu materializar o plano; nunca autorizou implementação.
 
-A adjudicação não autoriza implementação. As open questions mantêm seus status
-e blocking scopes, e `NUV-HR-01` a `NUV-HR-08` continuam aplicáveis e abertos
-para configuração da conta, scopes efetivos, secret e rotação de HMAC, modo de
-inventário, checkout, registro de webhooks, infraestrutura de durabilidade e
-callbacks de privacidade. A implementação exige os checkpoints aplicáveis e
-autorização futura. Nenhuma mutação da conta Nuvemshop, de secrets, produção ou
-infraestrutura foi autorizada.
+A convergência contratual autorizada em 2026-09-30 revisa materialmente essa spec após pesquisa oficial atual. A aprovação anterior não se estende automaticamente à revisão atual. O planejamento já existe em `tasks/nuvemshop/`; o próximo passo é **HUMAN SPEC + PLAN RE-APPROVAL**. `NUV-HR-01` a `NUV-HR-08` permanecem **OPEN**, inclusive decisões de conta, scopes/modalidade, secret, inventário, checkout, subscriptions, durabilidade e privacy. Nenhum código, teste real, conta, secret, infraestrutura ou produção é alterado nesta execução documental.
 
 ## 1. Objetivo
 
@@ -117,39 +107,35 @@ dependências do Capability Map.
 
 ## 4. Fontes normativas e matriz de pesquisa
 
-As URLs abaixo são documentação oficial Nuvemshop/Tiendanube ou documentação
-oficial do repositório do provedor. Acesso e verificação: 2026-09-29 para os
-contratos de Order/scopes, headers e app ID; 2026-09-28 para os demais.
+As fontes oficiais abaixo foram revalidadas em **2026-09-30**. Confiança alta significa contrato público verificado; não comprova a configuração da conta. `UNPROVEN / HUMAN GATE` não pode ser promovido a fato.
 
-| Fato/decisão       | Fonte oficial                                                                                                                                                                                                                                                                                                      | Valor verificado                                                                                                                                                                                                                     | Confiança                                    | Impacto                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Base e versão      | [Introduction](https://tiendanube.github.io/api-documentation/intro), [Versioning](https://tiendanube.github.io/api-documentation/versioning)                                                                                                                                                                      | API REST versionada por `YYYY-MM`; referência estável consultada: `2025-03`; base Nuvemshop `https://api.nuvemshop.com.br/2025-03/{store_id}` e equivalente Tiendanube                                                               | Alta                                         | Toda chamada deve usar a versão pinada; não usar `/v1` legado sem decisão explícita |
-| OAuth e store id   | [Authentication](https://tiendanube.github.io/api-documentation/authentication)                                                                                                                                                                                                                                    | Authorization Code; URL de instalação usa `app_id` e troca de código usa `client_id`/segredo; código expira em 5 min; retorno traz `user_id`/ID da loja; conferir `state`; token não tem expiração fixa documentada                  | Alta                                         | Bootstrap humano separado do runtime; não criar OAuth UI no MVP                     |
-| Autorização        | [Authentication / scopes](https://tiendanube.github.io/api-documentation/authentication#scopes)                                                                                                                                                                                                                    | Há permissões de leitura/escrita por recurso; escrita implica leitura; registro de webhook depende da permissão do recurso                                                                                                           | Alta                                         | Solicitar somente leituras necessárias; confirmar scopes no app real                |
-| Headers            | [Introduction](https://tiendanube.github.io/api-documentation/intro)                                                                                                                                                                                                                                               | Requests store-scoped usam `Authorization: Bearer` e `User-Agent` com nome da app e URL ou e-mail de contato, sem `app_id` no header; `Content-Type: application/json; charset=utf-8` para JSON                                      | Alta                                         | Headers obrigatórios; token redacted em logs                                        |
-| Paginação          | [Introduction / pagination](https://tiendanube.github.io/api-documentation/intro#pagination)                                                                                                                                                                                                                       | `page` começa em 1, `per_page` até 200, `x-total-count` e `Link`; produtos/pedidos documentam 30 como padrão                                                                                                                         | Alta                                         | Expor página normalizada; não carregar tudo implicitamente                          |
-| Rate limit         | [Introduction / rate limiting](https://tiendanube.github.io/api-documentation/intro#rate-limiting)                                                                                                                                                                                                                 | Leaky bucket padrão 40, vazão 2/s, por loja/app; Next/Evolution multiplica por 10; headers `x-rate-limit-limit`, `x-rate-limit-remaining`, `x-rate-limit-reset` em ms                                                                | Alta                                         | Tratar 429 usando os headers disponíveis; não assumir `Retry-After`                 |
-| Recursos           | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Category](https://tiendanube.github.io/api-documentation/resources/category), [Customer](https://tiendanube.github.io/api-documentation/resources/customer), [Order](https://tiendanube.github.io/api-documentation/resources/order) | Existem list/get para produtos, variantes, categorias, clientes e pedidos; `order.id` é distinto de `number`; `Order.contact_email` é campo direto do pedido, enquanto o objeto `Order.customer` só é fornecido com `read_customers` | Alta                                         | E-mail de vínculo vem de Order; Customer é capability condicional                   |
-| Produto/inventário | [Product](https://tiendanube.github.io/api-documentation/resources/product), [Product variant](https://tiendanube.github.io/api-documentation/resources/product-variant), [Multiple inventory](https://tiendanube.github.io/api-documentation/guides/multi-inventory/products)                                     | Produtos têm variantes; variante tem preço, SKU e estoque; a documentação descreve formatos distintos para estoque agregado e `inventory_levels`, conforme a configuração da loja                                                    | Alta para os formatos; modo da loja aberto   | Não fixar schema operacional sem confirmar o modo da loja                           |
-| Webhooks           | [Webhook](https://tiendanube.github.io/api-documentation/resources/webhook)                                                                                                                                                                                                                                        | Registro via `/webhooks`; envelope comum contém `store_id`, `event` e `id`; não é snapshot; HMAC-SHA256 no header `x-linkedstore-hmac-sha256` sobre o corpo com segredo da app                                                       | Alta                                         | Ler corpo bruto, validar HMAC e só depois parsear                                   |
-| Entrega de webhook | [Webhook / retry and ordering](https://tiendanube.github.io/api-documentation/resources/webhook#retry-policies)                                                                                                                                                                                                    | Responder 2xx em até 3 s; documentação descreve repetição por até 48 h e até 16 tentativas; ordem não é garantida e duplicatas são possíveis                                                                                         | Alta, com conflito de timeout anotado abaixo | Persistir trabalho antes do 2xx; não presumir exactly-once                          |
-| Privacidade        | [Webhook / required webhooks](https://tiendanube.github.io/api-documentation/resources/webhook#required-webhooks)                                                                                                                                                                                                  | Apps que guardam dados podem ter de tratar `store/redact`, `customers/redact` e `customers/data_request`, com payloads próprios                                                                                                      | Alta                                         | Contrato separado e checkpoint antes da instalação                                  |
-| Cart/checkout      | [Cart](https://tiendanube.github.io/api-documentation/resources/cart), [Checkout](https://tiendanube.github.io/api-documentation/resources/checkout), [Draft Order](https://tiendanube.github.io/api-documentation/resources/draft-order)                                                                          | Cart documenta consulta/remoção de carrinho existente; Draft Order mostra `checkout_url`; não foi comprovado que isso é o mecanismo do handoff normal da vitrine                                                                     | Alta                                         | Manter `NUV-OPEN-CHECKOUT`; não escolher Draft Order por inferência                 |
+| Fato                    | Fonte oficial                                                                                                                                                                                                                              | Valor verificado / limite                                                                                                                                                                                   | Confiança e owner                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Base e versão           | [Introduction](https://tiendanube.github.io/api-documentation/intro), [Versioning](https://tiendanube.github.io/api-documentation/versioning)                                                                                              | Stable consultada `2025-03`; base Nuvemshop `https://api.nuvemshop.com.br/2025-03/{store_id}`                                                                                                               | Alta; NUV-04, HR-02                                                       |
+| OAuth/headers           | [Authentication](https://tiendanube.github.io/api-documentation/authentication), [Introduction](https://tiendanube.github.io/api-documentation/intro)                                                                                      | Authorization Code, state, código 5 min, user_id da loja; Bearer e User-Agent com nome/contato; sem app_id runtime obrigatório                                                                              | Alta; HR-01/02, NUV-04/21/24                                              |
+| Scopes                  | [Scopes](https://tiendanube.github.io/api-documentation/authentication#scopes), [Multi Inventory](https://tiendanube.github.io/api-documentation/guides/multi-inventory)                                                                   | Solicitar `read_products` + `read_orders`; acesso automático documentado a `read_locations` + `read_fulfillment_orders`, respectivamente                                                                    | Alta pública; capacidade efetiva HR-02 OPEN                               |
+| Paginação/rate          | [Introduction](https://tiendanube.github.io/api-documentation/intro)                                                                                                                                                                       | page≥1, per_page≤200, Link/count; bucket padrão 40, vazão 2/s, reset em ms; Retry-After não garantido                                                                                                       | Alta; NUV-05/06                                                           |
+| Product                 | [Product](https://tiendanube.github.io/api-documentation/resources/product#product-visibility)                                                                                                                                             | visibility `visible/unlisted/hidden`; atributos localizados e tags; published boolean perde distinção                                                                                                       | Alta; NUV-07/08                                                           |
+| Variant                 | [Variant](https://tiendanube.github.io/api-documentation/resources/product-variant#properties)                                                                                                                                             | price nullable (contato em vez de checkout); promotional_price nullable; values localizados                                                                                                                 | Alta; NUV-07/08                                                           |
+| Category                | [Category](https://tiendanube.github.io/api-documentation/resources/category#properties)                                                                                                                                                   | ID, nome/handle localizados, parent nullable, visibility `visible/hidden/soft-hidden` (último herdado)                                                                                                      | Alta; handle opcional é robustez do projeto; NUV-07/09                    |
+| Inventário              | [Multi Inventory GET](https://tiendanube.github.io/api-documentation/guides/multi-inventory/products#get-productsid---get-productsidvariants), [Variant FAQ](https://tiendanube.github.io/api-documentation/resources/product-variant#faq) | Simple finito/ilimitado; multi GET stock agregado pode coexistir com levels. FAQ prova escrita ilimitada por local com stock string vazia, não prova sentinel GET nem agregado misto finito/ilimitado       | Alta para formatos provados; leitura multi ilimitada **UNPROVEN / HR-04** |
+| Features                | [Store](https://tiendanube.github.io/api-documentation/resources/store#properties)                                                                                                                                                         | features lista capacidades; exemplos `inventory-levels`, `fulfillment-orders` são candidatos de evidência                                                                                                   | Alta pública; modo real HR-04                                             |
+| Order/search            | [Order](https://tiendanube.github.io/api-documentation/resources/order)                                                                                                                                                                    | id≠number, q textual (número/nome/email), limite de 10.000; contact_email direto, Customer condicionado a read_customers; IDs de itens podem exceder int32/int64                                            | Alta; NUV-07/11–13                                                        |
+| Fulfillments/tracking   | [Fulfillment Order](https://tiendanube.github.io/api-documentation/resources/fulfillment-order), [Order aggregates](https://tiendanube.github.io/api-documentation/resources/order#fulfillment-orders)                                     | Múltiplas remessas, ULID; aggregates de list são parciais; tracking_info/code/url nullable. Campos shipping legados do Order expõem apenas primeira remessa                                                 | Alta; NUV-07/11; consumer orders                                          |
+| API subscriptions/auth  | [Webhook](https://tiendanube.github.io/api-documentation/resources/webhook#verifying-a-webhook)                                                                                                                                            | Subscriptions via /webhooks; HMAC sobre raw bytes explicitamente para webhooks criados via API                                                                                                              | Alta; NUV-14–19                                                           |
+| API entrega selecionada | [Retry policies](https://tiendanube.github.io/api-documentation/resources/webhook#retry-policies), [Changelog](https://tiendanube.github.io/api-documentation/CHANGELOG)                                                                   | 2xx≤3 s, até 16 tentativas/48h; mudança18→16 em 29/07/2026; duplicatas/ordem não garantida                                                                                                                  | Alta; NUV-19/24; timeout divergence RESOLVED neste conjunto               |
+| Lifecycle               | [Webhook](https://tiendanube.github.io/api-documentation/resources/webhook), [Suspension](https://tiendanube.github.io/api-documentation/intro#suspension-of-api-access-due-to-lack-of-payment)                                            | app/uninstalled, app/suspended, app/resumed; id do uninstall é App ID; detalhes adicionais de suspended/resumed **UNPROVEN**; 402 interrompe API/webhooks; fim de free days não gera esses lifecycle events | Alta pública; payload/aplicabilidade real HR-02/06                        |
+| Privacy URLs            | [Application URLs](https://tiendanube.github.io/api-documentation/authentication#urls), [Required callbacks](https://tiendanube.github.io/api-documentation/resources/webhook#required-webhooks)                                           | Três URLs da configuração da app; payloads próprios. Fontes divergem sobre trigger store/redact (pedido do lojista versus uninstall)                                                                        | Alta para configuração; trigger real HR-08                                |
+| Privacy HMAC/entrega    | [Verifier API](https://tiendanube.github.io/api-documentation/resources/webhook#verifying-a-webhook), [URLs](https://tiendanube.github.io/api-documentation/authentication#urls)                                                           | Extensão do HMAC de subscriptions às três privacy URLs, prazo/retries específicos não comprovados                                                                                                           | **UNPROVEN / HR-08**, NUV-20/24; sem fallback sem autenticação            |
+| Modalidade/SDK          | [External apps](https://nuvemshop.dev/en-US/apps/admin/external), [Admin overview](https://nuvemshop.dev/apps/admin/overview), [SDK rehomologation](https://nuvemshop.dev/apps/publish/homologation/nube-sdk-rehomologation)               | External executa fora do Admin; distribuição App Store/Para Seus Clientes é outro eixo. Overview anuncia exigência SDK para instalações desde 30/08/2026; fonte específica exige SDK para JS injetado       | Alta para textos; exemption/instalabilidade API-only **UNPROVEN / HR-02** |
+| 400/422                 | [Client errors](https://tiendanube.github.io/api-documentation/intro#client-errors)                                                                                                                                                        | 400 inclui JSON/UA;422 campos inválidos                                                                                                                                                                     | Alta; NUV-03/04/05, sem retry                                             |
+| Cart/checkout           | [Cart](https://tiendanube.github.io/api-documentation/resources/cart), [Draft Order](https://tiendanube.github.io/api-documentation/resources/draft-order)                                                                                 | checkout_url de Draft Order não prova handoff normal da vitrine                                                                                                                                             | HR-05 OPEN                                                                |
 
 ### Divergências e limites das fontes
 
-- Algumas páginas atuais do DevHub mostram exemplos com `/v1`; a documentação de
-  versionamento e os recursos versionados sustentam `2025-03`. A spec adota
-  `2025-03` como referência e exige reconfirmação antes do código.
-- A página geral de webhook menciona 3 segundos; páginas específicas de
-  recursos mencionam 10 segundos. A implementação deve usar o limite mais
-  estrito, 3 segundos, até que o owner confirme qual regra vale para os eventos
-  desta app.
-- A documentação descreve duplicatas, mas não fornece um ID universal de
-  entrega nem uma garantia de timestamp/frescor para os quatro eventos. HMAC
-  autentica integridade/origem do segredo; não impede replay por si só.
-- A documentação oficial lista os headers de rate limit, mas não garante
-  `Retry-After`. O cliente não deve depender desse header.
+Exemplos `/v1` não autorizam fallback do pin `2025-03`. A regra geral **3 s/16 tentativas/48h** vale para o conjunto API business+lifecycle selecionado. O prazo específico de [Fulfillment Order webhooks](https://tiendanube.github.io/api-documentation/resources/fulfillment-order#important-considerations), 10s, pertence a tópicos futuros fora deste conjunto e exige revisão própria se adicionados. Privacy não herda esse SLA como fato; HR-08 confirma prazo/entrega reais, podendo usar 3 s como alvo interno conservador.
+
+Sem delivery ID universal/frescor verificado, HMAC não impede replay. Não inferir SDK obrigatório nem isento para esta app API-only: HR-02 verifica modalidade, distribuição e instalabilidade, inclusive sequência autorizada de criação/configuração/ensaio/instalação. Se SDK for obrigatório para a modalidade real, **BLOCKED_ARCHITECTURE_ADJUDICATION_REQUIRED**; esta convergência não redesenha a arquitetura.
 
 ## 5. API versioning
 
@@ -194,6 +180,8 @@ Scopes propostos para o core de leitura, sujeitos à necessidade campo a campo:
 read_products
 read_orders
 ```
+
+A documentação de Multi Inventory descreve acesso automático a `read_locations` por `read_products` e a `read_fulfillment_orders` por `read_orders`. HR-02 verifica essas capacidades efetivas, versão, modalidade/distribuição, permissão dos tópicos e instalabilidade API-only/NubeSDK na conta real. Não solicitar extras automaticamente; divergência real é **BLOCKED_PROVIDER_SCOPE_DIVERGENCE**, sem ampliação silenciosa. SDK obrigatório na modalidade real exige **BLOCKED_ARCHITECTURE_ADJUDICATION_REQUIRED**.
 
 O vínculo de pedidos da conta usa `Order.contact_email`, campo direto do
 recurso Order sob `read_orders`, comparado por `orders`/`identity` apenas com um
@@ -264,8 +252,8 @@ Os endpoints de recepção candidatos são
 `src/app/api/webhooks/nuvemshop/events/route.ts`,
 `src/app/api/webhooks/nuvemshop/store-redact/route.ts`,
 `src/app/api/webhooks/nuvemshop/customers-redact/route.ts` e
-`src/app/api/webhooks/nuvemshop/customers-data-request/route.ts`. Eles usam um
-verificador comum e são boundaries HTTP finos: não contêm regra de
+`src/app/api/webhooks/nuvemshop/customers-data-request/route.ts`. Eles podem preparar localmente o
+verificador comum como design do projeto, com auth privacy ainda UNPROVEN/HR-08, e são boundaries HTTP finos: não contêm regra de
 catálogo/pedido e não chamam parsers ou handlers antes da autenticação.
 Durante manutenção, a rota precisa ficar fora do bypass genérico que responde
 503 sem persistir o webhook; essa integração com a regra de manutenção é um
@@ -278,7 +266,7 @@ gate de implementação, não uma alteração nesta spec.
 O cliente deve:
 
 1. construir somente URLs do host fixo da API e do path versionado;
-2. validar IDs e parâmetros antes de interpolá-los;
+2. preservar IDs exatamente antes de qualquer decode/coerção com perda e validá-los antes de interpolação;
 3. enviar `Authorization`, `User-Agent` e `Accept: application/json`;
 4. enviar `Content-Type: application/json; charset=utf-8` quando houver body;
 5. usar `AbortSignal` e timeout explícito configurável no servidor;
@@ -294,6 +282,10 @@ não têm retry automático no MVP; timeout ou resposta desconhecida de um write
 retorna estado de resultado desconhecido e exige reconciliação, não repetição
 cega. A implementação deve fixar números e testá-los antes de ser considerada
 pronta.
+
+### Precisão dos identificadores
+
+IDs do provider são identificadores, sem arithmetic. NUV-07 deve preservar a representação decimal exata **antes** de JSON/decode/coerção que use número JS inseguro; converter um number já arredondado em string não recupera o ID. A escolha entre string decimal, bigint ou estratégia lossless é implementação futura, sem pacote autorizado aqui. Unsafe number de caller falha como ValidationError antes do fetch; resposta que não possa ser decodificada exatamente falha ProtocolError, nunca arredonda. Fixtures raw incluem IDs acima de int32 e de `Number.MAX_SAFE_INTEGER`; o valor normalizado e a URL devem manter todos os dígitos. ULID de fulfillment e correlação local permanecem strings; validar domínio/formato antes de URL, sem URLs externas fornecidas por payload.
 
 ### Pagination contract
 
@@ -338,8 +330,7 @@ estrutura interna não exportada; não viram superfície pública por acidente.
 
 ## 10. Resource contracts
 
-Os nomes abaixo são contratos conceituais a serem refinados no planning após
-aprovação humana. Todos são server-only e retornam tipos normalizados; nenhum
+Os nomes abaixo são contratos conceituais reconciliados no plano existente; shapes finais exigem reaprovação humana e implementação futura. Todos são server-only e retornam tipos normalizados; nenhum
 consumer monta URL Nuvemshop ou lê o payload externo diretamente.
 
 ### Products e variants
@@ -350,18 +341,23 @@ getProduct(input: { productId: ProductId }): Promise<Product>
 getVariant(input: { productId: ProductId; variantId: VariantId }): Promise<Variant>
 ```
 
-`Product` deve cobrir, no mínimo, ID interno, nome/handle localizável, descrição
-quando disponível, visibilidade, imagens, categorias, variantes e timestamps
-necessários ao `catalog`. `Variant` deve preservar os campos brutos necessários
-para distinguir preço regular de `promotional_price`, além de um preço efetivo
-explicitamente definido para a aplicação. Preços permanecem como decimal/string
-sem ponto flutuante. A disponibilidade deve distinguir estoque finito,
-`stock_management=false` (estoque ilimitado) e `inventory_levels`; o modo da
-loja é `NUV-OPEN-INVENTORY-MODE` até confirmação.
+`Product` cobre ID estável, nome/handle localizados, descrição quando disponível, imagens, categorias, variantes, timestamps necessários, atributos localizados e tags do provider necessárias aos filtros tema/cor/tamanho do PRD. `Variant.values` corresponde aos atributos do produto; não descartar dados necessários aos seletores. Adapter preserva dados; `catalog` define filtros, labels e apresentação.
 
-O adapter não decide slug editorial, série, SEO, texto curatorial ou política
-de produto indisponível. Preço e disponibilidade usados pelo `cart` devem ser
-revalidados no servidor imediatamente antes do handoff.
+Visibility mantém **visible, unlisted, hidden**, nunca boolean: visible participa de discovery/compra; unlisted é acessível/comprável por link direto, fora de discovery; hidden não é comprável. `published=false` não distingue os dois últimos. A política editorial/discovery é do consumer.
+
+Preço regular (`price`) é nullable; null representa contato em vez de checkout. Promo (`promotional_price`) é nullable quando ausente. Design do projeto: preço efetivo decimal/string somente quando houver preço vendável; com regular válido, usar promoção válida quando presente, senão regular. Regular null não gera preço vendável inventado nem invalida toda Variant; efetivo fica ausente. Valores presentes malformados falham, sem float. `cart` revalida no servidor imediatamente antes do handoff e falha fechado para variante sem preço vendável/disponibilidade compatível/visibility que permita compra; checkout continua HR-05.
+
+| Caso                                     | Contrato de disponibilidade                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simple finito                            | stock_management=true e stock inteiro não negativo                                                                                                                                 |
+| Simple ilimitado                         | stock_management=false e stock=null conforme leitura oficial; null não vira zero                                                                                                   |
+| Multiple Locations finito                | inventory_levels por location ID e estoque local; stock agregado pode coexistir validamente e representa total; não selecionar primeiro local                                      |
+| Multiple Locations ilimitado             | Preservar semântica por local; representação exata GET e agregado misto finito/ilimitado **UNPROVEN / HR-04**. Stock string vazia documenta escrita, não autoriza inventar leitura |
+| Desconhecido/malformado/divergência real | Falhar fechado; não adivinhar modo, estoque ou precedência                                                                                                                         |
+
+HR-04 confirma modo operacional por evidência de conta/configuração; Store.features é candidato oficial mais forte que heurística de shape/count. Ambos os formatos têm cobertura contratual, inclusive representação multi ilimitada depois de prova específica/ensaio autorizado em conta compatível; escolher modo simple não elimina essa obrigação nem fecha sozinho NUV-10. Sem prova necessária, disponibilidade final permanece bloqueada. Nenhuma chamada à conta ocorre nesta convergência.
+
+O adapter não decide slug editorial, série, SEO, texto curatorial, cache ou política de apresentação de indisponibilidade.
 
 ### Categories
 
@@ -370,9 +366,9 @@ listCategories(input: ListCategoriesInput): Promise<Page<Category>>
 getCategory(input: { categoryId: CategoryId }): Promise<Category>
 ```
 
-`Category` expõe ID, nome localizável, handle quando existente, parent e
-metadados necessários para o vínculo posterior da curadoria. Não contém a
-política de séries do `content`.
+Contrato mínimo fechado: ID estável, nome localizado, handle quando presente, parent ID ou null (raiz), visibility **visible, hidden, soft-hidden**. Soft-hidden é herdado de ancestral oculto; preservar a distinção. Aceitar handle ausente é decisão de robustez do projeto; não afirmar que a documentação prova nullability, não sintetizar slug nem fallback.
+
+Texto curatorial, capa, ordem, status e referências de séries pertencem ao backoffice/`content` conforme PRD/Capability Map. Category é taxonomy/vínculo do provider. Description, Google taxonomy, subcategories, custom fields e timestamps não integram o mínimo sem consumer comprovado. Não há metadata vaga nem nova open decision de curadoria.
 
 ### Customers
 
@@ -430,13 +426,13 @@ indexada por e-mail, com cobertura e reconciliação comprovadas antes de
 disponibilizar `/conta/pedidos`. O adapter não requer `read_customers` para
 esse fluxo e não registra o e-mail usado em `q`.
 
-`Order` deve conter os campos necessários para estado,
-itens/variantes, valores, pagamento, fulfillment e tracking. Inclui
+`Order` contém ID e número distintos, estado, itens/referências de variante, valores e dados de pagamento necessários. Fulfillment é **zero ou muitos records/summaries**, cada remessa com estado, tracking próprio opcional e histórico/eventos mínimos suficientes à timeline do PRD. `tracking_info` pode ser null; code/url nullable não invalidam Order. Não escolher primeira remessa nem usar shipping_* legado como coleção completa.
+
+NUV-11 possui leitura tipada/normalização de Fulfillment Orders dentro das tasks existentes: aggregates oficiais e, quando necessário, leituras do recurso usando transporte/paginação bounded. IDs ou summaries parciais da listagem não equivalem a coleção completa nem a ausência de remessas; preservar estado de completude e buscar detalhes explicitamente quando o consumer necessita, ou indicar incompletude. Zero remessas confirmado é válido. Preservar, quando fornecidos, os históricos `status_history` e `tracking_events` por remessa: identificadores disponíveis, estados/transições e tempos, incluindo estados `custom_{status}` documentados ([Fulfillment Order — histórico/tracking](https://tiendanube.github.io/api-documentation/resources/fulfillment-order#fulfillmentordertrackingevent)). Histórico vazio legítimo não é erro nem autoriza inventar eventos; summaries parciais não provam histórico completo. NUV-07 valida, NUV-11 lê/normaliza com completude explícita, NUV-23 integra e NUV-25 exige a timeline efetiva do consumer. Não promover endereço, geolocalização ou raw ao mínimo. Leituras de detalhes preservam contexto/path order-scoped e relações/IDs oficialmente disponíveis, sem exigir `order_id` top-level não documentado. A capability efetiva é verificada em HR-02, sem scope extra automático. Inclui
 `Order.contactEmail`, normalizado do campo oficial `Order.contact_email`, para
 que `orders`/`identity` compare o e-mail do pedido com um e-mail Supabase
 verificado. Esse campo é PII e server-only: não entra em logs, analytics, cache
-compartilhado ou tipo importável pelo cliente. Se o e-mail estiver ausente ou
-inválido, o pedido não pode ser vinculado por essa regra. O contrato não exige
+compartilhado ou tipo importável pelo cliente. Ausência ou invalidade de contactEmail não invalida o Order inteiro (tolerância do projeto), mas impede vínculo por essa regra. O contrato não exige
 o objeto Customer completo nem `read_customers`. O adapter fornece o dado,
 mas não decide o vínculo, a linha do tempo da conta, troca, `purchase`,
 contador de vendas ou reembolso.
@@ -452,7 +448,7 @@ invalidação no sucesso, na expiração ou na substituição; não pode aparece
 logs nem ficar armazenado em texto puro ([OWASP OTP](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html#one-time-password-otp-handling-and-storage)).
 Sem essa prova, `/rastreio` não divulga dados do pedido. Após a prova,
 retorna somente a projeção mínima prevista no PRD: status/linha do tempo de
-fulfillment e código de rastreio, nunca o `Order` completo, e-mail de contato,
+fulfillment e códigos de rastreio **por remessa**, preservando zero/múltiplas e ausência legítima de tracking, nunca o `Order` completo, e-mail de contato,
 endereços, itens, valores ou detalhes de pagamento. Ausência, divergência,
 busca inconclusiva e desafio inválido recebem resposta pública genérica. O
 adapter não autentica o solicitante desse fluxo.
@@ -470,9 +466,8 @@ proibidos na implementação até fechar `NUV-OPEN-CHECKOUT`.
 ### Boundary HTTP
 
 - Método: `POST` em `/api/webhooks/nuvemshop/events` para os quatro eventos de
-  negócio.
-- Callbacks de privacidade usam endpoints distintos, registrados
-  explicitamente na app: `/api/webhooks/nuvemshop/store-redact`,
+  negócio e lifecycle selecionado.
+- Callbacks de privacidade usam endpoints distintos, configurados nas três URLs de privacy do App Admin (não subscriptions POST /webhooks): `/api/webhooks/nuvemshop/store-redact`,
   `/api/webhooks/nuvemshop/customers-redact` e
   `/api/webhooks/nuvemshop/customers-data-request`. Não se escolhe o parser a
   partir de um body ambíguo.
@@ -480,7 +475,7 @@ proibidos na implementação até fechar `NUV-OPEN-CHECKOUT`.
 - O corpo tem limite de tamanho configurado e fail-closed antes de parsear; a
   proposta inicial é 1 MiB, sujeita a validação com fixtures oficiais e revisão
   humana.
-- O header de assinatura é `x-linkedstore-hmac-sha256`. Ausente, duplicado ou
+- Para subscriptions API, o header de assinatura é `x-linkedstore-hmac-sha256`. Ausente, duplicado ou
   malformado é rejeitado.
 - O [exemplo oficial de verificação](https://tiendanube.github.io/api-documentation/resources/webhook#verifying-a-webhook)
   compara o header a `hash_hmac('sha256', ...)` sem saída binária. Pelo
@@ -491,9 +486,7 @@ proibidos na implementação até fechar `NUV-OPEN-CHECKOUT`.
   documentação não substitui captura do formato real da app.
 - A assinatura é HMAC-SHA256 dos bytes brutos usando o segredo da app, não o
   access token e não o JSON reserializado.
-- Todos os quatro endpoints, inclusive os callbacks de privacidade, passam por
-  esse mesmo verificador HMAC antes do roteamento para o parser específico. Não
-  há exceção de autenticação sem fonte oficial e adjudicação humana.
+- A extensão desse HMAC aos callbacks privacy é **UNPROVEN**. Como design do projeto, NUV-20 pode preparar shared-verifier local com fixtures sintéticas, sem chamar isso fato externo. HR-08 exige ensaio real autorizado de cada callback confirmando autenticação antes de instalação/ativação operacional. Divergência real gera **BLOCKED_SPEC_CONTRADICTION** + adjudicação humana de segurança; nenhum fallback sem autenticação nem assinatura alternativa inventada. Bytes brutos e HMAC antes de JSON permanecem onde HMAC é o contrato autenticado.
 - O digest esperado e o recebido são comparados em bytes de mesmo tamanho com
   comparação em tempo constante.
 - JSON só é parseado depois da assinatura válida; schema do envelope é aplicado
@@ -509,34 +502,52 @@ type VerifiedWebhookEvent =
   | { event: 'order/paid'; storeId: string; resourceId: string; correlationId: string }
   | { event: 'order/fulfilled'; storeId: string; resourceId: string; correlationId: string }
   | { event: 'order/cancelled'; storeId: string; resourceId: string; correlationId: string }
+  | { event: 'app/uninstalled'; storeId: string; appId: string; correlationId: string }
+  | { event: 'app/suspended' | 'app/resumed'; storeId: string; correlationId: string }
 ```
 
 O envelope externo também pode conter campos necessários à reconciliação, mas
 eles não são copiados indiscriminadamente ao tipo público. O `id` do provedor
-é o ID do recurso; não deve ser tratado como delivery ID sem prova.
+é ID de recurso para business; no uninstall é App ID. Store/event são comuns; detalhes adicionais de suspended/resumed não estão provados e HR-06 confirma payload real. Não impor resourceId/AppID aos dois por inferência. Nenhum id vira delivery ID sem prova.
+
+Lifecycle é necessário ao modelo operacional, não deferred: NUV-15 schema, NUV-16 recibo/intenção mínima recuperável sem resourceId forçado, NUV-18 estado durável pausado/desconectado e reconciliação, NUV-19 mesma rota events, NUV-21 alerta/runbook, NUV-24 subscriptions/evidência sob HR-02/06. Uninstalled interrompe operação e sinaliza owner, **não** equivale a store/redact. Suspended impede operação normal; resumed apenas solicita probe canônico de acesso/configuração bounded e reconciliação dos consumers **já registrados e operacionais** antes de sua retomada, nunca limpa estado cegamente por ordem de entrega. 402 também diagnostica suspensão; silêncio ou free days não garantem lifecycle. Payload real divergente reabre tasks técnicas donas antes do marco, sem implementação em NUV-24. NUV-24 prova estado durável, probe e contrato de coordenação do adapter, sem exigir consumers futuros implementados nem declarar seus efeitos reconciliados. Consumer instalado depois executa sincronização/reconciliação inicial antes de operar; prova efetiva fica em NUV-25. Retomada de consumer operacional aplicável continua bloqueada enquanto sua reconciliação estiver pendente. Pendências de integração permanecem explícitas/recuperáveis, não são marcadas como efeitos concluídos.
 
 Além dos quatro eventos de negócio, um app que guarda dados deve tratar os
 callbacks de privacidade documentados oficialmente: `store/redact`,
 `customers/redact` e `customers/data_request`. Eles têm payloads e owners
 diferentes do envelope de recurso e são roteados pelos endpoints próprios; não
 caem no parser de `{event, id}`. Seu contrato de retenção, resposta e execução
-fica em `NUV-OPEN-PRIVACY-WEBHOOKS` e bloqueia a instalação operacional até
-`NUV-HR-08`.
+fica em `NUV-OPEN-PRIVACY-WEBHOOKS`/HR-08. A decisão humana de owner, retenção, payload e resposta precede NUV-20; prova real de autenticação/trigger/entrega ocorre em NUV-24 antes da ativação operacional. Fontes de URLs exigem configuração da app: HR-02/08 adjudicam sequência de criação/configuração/OAuth/ensaio antes do bootstrap, sem presumir URLs vazias ou ensaio pré-OAuth suportado. Configuração temporária de ensaio exige autorização específica, endpoint real e suporte comprovado.
 
-Eventos não reconhecidos, depois de HMAC válido, não chamam handler nem API
-externa. Eles geram `ignored_unknown_event` e 2xx somente se não forem um
-callback obrigatório de privacidade; essa política deve ser validada com o
-owner.
+Eventos não reconhecidos, depois de autenticação válida dos bytes brutos, parse
+bounded e validação da loja autorizada, não chamam handler, dispatcher, consumer
+nem API externa. Somente quando não forem callbacks obrigatórios de privacidade
+e uma política explícita registrada pelo owner permitir o ignore, tornam-se
+elegíveis: classificação/eligibilidade não autoriza ACK. NUV-16 deve primeiro
+efetivar o commit de um receipt durável mínimo; somente após esse commit NUV-19 pode concluir
+`ignored_unknown_event` e responder 2xx. Falha ao persistir o receipt retorna
+5xx, sem ACK, permitindo retry do provedor. O receipt usa apenas dados mínimos
+autenticados/necessários de intake, identidade e correlação locais, com
+classificação terminal segura e auditabilidade/recovery do registro; não exige
+`resourceId`, App ID ou delivery ID do provider fictícios, não persiste raw body
+por default e não cria trabalho externo de consumer.
 
 ### Ack e falha
 
 1. autenticar e validar dentro do limite do provedor;
 2. registrar uma intenção de processamento ou enfileirar de modo durável;
+   para unknown elegível ao ignore, efetivar o commit do receipt terminal mínimo;
 3. responder 2xx somente após esse registro confiável;
 4. processar efeitos fora da request, com limite de concorrência e alerta;
 5. retornar 4xx para assinatura/envelope inválidos;
 6. retornar 5xx quando o registro durável não estiver disponível, permitindo
    nova tentativa do provedor.
+
+Durable-before-ACK e 5xx sem registro durável também se aplicam ao terminal
+ignore de unknown autenticado. Esse terminal exige receipt/classificação
+duráveis e recovery/auditabilidade do intake, sem claim, retry ou replay de
+trabalho de consumer que não existe; os contratos de processamento recuperável
+de business/lifecycle e de privacy conforme HR-08 permanecem vigentes.
 
 O handler não deve realizar chamadas lentas de catálogo/pedido antes do ack.
 Quando a entrega chega durante manutenção, ela deve seguir a mesma regra de
@@ -615,6 +626,8 @@ NuvemshopLookupIncompleteError # busca por número ambígua ou não concluída
 NuvemshopWebhookError        # assinatura/envelope/loja inválidos
 ```
 
+Input local inválido → `NuvemshopValidationError` **antes do fetch**. Resposta inesperada 400/422 em leitura localmente válida → `NuvemshopProtocolError` seguro, não retryable, salvo classe semântica já aprovada demonstrada por fonte específica. Não ecoar payload/mensagem externa nem criar classe ad hoc.
+
 Cada erro pode carregar operação, recurso, status e correlation ID seguro;
 nunca token, client secret, `Authorization`, body cru ou PII. Route Handlers
 usam o formato Problem Details já fornecido pela Foundation e não devolvem
@@ -630,6 +643,7 @@ Fatos do provedor e headers estão na seção 4. A política do adapter é propo
   em milissegundos, validar o valor e respeitar limite por loja/app. `Retry-After`
   pode ser usado se vier, mas não é pré-requisito.
 - 5xx/network/timeout: retry bounded somente para leitura idempotente.
+- 400/422 inesperados e erros locais ValidationError: sem retry.
 - POST/PUT/PATCH/DELETE ou operação com efeito: sem retry automático cego; a
   operação precisa de chave/idempotência do provedor ou reconciliação explícita.
 - Tentativas devem carregar o mesmo correlation ID e ser visíveis em logs.
@@ -707,7 +721,11 @@ de chamadas reais.
   limitada à projeção de rastreio;
 - schemas de produto, variante, categoria, pedido e envelope; cliente somente se a
   capability opcional for habilitada;
-- taxonomia para 401/402/403/404/429/5xx/timeout/schema inválido;
+- taxonomia para 401/402/403/404/429/5xx/timeout/schema inválido; input local inválido sem fetch e 400/422 remoto válido → ProtocolError sem retry;
+- IDs raw acima de int32/MAX_SAFE_INTEGER preservados antes de decode com perda, unsafe caller rejeitado, ULID string e URL exata;
+- Product visibility três estados, Category visibility três estados/parent/handle opcional, atributos/values/tags preservados;
+- regular/promo nullable, efetivo ausente legítimo versus decimal malformado;
+- zero/múltiplas remessas, histórico/eventos por remessa preservados (vazio legítimo/custom status), summaries parciais distintos de coleção/histórico completos, tracking_info/code/url nullable e ausência de contactEmail sem invalidar Order;
 - limite de retry, jitter/bounded behavior e ausência de retry inseguro de write;
 - HMAC hexadecimal válido, header Base64/ausente/malformado, corpo alterado e
   comparação constante de 32 bytes;
@@ -715,13 +733,13 @@ de chamadas reais.
 - body oversized, JSON malformado e objeto com campos abusivos;
 - loja errada, evento desconhecido e evento fora da allowlist;
 - endpoints e payloads distintos de `store/redact`, `customers/redact` e
-  `customers/data_request`, todos autenticados pelo verificador HMAC comum;
+  `customers/data_request`, shared-verifier local preparado como design com auth real UNPROVEN/HR-08, sem fallback não autenticado;
 - duplicatas concorrentes, reentrega após falha e eventos fora de ordem;
 - ledger `received` → `claimed` → `processing` → `retryable`/`quarantined`,
   lease expirado e crash depois do ack;
 - `Link` externo, redirect, host, versão, loja e recurso inválidos;
 - preço promocional, estoque ilimitado, estoque agregado e `inventory_levels`;
-- resposta 402 e interrupção simultânea de API/webhooks;
+- resposta 402, app/suspended/uninstalled/resumed, duplicatas/ordem, recibo sem resourceId, estado durável pausado/desconectado, probe/reconciliação de consumers operacionais antes de retomar, consumer futuro exige sync inicial antes de operar, e interrupção API/webhooks;
 - manutenção ativa sem descarte de webhook e redaction no argumento enviado ao
   Sentry;
 - redaction em logs/Sentry.
@@ -730,8 +748,7 @@ de chamadas reais.
 
 Usar fixtures sintéticas ou oficiais anonimizadas, com provenance registrada no
 teste. Nunca incluir token, client secret, PII real ou payload copiado de loja
-real. Confirmar que os fixtures cobrem o modo de inventário escolhido antes do
-merge da implementação.
+real. Cobrir **ambas** as famílias oficiais de inventário, independentemente do modo real HR-04; multi ilimitado exige representação GET provada antes do mapper final. Modo da conta não reduz fixtures.
 
 ### HTTP integration tests
 
@@ -746,7 +763,7 @@ na CI de pull request com segredo.
 
 ## 19. Human setup e checkpoints
 
-O bootstrap humano deve seguir o Authorization Code oficial: owner inicia a
+Antes do bootstrap, HR-02/08 confirmam modalidade/instalabilidade e sequência suportada de configuração das URLs privacy obrigatórias/ensaio/OAuth, sem URLs fictícias. O bootstrap humano deve seguir o Authorization Code oficial: owner inicia a
 instalação, gera e guarda `state` de uso único, recebe o callback, confere
 `state` e troca o código dentro dos 5 minutos, sem imprimir o código, token ou
 secret. A evidência compartilhável é somente app/store ID, scopes aprovados,
@@ -755,24 +772,30 @@ manager/env autorizado; o procedimento também deve documentar revogação e
 reinstalação. Não se cria UI OAuth nesta etapa, mas o runbook de bootstrap é
 pré-requisito operacional.
 
-| ID          | Decision/action                                                                                                                                                                | Why human                                            | Evidence                                                                          | Blocks                                           |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `NUV-HR-01` | Confirmar que a loja/app single-store existem e identificar `store_id` sem expor token                                                                                         | Account-specific                                     | ID seguro e app autorizado                                                        | Implementação e smoke real                       |
-| `NUV-HR-02` | Aprovar `2025-03`, modalidade da app e scopes efetivos: `read_products`, `read_orders` e apenas adicionais comprovados; confirmar permissão dos tópicos de webhook pretendidos | A documentação não conhece a configuração real       | Registro de scopes e tópicos autorizados, sem valores secretos                    | Implementação autenticada e registro de webhooks |
-| `NUV-HR-03` | Confirmar app secret usado pelo HMAC, rotação e janela de coexistência                                                                                                         | Secret/account-specific                              | Procedimento documentado, sem valor do segredo                                    | Implementação de HMAC operacional                |
-| `NUV-HR-04` | Confirmar se a loja está em inventário simples ou Multiple Locations                                                                                                           | O modo altera schema e disponibilidade               | Resposta/documentação da conta + fixture correspondente                           | Contrato final de disponibilidade                |
-| `NUV-HR-05` | Adjudicar o handoff local cart → checkout hospedado                                                                                                                            | Cart/Draft Order não provam equivalência             | Fluxo oficial ou ensaio autorizado com cleanup                                    | Consumer `cart`                                  |
-| `NUV-HR-06` | Registrar os quatro webhooks de negócio, endpoints e lifecycle                                                                                                                 | Registro muta app/loja                               | Lista de webhooks e eventos confirmada                                            | End-to-end de webhooks                           |
-| `NUV-HR-07` | Definir durabilidade, retenção, fila e alerta                                                                                                                                  | É uma decisão operacional da Foundation/infra        | Runbook, owner e evidência de recuperação                                         | Ack/retry seguro                                 |
-| `NUV-HR-08` | Definir callbacks de privacidade, owner, retenção e resposta                                                                                                                   | São callbacks obrigatórios para app que guarda dados | Contrato e ensaio de `store/redact`, `customers/redact`, `customers/data_request` | Instalação operacional                           |
+Todos **OPEN nesta execução**. Gates fecham fatos/decisões; tasks implementam depois, sem ciclo.
+
+| ID        | Decisão humana / evidência                                                                                                                                                                                                                                                                                                                      | Blocking scope e momento                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| NUV-HR-01 | Loja/app single-store autorizadas; store_id seguro sem token                                                                                                                                                                                                                                                                                    | Toda implementação, inclusive fixtures locais, e smoke                                                        |
+| NUV-HR-02 | Versão 2025-03, modalidade/distribuição/instalabilidade API-only/SDK e sequência de criação/configuração/OAuth; mínimo requested read_products/read_orders versus effective locations/fulfillment_orders, topics permitidos. Divergência scope → BLOCKED_PROVIDER_SCOPE_DIVERGENCE; SDK necessário → BLOCKED_ARCHITECTURE_ADJUDICATION_REQUIRED | Uso real/NUV-24; não testes locais após AUTH+HR-01                                                            |
+| NUV-HR-03 | Mecanismo secret/rotação; coexistência sim/não e janela somente se suportada. Decisão primeiro, reconciliação condicional NUV-02/14 depois; previous nunca permanente                                                                                                                                                                           | HMAC operacional; não verifier sintético. Entrega real depois da reconciliação                                |
+| NUV-HR-04 | Modo real por conta/features; representação GET multi ilimitada/agregado misto por fonte específica ou ensaio autorizado compatível; evidência redigida, exemplos/provenance aprovados e plano de cobertura, sem raw da conta; NUV-10 implementa/executa fixtures das duas famílias depois, não é pré-requisito para fechar o gate              | NUV-10/disponibilidade final; ambas famílias obrigatórias mesmo se loja simple                                |
+| NUV-HR-05 | Handoff cart→checkout normal provado por fonte/ensaio autorizado                                                                                                                                                                                                                                                                                | cart/checkout, não core                                                                                       |
+| NUV-HR-06 | Autorização específica/inventário/subscriptions API: quatro business e lifecycle aplicável; payload real suspended/resumed, endpoints, evidência por topic/família e rollback separado                                                                                                                                                          | Dentro de NUV-24 após deploy aprovado; não pré-requisito dos schemas locais15/18                              |
+| NUV-HR-07 | Store/fila, retenção, claim/lease, worker/recovery, alert owner/runbook; decisão de backend e contrato/protocolo de ensaio de recovery antes de NUV-16/17; prova implementada de recovery depois em16/17 e operacional em NUV-24, nunca pré-requisito para fechar a decisão                                                                     | Backend/ACK/retry seguro; não exigir backend pronto para escolher tecnologia                                  |
+| NUV-HR-08 | Decisão de privacy owner/payload/trigger/retention/response antes de NUV-20; auth HMAC e prazo/retries UNPROVEN. Configurar três URLs App Admin; ensaio real de cada callback e adjudicação de divergências antes de ativação operacional                                                                                                       | NUV-20 depende da decisão humana; NUV-24 depende da confirmação real pós-implementação. Sem fallback sem auth |
+
+### Gate operacional e inventário
+
+NUV-24 é evidência/coordenação humana, não implementação. Exige core completo, gates aplicáveis, release por HEAD autorizada antes de cada merge que pode auto-deployar, deploy/health verificados e inventários prévios separados: subscriptions API e URLs privacy App Admin. Configurações/ensaios/instalações externas exigem autorizações específicas. Sucesso verifica auth/parser/durable-before-ACK/recovery/observability por família aplicável e cada topic/config necessário; limpa **somente artefatos temporários próprios** e exige inventário final mostrando toda integração operacional necessária ativa/configurada. Rollback/desregistro é procedimento separado, só acionado deliberadamente; após rollback não declarar `ADAPTER OPERATIONAL`. Nenhuma mutação ocorre nesta execução.
 
 ## 20. Contracts provided to consumers
 
-| Consumer  | Pode importar                                                                                                                                                                            | Não pode depender de                                                                                                                                                                                                         |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`                                                  | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                                                                                                            |
-| `cart`    | `getVariant`/revalidação de preço-disponibilidade; contrato de checkout somente após `NUV-HR-05`                                                                                         | Draft Order presumido, checkout URL inventada, estoque do browser                                                                                                                                                            |
-| `orders`  | `getOrder`, `listOrders` com `q`/paginação, `findOrderByNumber`, `Order.contactEmail`, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Lista completa vinculada ao e-mail Supabase verificado, prova de posse do e-mail e projeção mínima em `/rastreio`, limitação de tentativas, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
+| Consumer  | Pode importar                                                                                                                                                                                                                                                                        | Não pode depender de                                                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog` | `listProducts`, `getProduct`, `getVariant`, `listCategories`, `getCategory`, `Product`, `Variant`, `Category`, evento `product/updated`                                                                                                                                              | URL/header Nuvemshop, token, `next/cache`, semântica de série/SEO                                                                                                                                                            |
+| `cart`    | `getVariant`/revalidação de preço-disponibilidade e recusa de handoff sem preço vendável; contrato de checkout somente após `NUV-HR-05`                                                                                                                                              | Draft Order presumido, checkout URL inventada, estoque do browser                                                                                                                                                            |
+| `orders`  | `getOrder`, `listOrders` com `q`/paginação, `findOrderByNumber`, `Order.contactEmail`, zero/muitas remessas com histórico/eventos mínimos, tracking nullable/completude explícita, eventos de pedido autenticados; `getCustomer` somente com `read_customers` adjudicado e concedido | Lista completa vinculada ao e-mail Supabase verificado, prova de posse do e-mail e projeção mínima em `/rastreio`, limitação de tentativas, timeline, analytics `purchase`, idempotência de domínio sem persistência própria |
 
 Todos os métodos são server-only, têm input/output tipados, paginação
 normalizada, erro discriminável e validação de resposta externa. A superfície
@@ -796,36 +819,42 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
    reconciliado.
 4. Listas tratam `page`, `per_page`, `Link` e `x-total-count` sem `listAll`
    implícito.
-5. 429, 5xx, timeout e falha de schema têm erros estáveis; retry é bounded e
+5. Input local inválido falha antes do fetch; 400/422 inesperados em read válido são ProtocolError seguro sem retry; 429, 5xx, timeout e schema têm erros estáveis; retry é bounded e
    não repete writes não idempotentes.
-6. Webhook válido calcula HMAC-SHA256 sobre bytes brutos e só então parseia;
+6. Webhook API válido calcula HMAC-SHA256 sobre bytes brutos e só então parseia;
    corpo alterado, assinatura ausente/malformada e loja errada são rejeitados.
 7. Corpo excedente e JSON abusivo falham com custo limitado e sem persistir
    payload bruto por default.
-8. Eventos autenticados são allowlisted, cada entrega tem ledger local e
-   eventos desconhecidos não obrigatórios não provocam efeitos; não há promessa
-   de exactly-once sem identidade de entrega do provedor.
+8. A allowlist business/lifecycle permanece fechada; cada entrega autenticada
+   aceita tem ledger/receipt local commitado antes de ACK. Business/lifecycle
+   selecionados têm owners, trabalho recuperável, estado durável e reconciliação.
+   Unknown autenticado não obrigatório só é elegível ao ignore com política
+   explícita do owner e recebe `ignored_unknown_event`/2xx depois de receipt
+   terminal mínimo durável commitado, sem efeitos externos nem recurso ou
+   identidade de entrega do provider fictícios; não há promessa de exactly-once.
 9. Callbacks de privacidade obrigatórios têm parser, autenticação, owner,
-   retenção e resposta próprios antes da instalação operacional.
+   retenção e resposta próprios, três URLs App Admin separadas de subscriptions, auth real confirmado por ensaio HR-08 antes da ativação operacional, sem fallback sem autenticação.
 10. Duplicatas, concorrência e ordering arbitrário não duplicam efeitos de
     consumer nem descartam atualização legítima por hash permanente do body;
     pedido tem matriz de transições e caminho de reconciliação/quarentena.
-11. Ack só ocorre depois de registro durável; claim expirado, crash pós-ack,
-    retry interno, replay e quarentena são recuperáveis e observáveis.
+11. Ack só ocorre depois de commit durável: business/lifecycle com trabalho
+    recuperável, privacy conforme HR-08 e unknown autenticado elegível sob
+    política do owner com receipt terminal `ignored_unknown_event`. Storage
+    indisponível/falha no commit retorna 5xx, sem ACK, inclusive para unknown.
+    Claim expirado, crash pós-ack, retry interno, replay e quarentena de trabalho
+    processável permanecem recuperáveis e observáveis; unknown terminal exige
+    receipt/classificação persistidos e recovery/auditabilidade do intake antes
+    do ACK, sem trabalho de consumer nem efeitos externos.
 12. Links de paginação são validados contra host, versão, loja e recurso antes
     do egress; redirects e destinos externos são rejeitados.
-13. Preço regular/promocional, estoque ilimitado, estoque agregado e níveis por
-    local têm semântica e fixtures explícitos.
-14. 402 é distinguido de auth/5xx e alerta a suspensão que também interrompe
-    webhooks.
+13. Product/Category preservam enums e mínimo explícito; preço regular/promo nullable e efetivo quando vendável, atributos/values/tags, ambas famílias de inventário e coexistência stock/levels têm semântica/fixtures com provenance; multi ilimitado só após prova GET HR-04.
+14. 402 é distinto e alerta suspensão; lifecycle tem recibo/schema/estado/dispatch/runbook e evidência operacional; resumed exige probe/configuração e reconciliação dos consumers operacionais antes de retomá-los; futuros fazem sync inicial sem bloquear NUV-24, uninstall não equivale a redact.
 15. O adapter não importa `next/cache`, não contém UI/domínio de catalog/cart/
     orders e mantém checkout explicitamente bloqueado até decisão.
-16. Logs têm correlation ID, evento, loja segura, latência/status/tentativa e
-    resultado sem segredos/PII.
+16. Logs cumprem todos os 12 campos da seção 17 nos casos aplicáveis, com provas de recurso/evento/error_code sem PII. Sentry mantém tags event/status_class/operation sanitizadas de baixa cardinalidade, separadas do contrato de logs.
 17. Unit, fixture/contract e mock HTTP cobrem os casos de segurança, limite,
     erro, retry, idempotência e redaction descritos nesta spec.
-18. CI mantém o scan de segredos e bundle; smoke real separado exige checkpoint
-    humano e não executa na PR.
+18. CI existente prova scans de segredos/bundle sem alteração de workflow; insuficiência exige BLOCKED_SPEC_SCOPE_EXPANSION. Smoke humano separado, auth real, subscriptions e privacy URLs verificadas, cleanup temporário/inventário final e rollback distinto antecedem marco operacional, sem execução na PR.
 
 ## 22. Riscos
 
@@ -842,20 +871,19 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
 
 ## 23. Open questions e classificação
 
-| ID                            | Status | Classification          | Evidence to resolve                                                                                                                                                                              | Blocking scope                             | Owner/gate           |
-| ----------------------------- | ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------- |
-| `NUV-OPEN-CHECKOUT`           | OPEN   | BLOCKING CONSUMER       | Documentação/ensaio autorizado do fluxo cart → checkout                                                                                                                                          | `cart`                                     | Human `NUV-HR-05`    |
-| `NUV-OPEN-INVENTORY-MODE`     | OPEN   | BLOCKING IMPLEMENTATION | Modo efetivo da loja e fixture                                                                                                                                                                   | disponibilidade de product/variant         | Human `NUV-HR-04`    |
-| `NUV-OPEN-SCOPES`             | OPEN   | BLOCKING IMPLEMENTATION | Confirmar na app `read_products`, `read_orders`, permissão dos tópicos de webhook e somente scopes adicionais comprovados; `read_customers` não é requisito do vínculo por `Order.contact_email` | authenticated client/webhook registration  | Human `NUV-HR-02`    |
-| `NUV-OPEN-SECRET-ROTATION`    | OPEN   | BLOCKING IMPLEMENTATION | Procedimento oficial de secret/HMAC rotation                                                                                                                                                     | production webhook auth                    | Human `NUV-HR-03`    |
-| `NUV-OPEN-DURABILITY`         | OPEN   | BLOCKING IMPLEMENTATION | Escolha de store/fila, retenção, recovery e runbook                                                                                                                                              | ack/retry/idempotency                      | Human `NUV-HR-07`    |
-| `NUV-OPEN-TIMEOUT-DIVERGENCE` | OPEN   | HUMAN CHECKPOINT        | Confirmar 3 s versus referências específicas de 10 s                                                                                                                                             | operational webhook SLA                    | Human `NUV-HR-06`    |
-| `NUV-OPEN-PRIVACY-WEBHOOKS`   | OPEN   | BLOCKING IMPLEMENTATION | Confirmar payload, owner, retenção e execução dos callbacks obrigatórios                                                                                                                         | privacy callbacks e instalação operacional | Human `NUV-HR-08`    |
-| `NUV-OPEN-LIFECYCLE`          | OPEN   | NON-BLOCKING / DEFERRED | Decidir uninstall/suspend events além dos callbacks obrigatórios                                                                                                                                 | lifecycle beyond MVP                       | Product/ops later    |
-| `NUV-OPEN-RETURN-URL`         | OPEN   | NON-BLOCKING / DEFERRED | PRD/conta confirmation URL decision                                                                                                                                                              | `cart` post-purchase UX                    | `cart`/product later |
+| ID                        | Status/classificação           | Evidência/owner                                                                                                | Blocking scope                                                          |
+| ------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| NUV-OPEN-CHECKOUT         | OPEN / BLOCKING CONSUMER       | Fluxo oficial/ensaio autorizado, HR-05                                                                         | cart/checkout                                                           |
+| NUV-OPEN-INVENTORY-MODE   | OPEN / BLOCKING IMPLEMENTATION | Modo real/features + leitura multi ilimitada comprovada, HR-04                                                 | NUV-10 disponibilidade final, não reduzir fixtures                      |
+| NUV-OPEN-SCOPES           | OPEN / BLOCKING IMPLEMENTATION | Requested/effective, modalidade/distribuição/SDK/instalabilidade/URLs e topics, HR-02                          | Uso real/instalação; divergence bloqueia sem expandir scope/arquitetura |
+| NUV-OPEN-SECRET-ROTATION  | OPEN / BLOCKING IMPLEMENTATION | Mecanismo/coexistência/janela, HR-03 → reconciliação NUV-02/14 condicional                                     | HMAC produção                                                           |
+| NUV-OPEN-DURABILITY       | OPEN / BLOCKING IMPLEMENTATION | Backend/retention/claim/recovery/runbook, HR-07                                                                | 16–24 ACK/recovery seguro                                               |
+| NUV-OPEN-PRIVACY-WEBHOOKS | OPEN / BLOCKING IMPLEMENTATION | Decisão owner/payload/trigger/retention/response antes de NUV-20; auth/prazo/retries reais por ensaio24, HR-08 | Privacy e ativação operacional                                          |
+| NUV-OPEN-RETURN-URL       | OPEN / NON-BLOCKING / DEFERRED | cart/product depois HR-05; PRD/conta/URL                                                                       | UX pós-compra, não core                                                 |
 
-Nenhuma dessas perguntas deve ser resolvida por assumir comportamento da conta
-real. A aprovação da spec não resolve essas questões nem autoriza implementação.
+### Decisões fechadas documentalmente
+
+`NUV-OPEN-TIMEOUT-DIVERGENCE`: **RESOLVED** para quatro business+lifecycle API selecionados (3 s/16 tentativas/48h); 10s de futuros FO topics e auth/SLA privacy não são incluídos. `NUV-OPEN-LIFECYCLE`: **RESOLVED** quanto à necessidade/desenho/owners 15/16/18/19/21/24, não deferred; payload/aplicabilidade da conta e registro continuam HR-02/06 OPEN. Category mínimo/content, Product visibility, nullability de preço, ambas famílias de inventário e cardinalidade fulfillments estão fechados por esta spec. Modo real, leitura multi ilimitada e todas as decisões account-specific continuam abertos.
 
 ## 24. Referências do repositório
 
@@ -874,10 +902,6 @@ real. A aprovação da spec não resolve essas questões nem autoriza implementa
 
 ## 25. Status e próximo passo humano
 
-**HUMAN APPROVED / PLANNING ALLOWED**.
+**SPEC REVISED / HUMAN RE-APPROVAL REQUIRED**. **PLAN RECONCILED / HUMAN REVIEW REQUIRED**. **IMPLEMENTATION NOT AUTHORIZED / NOT READY**.
 
-O próximo passo, após o merge desta spec, é `planning-and-task-breakdown`.
-Esta adjudicação documental não autoriza implementação: os checkpoints
-`NUV-HR-*` aplicáveis permanecem abertos e a implementação exige autorização
-posterior. Não criar tasks de implementação nem código do capability nesta
-execução.
+Próximo gate: uma adjudicação humana conjunta desta revisão e do plano existente. HR-01–08 continuam OPEN. CI/reviews verdes não autorizam implementação, instalação, conta, secret, deploy ou merge. Após reaprovação, execução futura exige AUTH e gates aplicáveis; NUV-24 pode fechar adapter operacional, NUV-25 somente após evidência efetiva dos consumers fecha18/18. Nenhum código/teste real do capability é criado nesta convergência.
