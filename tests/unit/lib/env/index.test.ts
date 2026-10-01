@@ -45,6 +45,27 @@ describe('env (servidor)', () => {
     await expect(loadEnv()).rejects.toThrow(/SUPABASE_SERVICE_ROLE_KEY/)
   })
 
+  it('permite importar a configuração Foundation sem credenciais Nuvemshop', async () => {
+    stubEnv({
+      NUVEMSHOP_STORE_ID: undefined,
+      NUVEMSHOP_ACCESS_TOKEN: undefined,
+      NUVEMSHOP_CLIENT_SECRET: undefined,
+      NUVEMSHOP_APP_ID: undefined,
+    })
+    await expect(loadEnv()).resolves.toBeDefined()
+  })
+
+  it('rejeita qualquer chave pública Nuvemshop antes de carregar configuração', async () => {
+    stubEnv({ NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET: 'synthetic-private-value' })
+    await expect(loadEnv()).rejects.toThrow(/NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET/)
+  })
+
+  it('rejeita chave pública Nuvemshop mesmo ao importar somente publicEnv', async () => {
+    stubEnv({ NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET: '' })
+    vi.resetModules()
+    await expect(import('@/lib/env/public')).rejects.toThrow(/NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET/)
+  })
+
   it('MAINTENANCE_MODE é false por padrão e vira boolean quando definido', async () => {
     expect((await loadEnv()).env.MAINTENANCE_MODE).toBe(false)
 
@@ -78,7 +99,7 @@ describe('.env.example', () => {
   // Chaves que só ferramentas externas leem (Supabase CLI). Ficam no
   // .env.example para a operadora, mas a aplicação não as valida. Adicionar
   // uma chave aqui é decisão explícita, não acidente.
-  const toolingOnlyKeys = ['SUPABASE_PROJECT_ID']
+  const toolingOnlyKeys = ['SUPABASE_PROJECT_ID', 'NUVEMSHOP_APP_ID']
 
   // Chaves que o runtime define sozinho (o Next fixa NODE_ENV pelo comando e
   // ignora o valor de arquivos .env). Estão no schema, não no .env.example.
@@ -94,10 +115,13 @@ describe('.env.example', () => {
 
   it('tem exatamente as chaves dos schemas mais as de tooling', async () => {
     const { serverSchema, publicSchema } = await loadEnv()
+    const { nuvemshopApiSchema, nuvemshopHmacSchema } = await import('@/lib/env/nuvemshop')
 
     const expectedKeys = [
       ...Object.keys(serverSchema.shape),
       ...Object.keys(publicSchema.shape),
+      ...Object.keys(nuvemshopApiSchema.shape),
+      ...Object.keys(nuvemshopHmacSchema.shape),
       ...toolingOnlyKeys,
     ].filter((key) => !runtimeProvidedKeys.includes(key))
 

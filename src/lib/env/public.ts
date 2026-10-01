@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { parseEnv } from './parse'
+import { assertNoPublicNuvemshopEnv, parseEnv } from './parse'
 
 // Variáveis que podem ir ao navegador (prefixo NEXT_PUBLIC_). Este módulo NÃO
 // importa `server-only`: componentes cliente usam `@/lib/env/public`.
@@ -14,6 +14,8 @@ export const publicSchema = z.object({
 // As referências literais a `process.env.NEXT_PUBLIC_*` são obrigatórias: o
 // Next substitui cada uma pelo valor em tempo de build no bundle do navegador;
 // `process.env` como objeto não é inlinado.
+// O build/servidor vê todas as chaves antes de selecionar as referências públicas.
+assertNoPublicNuvemshopEnv(process.env)
 export const publicEnv = parseEnv(publicSchema, {
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

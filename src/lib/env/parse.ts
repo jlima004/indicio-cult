@@ -1,5 +1,13 @@
 import type { z } from 'zod'
 
+/** Bloqueia inclusive chaves desconhecidas/vazias, sem imprimir seus valores. */
+export function assertNoPublicNuvemshopEnv(values: Record<string, string | undefined>): void {
+  const key = Object.keys(values).find((key) => key.startsWith('NEXT_PUBLIC_NUVEMSHOP_'))
+  if (key !== undefined) {
+    throw new Error(`Variável de ambiente proibida no navegador: ${key}`)
+  }
+}
+
 /**
  * Valida um conjunto de variáveis contra o schema e falha rápido, listando
  * cada variável inválida pelo nome. Strings vazias contam como ausentes, para
@@ -9,6 +17,7 @@ export function parseEnv<Schema extends z.ZodObject>(
   schema: Schema,
   values: Record<string, string | undefined>,
 ): z.output<Schema> {
+  assertNoPublicNuvemshopEnv(values)
   const normalized = Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key, value === '' ? undefined : value]),
   )
