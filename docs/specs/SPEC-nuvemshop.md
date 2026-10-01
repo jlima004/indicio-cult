@@ -1,16 +1,16 @@
 # Spec: `nuvemshop`
 
-| Campo                           | Valor                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| Status                          | **REVISED / HUMAN RE-APPROVAL REQUIRED**                                         |
-| Capability                      | `nuvemshop`                                                                      |
-| Tipo                            | Adapter de integração server-only, sem UI                                        |
-| Base do repositório             | `origin/main` = `5b9acec069b31e0b7acde00252b8cdc849bc867f`                       |
-| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                       |
-| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico          |
-| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **RECONCILED / HUMAN REVIEW REQUIRED** |
-| Implementação                   | **NOT AUTHORIZED / NOT READY**                                                   |
-| Próximo gate                    | Reaprovação humana conjunta da spec revisada e do plano reconciliado             |
+| Campo                           | Valor                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| Status                          | **HUMAN RE-APPROVED — 2026-10-01**                                        |
+| Capability                      | `nuvemshop`                                                               |
+| Tipo                            | Adapter de integração server-only, sem UI                                 |
+| Base do repositório             | `origin/main` = `e8f76ab86df13425de4b415aba1551eec62fcc39` (merge PR #27) |
+| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                |
+| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico   |
+| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **HUMAN APPROVED — 2026-10-01** |
+| Implementação                   | **NOT AUTHORIZED / NOT READY**                                            |
+| Próximo gate                    | Autorização humana de implementação (`AUTH`); HR-02–08 conforme a task    |
 
 Este documento separa contratos upstream do repositório, **fatos externos verificados**, **decisões de design do projeto** e **decisões humanas/account-specific**. Design do projeto não é garantia do provider.
 
@@ -18,7 +18,7 @@ Este documento separa contratos upstream do repositório, **fatos externos verif
 
 A revisão anterior foi **HUMAN APPROVED / PLANNING ALLOWED em 2026-09-29**: limites do módulo, API/versionamento, autenticação/scopes, secrets server-only, cliente tipado, webhooks, durabilidade, erros, observabilidade, testes e consumers. Essa aprovação histórica permitiu materializar o plano; nunca autorizou implementação.
 
-A convergência contratual autorizada em 2026-09-30 revisa materialmente essa spec após pesquisa oficial atual. A aprovação anterior não se estende automaticamente à revisão atual. O planejamento já existe em `tasks/nuvemshop/`; o próximo passo é **HUMAN SPEC + PLAN RE-APPROVAL**. `NUV-HR-01` a `NUV-HR-08` permanecem **OPEN**, inclusive decisões de conta, scopes/modalidade, secret, inventário, checkout, subscriptions, durabilidade e privacy. Nenhum código, teste real, conta, secret, infraestrutura ou produção é alterado nesta execução documental.
+A convergência contratual autorizada em 2026-09-30 foi **HUMAN RE-APPROVED em 2026-10-01** no HEAD `02d2684ea009ac58d7c756d39e212e15728c78ca` e mergeada pela PR #27 em `e8f76ab86df13425de4b415aba1551eec62fcc39`. O plano reconciliado em `tasks/nuvemshop/` foi **HUMAN APPROVED** na mesma adjudicação. `NUV-HR-01` foi **CLOSED em 2026-10-01** por atestação do owner da loja/app, registrada em [`tasks/nuvemshop/HR-01.md`](../../tasks/nuvemshop/HR-01.md): alvo single-store confirmado, `store_id` confirmado fora do repositório e mantido non-public, app autorizada e nenhum token/secret registrado. `NUV-HR-02` a `NUV-HR-08` permanecem **OPEN**. A implementação continua **NOT AUTHORIZED / NOT READY** até `AUTH` explícita e os gates adicionais aplicáveis.
 
 ## 1. Objetivo
 
@@ -340,7 +340,7 @@ estrutura interna não exportada; não viram superfície pública por acidente.
 
 ## 10. Resource contracts
 
-Os nomes abaixo são contratos conceituais reconciliados no plano existente; shapes finais exigem reaprovação humana e implementação futura. Todos são server-only e retornam tipos normalizados; nenhum
+Os nomes abaixo são contratos conceituais reconciliados no plano humanamente aprovado; shapes finais exigem implementação futura e os gates específicos aplicáveis. Todos são server-only e retornam tipos normalizados; nenhum
 consumer monta URL Nuvemshop ou lê o payload externo diretamente.
 
 ### Products e variants
@@ -465,7 +465,7 @@ Quando há um ou mais Fulfillment Orders, cada `recipient/destination` permanece
 
 NF-e é referência fiscal exposta pelo contrato Order da Nuvemshop, sem garantia de hosting: **0..N referências**, com chave/link e `fulfillment_order_id` opcional preservado exatamente quando fornecido, nunca associação à primeira remessa por inferência. NUV-11 possui a leitura GET dos metafields Order filtrada pelo ID exato, `namespace=nfe`, `key=list` e `fields=value`, via transporte/paginação/budget existentes. Decodificar a string `value` com limites de tamanho/estrutura e validar todos os elementos; `per_page=1` no exemplo limita metafields, não a cardinalidade do array interno. Ausência/null de referências na projeção normalizada é válida, mas leitura não realizada/falha/truncada não prova zero notas; `value` presente incompatível ou JSON/elemento malformado falha, nunca vira array vazio. O legado de chave/link em dois metafields ainda documentado exige reconciliação bounded quando fornecido: revalidar seus nomes/formato na fonte oficial antes de codificar, sem adivinhar associação ou precedência. Ausência de `nfe/list` sozinha não prova ausência total se o legado não foi reconciliado; informar incompletude/erro em vez de descartar nota fornecida. HR-02 verifica capability efetiva da leitura fiscal junto do restante de Order; nenhuma permissão adicional é solicitada automaticamente.
 
-Links fiscais são dados externos sensíveis. Política de segurança proposta e sujeita à reaprovação: preservar referências absolutas HTTP/HTTPS válidas somente no servidor, sem credenciais embutidas ou schemes ativos; HTTPS é preferido, mas os exemplos oficiais HTTP não são malformados nem convertidos artificialmente para HTTPS. O adapter não faz fetch do documento para exibição, não segue redirects, não usa o link como alvo de egress nem prova de ownership. O futuro consumer decide divulgação/navegação, inclusive tratamento explícito de HTTP legado, após autorização própria; esta documentação não implementa isso.
+Links fiscais são dados externos sensíveis. Política de segurança humanamente reaprovada em 2026-10-01: preservar referências absolutas HTTP/HTTPS válidas somente no servidor, sem credenciais embutidas ou schemes ativos; HTTPS é preferido, mas os exemplos oficiais HTTP não são malformados nem convertidos artificialmente para HTTPS. O adapter não faz fetch do documento para exibição, não segue redirects, não usa o link como alvo de egress nem prova de ownership. O futuro consumer decide divulgação/navegação, inclusive tratamento explícito de HTTP legado, após autorização própria; esta documentação não implementa isso.
 
 Endereço, destinatário e referências fiscais são PII/dados sensíveis server-only: proibidos em logs, erro público, analytics, Sentry tags, shared cache, tipos/raw importáveis pelo cliente e webhook evidence. O adapter valida/normaliza e preserva o mínimo; `orders`/`identity` possuem sessão autenticada, vínculo pedido↔conta, authorization e projeção autorizada para `/conta/pedidos/[id]`. Somente esse consumer pode entregar a projeção mínima à sua UI após verificar ownership; evidência do adapter não prova authorization/disclosure. Nenhuma identidade, decisão de disclosure ou UI é implementada em NUV-07/11/23.
 
@@ -813,11 +813,11 @@ manager/env autorizado; o procedimento também deve documentar revogação e
 reinstalação. Não se cria UI OAuth nesta etapa, mas o runbook de bootstrap é
 pré-requisito operacional.
 
-Todos **OPEN nesta execução**. Gates fecham fatos/decisões; tasks implementam depois, sem ciclo.
+`NUV-HR-01` está **CLOSED (2026-10-01)**; `NUV-HR-02` a `NUV-HR-08` permanecem **OPEN**. Gates fecham fatos/decisões; tasks implementam depois, sem ciclo.
 
 | ID        | Decisão humana / evidência                                                                                                                                                                                                                                                                                                                      | Blocking scope e momento                                                                                      |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| NUV-HR-01 | Loja/app single-store autorizadas; store_id seguro sem token                                                                                                                                                                                                                                                                                    | Toda implementação, inclusive fixtures locais, e smoke                                                        |
+| NUV-HR-01 | **CLOSED 2026-10-01** — owner confirmou alvo single-store, `store_id` válido mantido non-public fora do repositório e app autorizada; nenhum token/secret foi registrado. Evidência: [`tasks/nuvemshop/HR-01.md`](../../tasks/nuvemshop/HR-01.md).                                                                                              | Gate satisfeito; implementação continua bloqueada por `AUTH` e pelos demais HR específicos aplicáveis         |
 | NUV-HR-02 | Versão 2025-03, modalidade/distribuição/instalabilidade API-only/SDK e sequência de criação/configuração/OAuth; mínimo requested read_products/read_orders versus effective locations/fulfillment_orders, topics permitidos. Divergência scope → BLOCKED_PROVIDER_SCOPE_DIVERGENCE; SDK necessário → BLOCKED_ARCHITECTURE_ADJUDICATION_REQUIRED | Uso real/NUV-24; não testes locais após AUTH+HR-01                                                            |
 | NUV-HR-03 | Mecanismo secret/rotação; coexistência sim/não e janela somente se suportada. Decisão primeiro, reconciliação condicional NUV-02/14 depois; previous nunca permanente                                                                                                                                                                           | HMAC operacional; não verifier sintético. Entrega real depois da reconciliação                                |
 | NUV-HR-04 | Modo real por conta/features; representação GET multi ilimitada/agregado misto por fonte específica ou ensaio autorizado compatível; evidência redigida, exemplos/provenance aprovados e plano de cobertura, sem raw da conta; NUV-10 implementa/executa fixtures das duas famílias depois, não é pré-requisito para fechar o gate              | NUV-10/disponibilidade final; ambas famílias obrigatórias mesmo se loja simple                                |
@@ -961,6 +961,6 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
 
 ## 25. Status e próximo passo humano
 
-**SPEC REVISED / HUMAN RE-APPROVAL REQUIRED**. **PLAN RECONCILED / HUMAN REVIEW REQUIRED**. **IMPLEMENTATION NOT AUTHORIZED / NOT READY**.
+**SPEC HUMAN RE-APPROVED (2026-10-01)**. **PLAN HUMAN APPROVED (2026-10-01)**. **IMPLEMENTATION NOT AUTHORIZED / NOT READY**.
 
-Próximo gate: uma adjudicação humana conjunta desta revisão e do plano existente. HR-01–08 continuam OPEN. CI/reviews verdes não autorizam implementação, instalação, conta, secret, deploy ou merge. Após reaprovação, execução futura exige AUTH e gates aplicáveis; NUV-24 pode fechar adapter operacional, NUV-25 somente após evidência efetiva dos consumers fecha18/18. Nenhum código/teste real do capability é criado nesta convergência.
+O gate documental SPEC + PLAN está **CLOSED / PASS**. `NUV-HR-01` está **CLOSED**; `NUV-HR-02`–`NUV-HR-08` permanecem **OPEN**. CI/reviews verdes e o fechamento de HR-01 não autorizam implementação, instalação, conta, secret ou deploy. O próximo gate para qualquer task técnica é `AUTH` humana explícita, além dos HR específicos aplicáveis; NUV-24 pode fechar o adapter operacional e NUV-25 somente após evidência efetiva dos consumers fecha 18/18.
