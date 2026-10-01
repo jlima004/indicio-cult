@@ -1,16 +1,16 @@
 # Spec: `nuvemshop`
 
-| Campo                           | Valor                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| Status                          | **HUMAN RE-APPROVED — 2026-10-01**                                               |
-| Capability                      | `nuvemshop`                                                                      |
-| Tipo                            | Adapter de integração server-only, sem UI                                        |
-| Base do repositório             | `origin/main` = `e8f76ab86df13425de4b415aba1551eec62fcc39` (merge PR #27)         |
-| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                       |
-| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico          |
-| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **HUMAN APPROVED — 2026-10-01**         |
-| Implementação                   | **NOT AUTHORIZED / NOT READY**                                                   |
-| Próximo gate                    | Autorização humana de implementação (`AUTH`); HR-02–08 conforme a task            |
+| Campo                           | Valor                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| Status                          | **HUMAN RE-APPROVED — 2026-10-01**                                        |
+| Capability                      | `nuvemshop`                                                               |
+| Tipo                            | Adapter de integração server-only, sem UI                                 |
+| Base do repositório             | `origin/main` = `e8f76ab86df13425de4b415aba1551eec62fcc39` (merge PR #27) |
+| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                |
+| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico   |
+| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **HUMAN APPROVED — 2026-10-01** |
+| Implementação                   | **NOT AUTHORIZED / NOT READY**                                            |
+| Próximo gate                    | Autorização humana de implementação (`AUTH`); HR-02–08 conforme a task    |
 
 Este documento separa contratos upstream do repositório, **fatos externos verificados**, **decisões de design do projeto** e **decisões humanas/account-specific**. Design do projeto não é garantia do provider.
 
@@ -817,7 +817,7 @@ pré-requisito operacional.
 
 | ID        | Decisão humana / evidência                                                                                                                                                                                                                                                                                                                      | Blocking scope e momento                                                                                      |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| NUV-HR-01 | **CLOSED 2026-10-01** — owner confirmou alvo single-store, `store_id` válido mantido non-public fora do repositório e app autorizada; nenhum token/secret foi registrado. Evidência: [`tasks/nuvemshop/HR-01.md`](../../tasks/nuvemshop/HR-01.md).                                                                                                 | Gate satisfeito; implementação continua bloqueada por `AUTH` e pelos demais HR específicos aplicáveis          |
+| NUV-HR-01 | **CLOSED 2026-10-01** — owner confirmou alvo single-store, `store_id` válido mantido non-public fora do repositório e app autorizada; nenhum token/secret foi registrado. Evidência: [`tasks/nuvemshop/HR-01.md`](../../tasks/nuvemshop/HR-01.md).                                                                                              | Gate satisfeito; implementação continua bloqueada por `AUTH` e pelos demais HR específicos aplicáveis         |
 | NUV-HR-02 | Versão 2025-03, modalidade/distribuição/instalabilidade API-only/SDK e sequência de criação/configuração/OAuth; mínimo requested read_products/read_orders versus effective locations/fulfillment_orders, topics permitidos. Divergência scope → BLOCKED_PROVIDER_SCOPE_DIVERGENCE; SDK necessário → BLOCKED_ARCHITECTURE_ADJUDICATION_REQUIRED | Uso real/NUV-24; não testes locais após AUTH+HR-01                                                            |
 | NUV-HR-03 | Mecanismo secret/rotação; coexistência sim/não e janela somente se suportada. Decisão primeiro, reconciliação condicional NUV-02/14 depois; previous nunca permanente                                                                                                                                                                           | HMAC operacional; não verifier sintético. Entrega real depois da reconciliação                                |
 | NUV-HR-04 | Modo real por conta/features; representação GET multi ilimitada/agregado misto por fonte específica ou ensaio autorizado compatível; evidência redigida, exemplos/provenance aprovados e plano de cobertura, sem raw da conta; NUV-10 implementa/executa fixtures das duas famílias depois, não é pré-requisito para fechar o gate              | NUV-10/disponibilidade final; ambas famílias obrigatórias mesmo se loja simple                                |
