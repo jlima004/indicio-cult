@@ -6,7 +6,7 @@ Plano: [plan.md](./plan.md) · Spec: [SPEC-nuvemshop.md](../../docs/specs/SPEC-n
 
 Na aprovação histórica do plano e no fechamento registrado em `HR-01.md`, AUTH estava ausente e implementação **NOT AUTHORIZED / NOT READY**. A aprovação de planning não liberou tasks; o owner concedeu AUTH em decisão separada e posterior de 2026-10-01. Merges e SHAs de NUV-01/02 foram conferidos no GitHub; deploys concluídos e AUTH são atestados pelo owner no pedido desta sincronização.
 
-NUV-01/02 estão COMPLETE / MERGED / DEPLOYED; NUV-03/07 estão READY / NOT STARTED. As caixas de aceite preservam o checklist técnico original; o estado operacional e a evidência ficam nos campos de cada task. Os rótulos condicionais `READY_AFTER_AUTH_AND_HR_01` e `READY_AFTER_AUTH_AND_HR_01_AND_DEPENDENCIES` das demais tasks não significam READY corrente: AUTH e HR-01 já estão satisfeitos, mas dependências e gates próprios continuam obrigatórios. Em particular, NUV-04 e NUV-14 aguardam NUV-03 mergeada. `BLOCKED_BY_NUV_HR_XX` indica gate adicional não dispensado por AUTH/HR-01. `HUMAN_ONLY` nunca é automatizado.
+NUV-01/02 estão COMPLETE / MERGED / DEPLOYED; NUV-03/07 estão READY / NOT STARTED. As caixas de aceite preservam o checklist técnico, com o contrato de NUV-01 reconciliado por adjudicação humana abaixo; o estado operacional e a evidência ficam nos campos de cada task. Os rótulos condicionais `READY_AFTER_AUTH_AND_HR_01` e `READY_AFTER_AUTH_AND_HR_01_AND_DEPENDENCIES` das demais tasks não significam READY corrente: AUTH e HR-01 já estão satisfeitos, mas dependências e gates próprios continuam obrigatórios. Em particular, NUV-04 e NUV-14 aguardam NUV-03 mergeada. `BLOCKED_BY_NUV_HR_XX` indica gate adicional não dispensado por AUTH/HR-01. `HUMAN_ONLY` nunca é automatizado.
 
 Esta execução é documental: NUV-03/07 não foram iniciadas. Sua nova execução aguarda o merge desta PR documental e deve usar o novo SHA exato de main, sem reutilizar a âncora anterior como baseline.
 
@@ -20,13 +20,13 @@ Cada task sugere branch `codex/nuv-XX-<slug>` e commit `feat(nuvemshop): <intent
 
 ### NUV-01 · Superfície server-only do módulo
 
-- **Estado/tamanho:** COMPLETE / MERGED / DEPLOYED · S. **Racional:** estabelecer direção de dependência antes dos consumidores.
-- **Dependências/gates:** AUTH + HR-01 CLOSED. **Escopo/arquivos prováveis:** `src/modules/nuvemshop/index.ts`, `server/index.ts`, `types.ts` e `tests/unit/modules/nuvemshop/boundary.test.ts`; exportar apenas contratos server-side.
-- **RED:** teste de import cliente, ausência de `server-only` e exports indesejados falha. **GREEN:** entrypoint bloqueia client import e expõe tipos/contratos mínimos. **REFACTOR:** reduzir exports sem alterar API.
-- **Aceite:** [ ] nenhuma API de checkout/Customer default; [ ] nenhum `next/cache`, UI, estado ou domínio `orders`; [ ] tipos não carregam PII para client bundle.
+- **Estado/tamanho:** COMPLETE / MERGED / DEPLOYED · S. **Racional:** estabelecer o boundary server-only e a direção de dependência antes dos contratos concretos e consumidores.
+- **Dependências/gates:** AUTH + HR-01 CLOSED. **Escopo/arquivos prováveis:** `src/modules/nuvemshop/index.ts`, `src/modules/nuvemshop/server/index.ts` e `tests/unit/modules/nuvemshop/boundary.test.ts`; somente markers server-only e dependência root → server. Schemas/tipos normalizados, inclusive `types.ts`, pertencem a NUV-07; demais contratos concretos são introduzidos pelas respectivas tasks donas.
+- **RED:** teste de import cliente, ausência de `server-only` e exports indesejados falha. **GREEN:** ambos os entrypoints impõem `server-only` explicitamente, root depende de server e imports de Client Components falham; nenhum contrato de tipo/runtime é exportado prematuramente. Contratos concretos entram nas tasks donas posteriores. **REFACTOR:** reduzir a superfície do boundary sem introduzir exports antecipatórios.
+- **Aceite:** [ ] nenhum export de tipo/runtime prematuro, dummy ou marker; [ ] nenhuma API de checkout/Customer default; [ ] nenhum `next/cache`, UI, estado client ou domínio `orders`; [ ] nenhuma PII ou contrato importável pelo client bundle.
 - **Validação:** `npm run test -- tests/unit/modules/nuvemshop/boundary.test.ts`; `npm run check`; `npm run build`. **Segurança/privacidade:** scan de imports e bundle, sem token ou PII. **Fora:** consumer, HTTP e checkout.
 - **PR/evidência:** branch `codex/nuv-01-boundary`; commit `feat(nuvemshop): define server-only surface`; PR só de boundary; diff, teste negativo e CI verde.
-- **Resultado/evidência:** [PR #29](https://github.com/jlima004/indicio-cult/pull/29) MERGED / CLOSED; candidate HEAD `0f456650341c589103339a4beaa4f5453553a46c`; merge `8336588b5fe7b027a92c03f73f57c7f8f8fc3473`; deploy concluído atestado pelo owner em 2026-10-01.
+- **Resultado/evidência:** [PR #29](https://github.com/jlima004/indicio-cult/pull/29) MERGED / CLOSED; candidate HEAD `0f456650341c589103339a4beaa4f5453553a46c`; merge `8336588b5fe7b027a92c03f73f57c7f8f8fc3473`; deploy concluído atestado pelo owner em 2026-10-01. Adjudicação humana de 2026-10-01 aceitou a implementação boundary-only, com zero exports intencionais, e reconciliou o escopo/GREEN/aceite documental antes sobre-especificado. NUV-01 permanece COMPLETE, sem reabertura técnica ou alteração de código/testes; seu boundary satisfaz a dependência de NUV-03/07, que permanecem READY / NOT STARTED.
 
 ### NUV-02 · Configuração runtime e secrets
 
