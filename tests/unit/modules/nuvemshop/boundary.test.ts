@@ -10,7 +10,7 @@ const entrypoints = ['index.ts', 'server/index.ts'] as const
 const publicEntry = '@/modules/nuvemshop'
 const serverEntry = '@/modules/nuvemshop/server'
 type Sources = Map<string, string>
-type ReferenceOrigin = 'triple-slash-path' | 'triple-slash-types-local'
+type ReferenceOrigin = 'triple-slash-path' | 'triple-slash-types-local' | 'jsdoc-type-import'
 
 function explicitLocalTypeReference(name: string) {
   return ts.isExternalModuleNameRelative(name)
@@ -249,6 +249,50 @@ function globalCapabilityConsumption(
   return 'UNSUPPORTED_GLOBAL_CAPABILITY_REFERENCE'
 }
 
+function importTypeSpecifier(node: ts.ImportTypeNode) {
+  return ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined
+}
+
+// Public metadata access must include consecutive JSDoc blocks: the tag helpers
+// filter earlier blocks. Keep their type AST out of the runtime capability visitor.
+function collectJSDocTypeDependencies(parsed: ts.SourceFile) {
+  const result: {
+    name: string
+    runtime: false
+    explicitMarker: false
+    origin: ReferenceOrigin
+    node: ts.Node
+  }[] = []
+  const visited = new Set<ts.Node>()
+  function visitType(node: ts.Node) {
+    if (visited.has(node)) return
+    visited.add(node)
+    const specifier = ts.isImportTypeNode(node)
+      ? importTypeSpecifier(node)
+      : ts.isJSDocImportTag(node)
+        ? node.moduleSpecifier
+        : undefined
+    if (specifier && ts.isStringLiteralLike(specifier)) {
+      result.push({
+        name: specifier.text,
+        runtime: false,
+        explicitMarker: false,
+        origin: 'jsdoc-type-import',
+        node,
+      })
+    }
+    ts.forEachChild(node, visitType)
+  }
+  function visitSource(node: ts.Node) {
+    for (const child of node.getChildren(parsed)) {
+      if (ts.isJSDoc(child)) visitType(child)
+    }
+    ts.forEachChild(node, visitSource)
+  }
+  visitSource(parsed)
+  return result
+}
+
 function dependencies(parsed: ts.SourceFile, checker?: ts.TypeChecker) {
   const result: {
     name: string
@@ -263,6 +307,7 @@ function dependencies(parsed: ts.SourceFile, checker?: ts.TypeChecker) {
     globalCapability?: string
     globalRootCapability?: 'WHOLE_ROOT_ESCAPE' | 'COMPUTED_GLOBAL_PROPERTY'
   }[] = []
+  result.push(...collectJSDocTypeDependencies(parsed))
   for (const reference of parsed.referencedFiles) {
     result.push({
       name: reference.fileName,
@@ -309,8 +354,8 @@ function dependencies(parsed: ts.SourceFile, checker?: ts.TypeChecker) {
     ) {
       specifier = node.moduleReference.expression
       runtime = !node.isTypeOnly
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
-      specifier = node.argument.literal
+    } else if (ts.isImportTypeNode(node)) {
+      specifier = importTypeSpecifier(node)
     } else if (ts.isCallExpression(node)) {
       const callee = unwrapTransparentCallee(node.expression)
       let moduleArgument: number | undefined
@@ -944,6 +989,267 @@ afterEach(() => {
 })
 
 describe('Nuvemshop server-only boundary', () => {
+  describe('JSDoc type dependency matrix', () => {
+    const clientName = 'src/__jsdoc-client.js'
+    const rejection = /client runtime\/type dependency reaches adapter/
+    const adapter = '@/modules/nuvemshop'
+    const product = `/** @type {Product} */ const product = { id: 'synthetic' }; export { product };`
+    function fixture(
+      client: string,
+      additions: Sources = new Map(),
+      filename = clientName,
+      sources: Sources = new Map([
+        [
+          'index.ts',
+          "import 'server-only'; export { guarded } from './server'; export type Product = { id: string };",
+        ],
+        [
+          'server/index.ts',
+          "import 'server-only'; export const guarded = true; export type Product = { id: string };",
+        ],
+      ]),
+    ) {
+      const clients = new Map([[filename, client], ...additions])
+      const environment = sourceEnvironment(sources, clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, filename)],
+        {
+          ...compilerOptions,
+          checkJs: true,
+          incremental: false,
+          skipLibCheck: false,
+          types: [],
+        },
+        environment.host,
+      )
+      const source = program.getSourceFile(path.join(projectRoot, filename))!
+      return { sources, clients, environment, program, source }
+    }
+    function checks(result: ReturnType<typeof fixture>, message?: RegExp) {
+      if (message) {
+        expect(() => assertClientIsolation(result.environment)).toThrow(message)
+        expect(() => assertBoundary(result.sources, result.clients)).toThrow(message)
+      } else {
+        expect(() => assertClientIsolation(result.environment)).not.toThrow()
+        expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+      }
+    }
+    function clean(result: ReturnType<typeof fixture>) {
+      expect(result.program.getCompilerOptions().allowJs).toBe(true)
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+    }
+    function jsdocImports(result: ReturnType<typeof fixture>) {
+      const found: ts.Node[] = []
+      const seen = new Set<ts.Node>()
+      function typeVisitor(node: ts.Node) {
+        if (seen.has(node)) return
+        seen.add(node)
+        if (ts.isImportTypeNode(node) || ts.isJSDocImportTag(node)) found.push(node)
+        ts.forEachChild(node, typeVisitor)
+      }
+      function visit(node: ts.Node) {
+        for (const child of node.getChildren(result.source)) {
+          if (ts.isJSDoc(child)) typeVisitor(child)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(result.source)
+      expect(found.every((node) => node.getSourceFile() === result.source)).toBe(true)
+      return found
+    }
+    function typeEdge(result: ReturnType<typeof fixture>, specifier: string) {
+      expect(jsdocImports(result)).toHaveLength(1)
+      const edges = dependencies(result.source, result.program.getTypeChecker())
+      expect(edges).toHaveLength(1)
+      expect(edges[0]).toMatchObject({
+        name: specifier,
+        origin: 'jsdoc-type-import',
+        runtime: false,
+        explicitMarker: false,
+      })
+      expect(result.environment.resolve(specifier, result.source.fileName)).toBeDefined()
+    }
+
+    it('JSDOC-01 rejects the diagnostics-clean consecutive-block typedef finding', () => {
+      const result = fixture(
+        `'use client';\n/** @typedef {import('${adapter}').Product} Product */\n${product}`,
+      )
+      clean(result)
+      checks(result, rejection)
+      typeEdge(result, adapter)
+    })
+    it('JSDOC-02 rejects the diagnostics-clean consecutive-block import tag', () => {
+      const result = fixture(
+        `'use client';\n/** @import { Product } from '${adapter}' */\n${product}`,
+      )
+      clean(result)
+      checks(result, rejection)
+      typeEdge(result, adapter)
+      expect(ts.isJSDocImportTag(jsdocImports(result)[0]!)).toBe(true)
+    })
+    it.each([
+      [
+        'JSDOC-03',
+        `/** @type {import('${adapter}').Product} */ const product = { id: 'synthetic' }; export { product };`,
+      ],
+      [
+        'JSDOC-04',
+        `/** @param {import('${adapter}').Product} product */ export function observe(product) { return product.id; }`,
+      ],
+      [
+        'JSDOC-05',
+        `/** @returns {import('${adapter}').Product} */ export function observe() { return { id: 'synthetic' }; }`,
+      ],
+    ])('%s rejects compiler-recognized inline import types', (_id, annotation) => {
+      const result = fixture(`'use client';\n${annotation}`)
+      clean(result)
+      checks(result, rejection)
+      typeEdge(result, adapter)
+      expect(ts.isImportTypeNode(jsdocImports(result)[0]!)).toBe(true)
+    })
+    it('JSDOC-06 permits a diagnostics-clean harmless local type import', () => {
+      const result = fixture(
+        `'use client';\n/** @import { Product } from './__jsdoc-safe' */\n${product}`,
+        new Map([['src/__jsdoc-safe.ts', 'export type Product = { id: string };']]),
+      )
+      clean(result)
+      typeEdge(result, './__jsdoc-safe')
+      checks(result)
+      expect(assertClientIsolation(result.environment).codeEdges).toMatchObject([
+        { origin: 'jsdoc-type-import', runtime: false, explicitMarker: false },
+      ])
+    })
+    it.each([
+      ['JSDOC-07', false],
+      ['JSDOC-08', true],
+    ])('%s traverses diagnostics-clean type reexport wrappers', (_id, two) => {
+      const result = fixture(
+        `'use client';\n/** @typedef {import('./__jsdoc-wrapper').Product} Product */\n${product}`,
+        new Map([
+          [
+            'src/__jsdoc-wrapper.ts',
+            `export type { Product } from '${two ? './__jsdoc-next' : adapter}';`,
+          ],
+          ['src/__jsdoc-next.ts', `export type { Product } from '${adapter}';`],
+        ]),
+      )
+      clean(result)
+      typeEdge(result, './__jsdoc-wrapper')
+      checks(result, rejection)
+    })
+    it('JSDOC-09 reuses canonical project alias resolution', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('@/__jsdoc-wrapper').Product} */ export const product = { id: 'synthetic' };`,
+        new Map([['src/__jsdoc-wrapper.ts', `export type { Product } from '${adapter}';`]]),
+      )
+      clean(result)
+      typeEdge(result, '@/__jsdoc-wrapper')
+      expect(result.environment.resolve('@/__jsdoc-wrapper', result.source.fileName)).toBe(
+        path.join(projectRoot, 'src/__jsdoc-wrapper.ts'),
+      )
+      checks(result, rejection)
+    })
+    it('JSDOC-10 reuses canonical relative adapter resolution', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('./modules/nuvemshop').Product} */ export const product = { id: 'synthetic' };`,
+      )
+      clean(result)
+      typeEdge(result, './modules/nuvemshop')
+      checks(result, rejection)
+    })
+    it('JSDOC-11 fails closed for a missing local type import with expected diagnostic', () => {
+      const result = fixture(
+        "'use client';\n/** @type {import('./__jsdoc-missing').Product} */ export const product = { id: 'synthetic' };",
+      )
+      expect(ts.getPreEmitDiagnostics(result.program).map((diagnostic) => diagnostic.code)).toEqual(
+        [2307],
+      )
+      expect(jsdocImports(result)).toHaveLength(1)
+      expect(
+        result.environment.resolve('./__jsdoc-missing', result.source.fileName),
+      ).toBeUndefined()
+      checks(result, /unresolved project-local dependency/)
+    })
+    it('JSDOC-12 ignores prose import text and harmless runtime-capability type names', () => {
+      const result = fixture(
+        `'use client';\n/** Prose import('${adapter}').Product, require, module, globalThis, global, process. */\nexport const product = { id: 'synthetic' };`,
+      )
+      clean(result)
+      expect(jsdocImports(result)).toEqual([])
+      expect(dependencies(result.source, result.program.getTypeChecker())).toEqual([])
+      checks(result)
+    })
+    it.each([
+      [
+        'JSDOC-13-ROOT',
+        'index.ts',
+        `import 'server-only';\n/** @typedef {import('./server').Product} Product */ export const guarded = true;`,
+        /root must depend on server at runtime/,
+      ],
+      [
+        'JSDOC-13-MARKER',
+        'server/index.ts',
+        `/** @import {} from 'server-only' */ export const guarded = true;`,
+        /server\/index.ts must explicitly protect itself/,
+      ],
+      [
+        'JSDOC-13-GUARDED',
+        'contract.js',
+        `/** @typedef {import('./server').Product} Product */\n/** @type {Product} */ export const contract = { id: 'synthetic' };`,
+        /contracts and secrets must remain server-only/,
+      ],
+    ])('%s cannot use JSDoc imports as a runtime guard', (_id, filename, text, message) => {
+      const result = fixture('export {};')
+      result.sources.set(filename, text)
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [...environment.files.keys()],
+        { ...compilerOptions, checkJs: true, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(() => assertBoundary(result.sources, result.clients)).toThrow(message)
+      const source = program.getSourceFile(path.join(moduleRoot, filename))!
+      const edges = dependencies(source, program.getTypeChecker()).filter(
+        (edge) => edge.origin === 'jsdoc-type-import',
+      )
+      expect(edges).toHaveLength(1)
+      expect(edges[0]).toMatchObject({ runtime: false, explicitMarker: false })
+    })
+    it.each([
+      ['JSDOC-14', false],
+      ['JSDOC-15', true],
+    ])('%s terminates a diagnostics-clean type cycle', (_id, adapterReached) => {
+      const result = fixture(
+        `'use client';\n/** @import { Product } from './__jsdoc-cycle-a' */\n${product}`,
+        new Map([
+          [
+            'src/__jsdoc-cycle-a.ts',
+            `export type { Other } from './__jsdoc-cycle-b'; ${adapterReached ? `export type { Product } from '${adapter}';` : 'export type Product = { id: string };'}`,
+          ],
+          [
+            'src/__jsdoc-cycle-b.ts',
+            "export type { Product } from './__jsdoc-cycle-a'; export type Other = { label: string };",
+          ],
+        ]),
+      )
+      clean(result)
+      typeEdge(result, './__jsdoc-cycle-a')
+      checks(result, adapterReached ? rejection : undefined)
+    })
+    it('JSDOC-16 rejects diagnostics-clean JSX with consecutive JSDoc blocks', () => {
+      const result = fixture(
+        `'use client';\n/** @import { Product } from '${adapter}' */\n${product}\nexport default function Component() { return <div>{product.id}</div>; }`,
+        new Map(),
+        'src/__jsdoc-client.jsx',
+      )
+      clean(result)
+      expect(result.source.fileName.endsWith('.jsx')).toBe(true)
+      typeEdge(result, adapter)
+      checks(result, rejection)
+    })
+  })
+
   describe('triple-slash local types dependency matrix', () => {
     const clientName = 'src/__b-types-client.ts'
     const wrapperName = 'src/__b-types-wrapper.d.ts'
@@ -1098,10 +1404,7 @@ declare global { namespace BNamespace { type Contract = BContract; } } export {}
       assertRealChecks(result)
     })
 
-    it.each([
-      ['TSTYPES-07', 'types', 'node'],
-      ['TSTYPES-08', 'lib', 'es2020.string'],
-    ])('%s preserves the separate %s package/library channel', (_id, channel, name) => {
+    function preservesSeparatePackageLibraryChannel(_id: string, channel: string, name: string) {
       const result = fixture()
       result.clients.set(
         clientName,
@@ -1116,7 +1419,16 @@ declare global { namespace BNamespace { type Contract = BContract; } } export {}
       expect(dependencies(source, current.program.getTypeChecker())).toEqual([])
       expect(assertClientIsolation(current.environment).codeEdges).toEqual([])
       assertRealChecks(current)
-    })
+    }
+
+    it('TSTYPES-07 preserves the separate types package/library channel', { timeout: 12000 }, () =>
+      preservesSeparatePackageLibraryChannel('TSTYPES-07', 'types', 'node'),
+    )
+
+    it.each([['TSTYPES-08', 'lib', 'es2020.string']])(
+      '%s preserves the separate %s package/library channel',
+      preservesSeparatePackageLibraryChannel,
+    )
 
     it.each([
       [
@@ -1570,10 +1882,7 @@ export {};`,
       expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
     })
 
-    it.each([
-      ['TSREF-08', 'lib', 'es2020.string'],
-      ['TSREF-09', 'types', 'node'],
-    ])('%s keeps other directive channels separate', (_id, channel, name) => {
+    function keepsOtherDirectiveChannelsSeparate(_id: string, channel: string, name: string) {
       const result = fixture()
       result.clients.set(
         clientName,
@@ -1595,7 +1904,16 @@ export {};`,
       expect(dependencies(source, program.getTypeChecker())).toEqual([])
       expect(assertClientIsolation(environment).codeEdges).toEqual([])
       expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
-    })
+    }
+
+    it.each([['TSREF-08', 'lib', 'es2020.string']])(
+      '%s keeps other directive channels separate',
+      keepsOtherDirectiveChannelsSeparate,
+    )
+
+    it('TSREF-09 keeps other directive channels separate', { timeout: 10000 }, () =>
+      keepsOtherDirectiveChannelsSeparate('TSREF-09', 'types', 'node'),
+    )
 
     it.each([
       [
