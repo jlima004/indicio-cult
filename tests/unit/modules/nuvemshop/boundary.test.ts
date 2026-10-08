@@ -10,6 +10,11 @@ const entrypoints = ['index.ts', 'server/index.ts'] as const
 const publicEntry = '@/modules/nuvemshop'
 const serverEntry = '@/modules/nuvemshop/server'
 type Sources = Map<string, string>
+type ReferenceOrigin = 'triple-slash-path' | 'triple-slash-types-local'
+
+function explicitLocalTypeReference(name: string) {
+  return ts.isExternalModuleNameRelative(name)
+}
 
 function readSources(root = moduleRoot): Sources {
   return new Map(
@@ -250,12 +255,34 @@ function dependencies(parsed: ts.SourceFile, checker?: ts.TypeChecker) {
     runtime: boolean
     explicitMarker: boolean
     node: ts.Node
+    origin?: ReferenceOrigin
+    resolutionMode?: ts.ResolutionMode
     unproven?: boolean
     unsupportedCapability?: boolean
     moduleCapability?: 'module.require' | 'module'
     globalCapability?: string
     globalRootCapability?: 'WHOLE_ROOT_ESCAPE' | 'COMPUTED_GLOBAL_PROPERTY'
   }[] = []
+  for (const reference of parsed.referencedFiles) {
+    result.push({
+      name: reference.fileName,
+      runtime: false,
+      explicitMarker: false,
+      origin: 'triple-slash-path',
+      node: parsed,
+    })
+  }
+  for (const reference of parsed.typeReferenceDirectives) {
+    if (!explicitLocalTypeReference(reference.fileName)) continue
+    result.push({
+      name: reference.fileName,
+      runtime: false,
+      explicitMarker: false,
+      origin: 'triple-slash-types-local',
+      resolutionMode: ts.getModeForFileReference(reference, parsed.impliedNodeFormat),
+      node: parsed,
+    })
+  }
   function visit(node: ts.Node) {
     let specifier: ts.Node | undefined
     let runtime = false
@@ -446,8 +473,67 @@ function sourceEnvironment(sources: Sources, clients: Sources) {
   }
   const resolve = (name: string, filename: string) =>
     ts.resolveModuleName(name, filename, compilerOptions, host).resolvedModule?.resolvedFileName
-  const internalTarget = (name: string, filename: string) => {
-    const resolved = resolve(name, path.resolve(moduleRoot, filename))
+  // Public triple-slash normalization is distinct from module resolution.
+  // Exact project code paths only: no extension probing, package/type lookup,
+  // or assets. The authoritative overlay and compiler must recognize the target.
+  const resolveReferencePath = (name: string, filename: string) => {
+    const target = host.getCanonicalFileName(ts.resolveTripleslashReference(name, filename))
+    return projectSource(target) &&
+      /\.[cm]?[jt]sx?$/.test(target) &&
+      host.fileExists(target) &&
+      program().getSourceFile(target)
+      ? target
+      : undefined
+  }
+  // Explicit local type directives use their own public compiler resolver.
+  // Keep packages/lib outside this grammar and reuse canonical project identity.
+  const resolveReferenceTypesLocal = (
+    name: string,
+    filename: string,
+    resolutionMode?: ts.ResolutionMode,
+  ) => {
+    if (!explicitLocalTypeReference(name)) return undefined
+    const resolved = ts.resolveTypeReferenceDirective(
+      name,
+      filename,
+      compilerOptions,
+      host,
+      undefined,
+      undefined,
+      resolutionMode,
+    ).resolvedTypeReferenceDirective
+    if (!resolved?.resolvedFileName || resolved.isExternalLibraryImport) return undefined
+    const target = host.getCanonicalFileName(resolved.resolvedFileName)
+    return projectSource(target) &&
+      /\.[cm]?[jt]sx?$/.test(target) &&
+      host.fileExists(target) &&
+      program().getSourceFile(target)
+      ? target
+      : undefined
+  }
+  const resolveDependency = (
+    name: string,
+    filename: string,
+    origin?: ReferenceOrigin,
+    resolutionMode?: ts.ResolutionMode,
+  ) =>
+    origin === 'triple-slash-path'
+      ? resolveReferencePath(name, filename)
+      : origin === 'triple-slash-types-local'
+        ? resolveReferenceTypesLocal(name, filename, resolutionMode)
+        : resolve(name, filename)
+  const internalTarget = (
+    name: string,
+    filename: string,
+    origin?: ReferenceOrigin,
+    resolutionMode?: ts.ResolutionMode,
+  ) => {
+    const resolved = resolveDependency(
+      name,
+      path.resolve(moduleRoot, filename),
+      origin,
+      resolutionMode,
+    )
     return resolved && inModule(resolved) ? path.relative(moduleRoot, resolved) : undefined
   }
   // Reuse one checker-owned AST environment for graph binding classification.
@@ -460,7 +546,17 @@ function sourceEnvironment(sources: Sources, clients: Sources) {
       { ...compilerOptions, types: [], noLib: true },
       host,
     ))
-  return { files, host, inModule, resolve, internalTarget, program }
+  return {
+    files,
+    host,
+    inModule,
+    resolve,
+    resolveReferencePath,
+    resolveReferenceTypesLocal,
+    resolveDependency,
+    internalTarget,
+    program,
+  }
 }
 
 function projectSource(filename: string) {
@@ -519,7 +615,7 @@ function resolveCssAsset(
 // No alias/data-flow, general global/property/reflection completeness, package-internal
 // traversal or TypeScript shape proof is attempted.
 function assertClientIsolation(environment: ReturnType<typeof sourceEnvironment>) {
-  const { files, host, inModule, resolve } = environment
+  const { files, host, inModule, resolveDependency } = environment
   const localSpecifier = (name: string) =>
     name.startsWith('.') ||
     path.isAbsolute(name) ||
@@ -531,7 +627,14 @@ function assertClientIsolation(environment: ReturnType<typeof sourceEnvironment>
     })
   const inventory = {
     clientRoots: [] as string[],
-    codeEdges: [] as { importer: string; name: string; target: string }[],
+    codeEdges: [] as {
+      importer: string
+      name: string
+      target: string
+      origin?: ReferenceOrigin
+      runtime?: false
+      explicitMarker?: false
+    }[],
     terminalCssEdges: [] as { importer: string; name: string; target: string }[],
   }
   const parsed = new Map<string, ts.SourceFile>()
@@ -553,6 +656,8 @@ function assertClientIsolation(environment: ReturnType<typeof sourceEnvironment>
     expect(source, `${filename}: unreadable project dependency`).toBeDefined()
     for (const {
       name,
+      origin,
+      resolutionMode,
       unproven,
       unsupportedCapability,
       moduleCapability,
@@ -563,8 +668,20 @@ function assertClientIsolation(environment: ReturnType<typeof sourceEnvironment>
         unproven,
         `${filename}: ${globalRootCapability === 'WHOLE_ROOT_ESCAPE' ? 'unsupported whole-global capability escape' : globalRootCapability === 'COMPUTED_GLOBAL_PROPERTY' ? 'unproven global property' : globalCapability ? `unsupported ${globalCapability} capability reference` : moduleCapability ? `unsupported ${moduleCapability} capability reference` : unsupportedCapability ? 'unsupported require capability reference' : 'unproven computed client dependency'}`,
       ).not.toBe(true)
-      const target = resolve(name, filename)
-      if (!target && name.endsWith('.css')) {
+      const target = resolveDependency(name, filename, origin, resolutionMode)
+      if (origin === 'triple-slash-path') {
+        expect(
+          target,
+          `${filename}: unresolved or unsupported project-local triple-slash path ${name}`,
+        ).toBeDefined()
+      }
+      if (origin === 'triple-slash-types-local') {
+        expect(
+          target,
+          `${filename}: UNRESOLVED PROJECT-LOCAL TRIPLE-SLASH TYPES ${name}`,
+        ).toBeDefined()
+      }
+      if (!origin && !target && name.endsWith('.css')) {
         const asset = resolveCssAsset(name, filename, host)
         expect(asset.ambiguous, `${filename}: ambiguous CSS asset ${name}`).toBe(false)
         expect(
@@ -574,7 +691,13 @@ function assertClientIsolation(environment: ReturnType<typeof sourceEnvironment>
         inventory.terminalCssEdges.push({ importer: filename, name, target: asset.target! })
         continue
       }
-      if (target) inventory.codeEdges.push({ importer: filename, name, target })
+      if (target)
+        inventory.codeEdges.push({
+          importer: filename,
+          name,
+          target,
+          ...(origin ? { origin, runtime: false as const, explicitMarker: false as const } : {}),
+        })
       if (localSpecifier(name))
         expect(target, `${filename}: unresolved project-local dependency ${name}`).toBeDefined()
       expect(
@@ -718,7 +841,8 @@ function assertBoundary(sources: Sources, clients: Sources = new Map()) {
     imports
       .get('index.ts')
       ?.some(
-        ({ name, runtime }) => runtime && internalTarget(name, 'index.ts') === 'server/index.ts',
+        ({ name, runtime, origin, resolutionMode }) =>
+          runtime && internalTarget(name, 'index.ts', origin, resolutionMode) === 'server/index.ts',
       ),
     'root must depend on server at runtime',
   ).toBe(true)
@@ -728,30 +852,47 @@ function assertBoundary(sources: Sources, clients: Sources = new Map()) {
     if (visited.has(filename)) return false
     visited.add(filename)
     return (
-      imports.get(filename)?.some(({ name, runtime }) => {
-        const target = internalTarget(name, filename)
+      imports.get(filename)?.some(({ name, runtime, origin, resolutionMode }) => {
+        const target = internalTarget(name, filename, origin, resolutionMode)
         return runtime && target !== undefined && isGuarded(target, new Set(visited))
       }) ?? false
     )
   }
 
   for (const [filename, source] of parsed) {
-    for (const { name } of imports.get(filename) ?? []) {
+    for (const { name, origin, resolutionMode } of imports.get(filename) ?? []) {
       expect(
         /^(?:next\/cache|react(?:-dom)?(?:\/|$)|zustand(?:\/|$)|client-only$)/.test(name),
         `${filename}: forbidden client/cache dependency ${name}`,
       ).toBe(false)
-      const resolved = name.startsWith('.')
-        ? path.resolve(moduleRoot, path.dirname(filename), name)
-        : name
+      const referenceTarget = origin
+        ? environment.resolveDependency(
+            name,
+            path.resolve(moduleRoot, filename),
+            origin,
+            resolutionMode,
+          )
+        : undefined
+      if (origin === 'triple-slash-types-local') {
+        expect(
+          referenceTarget,
+          `${filename}: UNRESOLVED PROJECT-LOCAL TRIPLE-SLASH TYPES ${name}`,
+        ).toBeDefined()
+      }
+      const resolved = origin
+        ? (referenceTarget ?? name)
+        : name.startsWith('.')
+          ? path.resolve(moduleRoot, path.dirname(filename), name)
+          : name
       expect(
         /(?:^|\/)modules\/(?:orders|cart|catalog)(?:\/|$)/.test(resolved),
         `${filename}: consumer dependency ${name}`,
       ).toBe(false)
       if (filename.startsWith('server/')) {
-        expect(internalTarget(name, filename), 'server must not depend on root').not.toBe(
-          'index.ts',
-        )
+        expect(
+          internalTarget(name, filename, origin, resolutionMode),
+          'server must not depend on root',
+        ).not.toBe('index.ts')
       }
     }
     let exportsContract = false
@@ -803,6 +944,790 @@ afterEach(() => {
 })
 
 describe('Nuvemshop server-only boundary', () => {
+  describe('triple-slash local types dependency matrix', () => {
+    const clientName = 'src/__b-types-client.ts'
+    const wrapperName = 'src/__b-types-wrapper.d.ts'
+    const rejection = /client runtime\/type dependency reaches adapter/
+    const unresolved = /UNRESOLVED PROJECT-LOCAL TRIPLE-SLASH TYPES/
+    const globalWrapper = `import type { BContract } from '@/modules/nuvemshop/__b-types-contract';
+declare global { type BGlobal = BContract; } export {};`
+    function fixture(
+      reference = './__b-types-wrapper.d.ts',
+      wrapper = 'export {};',
+      additions: Sources = new Map(),
+      client = `'use client'; export {};`,
+    ) {
+      const sources = readSources()
+      sources.set(
+        '__b-types-contract.ts',
+        "import 'server-only'; export type BContract = { id: string };",
+      )
+      const clients = new Map([
+        [clientName, `/// <reference types="${reference}" />\n${client}`],
+        [wrapperName, wrapper],
+        ...additions,
+      ])
+      return compile(sources, clients)
+    }
+    function compile(
+      sources: Sources,
+      clients: Sources,
+      roots = [path.join(projectRoot, clientName)],
+    ) {
+      const environment = sourceEnvironment(sources, clients)
+      const program = ts.createProgram(
+        roots,
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      return { sources, clients, environment, program }
+    }
+    function assertRealChecks(result: ReturnType<typeof fixture>, message?: RegExp) {
+      if (message) {
+        expect(() => assertClientIsolation(result.environment)).toThrow(message)
+        expect(() => assertBoundary(result.sources, result.clients)).toThrow(message)
+      } else {
+        expect(() => assertClientIsolation(result.environment)).not.toThrow()
+        expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+      }
+    }
+    function clean(result: ReturnType<typeof fixture>) {
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+    }
+
+    it('TSTYPES-01 rejects the diagnostics-clean original global-contract finding', () => {
+      const result = fixture(
+        './__b-types-wrapper.d.ts',
+        globalWrapper,
+        new Map(),
+        "'use client'; export const observed: BGlobal = { id: 'synthetic' };",
+      )
+      clean(result)
+      const source = result.program.getSourceFile(path.join(projectRoot, clientName))!
+      expect(source.referencedFiles).toEqual([])
+      expect(source.typeReferenceDirectives.map((reference) => reference.fileName)).toEqual([
+        './__b-types-wrapper.d.ts',
+      ])
+      expect(result.program.getSourceFile(path.join(projectRoot, wrapperName))).toBeDefined()
+      expect(
+        result.program.getSourceFile(path.join(moduleRoot, '__b-types-contract.ts')),
+      ).toBeDefined()
+      assertRealChecks(result, rejection)
+      expect(dependencies(source, result.program.getTypeChecker())).toMatchObject([
+        {
+          name: './__b-types-wrapper.d.ts',
+          origin: 'triple-slash-types-local',
+          runtime: false,
+          explicitMarker: false,
+        },
+      ])
+    })
+
+    it('TSTYPES-02 traverses two diagnostics-clean declaration wrappers', () => {
+      const result = fixture(
+        './__b-types-wrapper.d.ts',
+        '/// <reference types="./__b-types-second.d.ts" />\nexport {};',
+        new Map([
+          [
+            'src/__b-types-second.d.ts',
+            "export type { BContract } from '@/modules/nuvemshop/__b-types-contract';",
+          ],
+        ]),
+      )
+      clean(result)
+      expect(
+        result.program.getSourceFile(path.join(projectRoot, 'src/__b-types-second.d.ts')),
+      ).toBeDefined()
+      assertRealChecks(result, rejection)
+    })
+
+    it('TSTYPES-03 permits a diagnostics-clean harmless wrapper with a type-only edge', () => {
+      const result = fixture()
+      clean(result)
+      assertRealChecks(result)
+      expect(assertClientIsolation(result.environment).codeEdges).toEqual([
+        {
+          importer: path.join(projectRoot, clientName),
+          name: './__b-types-wrapper.d.ts',
+          target: path.join(projectRoot, wrapperName),
+          origin: 'triple-slash-types-local',
+          runtime: false,
+          explicitMarker: false,
+        },
+      ])
+    })
+
+    it('TSTYPES-04 fails closed for missing local types with expected compiler diagnostics', () => {
+      const result = fixture('./__b-types-missing.d.ts')
+      expect(ts.getPreEmitDiagnostics(result.program).map((diagnostic) => diagnostic.code)).toEqual(
+        [2688],
+      )
+      assertRealChecks(result, unresolved)
+    })
+
+    it('TSTYPES-05 rejects diagnostics-clean declare-global namespace ownership', () => {
+      const result = fixture(
+        './__b-types-wrapper.d.ts',
+        `import type { BContract } from '@/modules/nuvemshop/__b-types-contract';
+declare global { namespace BNamespace { type Contract = BContract; } } export {};`,
+        new Map(),
+        "'use client'; export const observed: BNamespace.Contract = { id: 'synthetic' };",
+      )
+      clean(result)
+      assertRealChecks(result, rejection)
+    })
+
+    it.each([
+      '.\\__b-types-wrapper.d.ts',
+      './nested/../__b-types-wrapper.d.ts',
+      '../src/__b-types-wrapper.d.ts',
+      path.join(projectRoot, wrapperName),
+    ])('TSTYPES-06 canonicalizes effective local filename %s', (reference) => {
+      const result = fixture(reference)
+      clean(result)
+      const target = result.environment.resolveDependency(
+        reference,
+        path.join(projectRoot, clientName),
+        'triple-slash-types-local',
+      )
+      expect(target).toBe(path.join(projectRoot, wrapperName))
+      expect(result.program.getSourceFile(target!)?.fileName).toBe(target)
+      expect(
+        assertClientIsolation(result.environment).codeEdges.map((edge) => edge.target),
+      ).toEqual([target])
+      assertRealChecks(result)
+    })
+
+    it.each([
+      ['TSTYPES-07', 'types', 'node'],
+      ['TSTYPES-08', 'lib', 'es2020.string'],
+    ])('%s preserves the separate %s package/library channel', (_id, channel, name) => {
+      const result = fixture()
+      result.clients.set(
+        clientName,
+        `/// <reference ${channel}="${name}" />\n'use client'; export {};`,
+      )
+      const current = compile(result.sources, result.clients)
+      clean(current)
+      const source = current.program.getSourceFile(path.join(projectRoot, clientName))!
+      expect(
+        channel === 'types' ? source.typeReferenceDirectives : source.libReferenceDirectives,
+      ).toHaveLength(1)
+      expect(dependencies(source, current.program.getTypeChecker())).toEqual([])
+      expect(assertClientIsolation(current.environment).codeEdges).toEqual([])
+      assertRealChecks(current)
+    })
+
+    it.each([
+      [
+        'TSTYPES-09-ROOT',
+        'index.ts',
+        '/// <reference types="./server/__b-types-guard.d.ts" />\nimport "server-only"; export {};',
+        /root must depend on server at runtime/,
+      ],
+      [
+        'TSTYPES-09-MARKER',
+        'index.ts',
+        '/// <reference types="./__b-types-marker.d.ts" />\nexport * from "./server";',
+        /index.ts must explicitly protect itself/,
+      ],
+      [
+        'TSTYPES-15',
+        '__b-types-unguarded.d.ts',
+        '/// <reference types="./server/__b-types-guard.d.ts" />\nexport type UnguardedContract = { id: string };',
+        /contracts and secrets must remain server-only/,
+      ],
+    ])(
+      '%s cannot fabricate runtime or explicit-marker protection',
+      (_id, filename, source, message) => {
+        const sources = readSources()
+        sources.set('server/__b-types-guard.d.ts', "import 'server-only'; export {};")
+        sources.set('__b-types-marker.d.ts', "import 'server-only'; export {};")
+        sources.set(filename as string, source as string)
+        const result = compile(sources, new Map(), [
+          ...sourceEnvironment(sources, new Map()).files.keys(),
+        ])
+        clean(result)
+        const parsed = result.program.getSourceFile(path.join(moduleRoot, filename as string))!
+        const edge = dependencies(parsed, result.program.getTypeChecker()).find(
+          (dependency) => dependency.origin === 'triple-slash-types-local',
+        )!
+        expect(edge).toMatchObject({ runtime: false, explicitMarker: false })
+        expect(
+          result.environment.internalTarget(
+            edge.name,
+            filename as string,
+            edge.origin,
+            edge.resolutionMode,
+          ),
+        ).toBe(
+          _id === 'TSTYPES-09-MARKER' ? '__b-types-marker.d.ts' : 'server/__b-types-guard.d.ts',
+        )
+        expect(() => assertBoundary(sources)).toThrow(message as RegExp)
+      },
+    )
+
+    it.each([
+      ['TSTYPES-10', false],
+      ['TSTYPES-11', true],
+    ] as const)(
+      '%s terminates diagnostics-clean declaration cycles (adapter branch: %s)',
+      (_id, adapter) => {
+        const result = fixture(
+          './__b-types-wrapper.d.ts',
+          '/// <reference types="./__b-types-second.d.ts" />\nexport {};',
+          new Map([
+            [
+              'src/__b-types-second.d.ts',
+              `/// <reference types="./__b-types-wrapper.d.ts" />\n${adapter ? "export type { BContract } from '@/modules/nuvemshop/__b-types-contract';" : 'export {};'} `,
+            ],
+          ]),
+        )
+        clean(result)
+        assertRealChecks(result, adapter ? rejection : undefined)
+        if (!adapter) expect(assertClientIsolation(result.environment).codeEdges).toHaveLength(3)
+      },
+    )
+
+    it.each([
+      ['path', 'types'],
+      ['types', 'path'],
+    ])('TSTYPES-12 traverses diagnostics-clean combined %s then %s channels', (first, second) => {
+      const result = fixture(
+        './__b-types-wrapper.d.ts',
+        `/// <reference ${second}="./__b-types-second.d.ts" />\nexport {};`,
+        new Map([['src/__b-types-second.d.ts', globalWrapper]]),
+      )
+      result.clients.set(
+        clientName,
+        `/// <reference ${first}="./__b-types-wrapper.d.ts" />\n'use client'; export const observed: BGlobal = { id: 'synthetic' };`,
+      )
+      const current = compile(result.sources, result.clients)
+      clean(current)
+      assertRealChecks(current, rejection)
+    })
+
+    it('TSTYPES-13 rejects diagnostics-clean direct adapter declaration reference', () => {
+      const result = fixture('./modules/nuvemshop/__b-types-direct.d.ts')
+      result.sources.set(
+        '__b-types-direct.d.ts',
+        "import 'server-only'; export type BDirect = { id: string };",
+      )
+      const current = compile(result.sources, result.clients)
+      clean(current)
+      expect(
+        current.program.getSourceFile(path.join(moduleRoot, '__b-types-direct.d.ts')),
+      ).toBeDefined()
+      assertRealChecks(current, rejection)
+    })
+
+    it('TSTYPES-14 permits diagnostics-clean ordinary sources without references', () => {
+      const result = fixture()
+      result.clients.set(clientName, "'use client'; export const id = 'safe';")
+      const current = compile(result.sources, result.clients)
+      clean(current)
+      expect(
+        dependencies(
+          current.program.getSourceFile(path.join(projectRoot, clientName))!,
+          current.program.getTypeChecker(),
+        ),
+      ).toEqual([])
+      expect(assertClientIsolation(current.environment).codeEdges).toEqual([])
+      assertRealChecks(current)
+    })
+
+    it.each(['.d.mts', '.d.cts'])(
+      'TSTYPES-EXT allows effective diagnostics-clean local %s declarations',
+      (extension) => {
+        const name = `src/__b-types-extension${extension}`
+        const result = fixture(
+          `./__b-types-extension${extension}`,
+          'export {};',
+          new Map([[name, 'export {};']]),
+        )
+        clean(result)
+        expect(result.program.getSourceFile(path.join(projectRoot, name))).toBeDefined()
+        const edges = assertClientIsolation(result.environment).codeEdges
+        expect(edges).toHaveLength(1)
+        expect(edges[0]!.target).toBe(path.join(projectRoot, name))
+        assertRealChecks(result)
+      },
+    )
+
+    it.each(['.d.mts', '.d.cts'])(
+      'TSTYPES-EXT rejects diagnostics-clean adapter ownership through local %s declarations',
+      (extension) => {
+        const name = `src/__b-types-extension${extension}`
+        const result = fixture(
+          `./__b-types-extension${extension}`,
+          'export {};',
+          new Map([[name, globalWrapper]]),
+          "'use client'; export const observed: BGlobal = { id: 'synthetic' };",
+        )
+        clean(result)
+        expect(result.program.getSourceFile(path.join(projectRoot, name))).toBeDefined()
+        assertRealChecks(result, rejection)
+      },
+    )
+
+    it.each(['import', 'require'] as const)(
+      'TSTYPES-MODE preserves public directive resolution-mode=%s',
+      (mode) => {
+        const result = fixture()
+        result.clients.set(
+          clientName,
+          `/// <reference types="./__b-types-wrapper.d.ts" resolution-mode="${mode}" />\n'use client'; export {};`,
+        )
+        const current = compile(result.sources, result.clients)
+        clean(current)
+        const source = current.program.getSourceFile(path.join(projectRoot, clientName))!
+        const edges = dependencies(source, current.program.getTypeChecker())
+        expect(edges).toHaveLength(1)
+        const edge = edges[0]!
+        expect(edge.resolutionMode).toBe(
+          mode === 'import' ? ts.ModuleKind.ESNext : ts.ModuleKind.CommonJS,
+        )
+        expect(
+          current.environment.resolveDependency(
+            edge.name,
+            source.fileName,
+            edge.origin,
+            edge.resolutionMode,
+          ),
+        ).toBe(path.join(projectRoot, wrapperName))
+        assertRealChecks(current)
+      },
+    )
+
+    it.each([
+      './__b-types-wrapper.d.ts?raw',
+      './__b-types-wrapper.css',
+      '../node_modules/typescript/lib/typescript.d.ts',
+      '/tmp/__b-types-external.d.ts',
+    ])('TSTYPES-BOUNDED fails closed for unsupported explicit-local %s', (reference) => {
+      const result = fixture(reference)
+      // Policy-only controls: compiler diagnostics vary by unsupported target.
+      expect(
+        result.environment.resolveDependency(
+          reference,
+          path.join(projectRoot, clientName),
+          'triple-slash-types-local',
+        ),
+      ).toBeUndefined()
+      assertRealChecks(result, unresolved)
+    })
+
+    it('TSTYPES-LOCAL-SEPARATOR rejects diagnostics-clean Windows-relative wrapper ownership', () => {
+      const result = fixture(
+        '.\\__b-types-wrapper.d.ts',
+        globalWrapper,
+        new Map(),
+        "'use client'; export const observed: BGlobal = { id: 'synthetic' };",
+      )
+      clean(result)
+      expect(result.program.getSourceFile(path.join(projectRoot, wrapperName))).toBeDefined()
+      assertRealChecks(result, rejection)
+    })
+
+    it('TSTYPES-CONSUMER rejects diagnostics-clean adapter-local types reaching a consumer module', () => {
+      const sources = readSources()
+      sources.set(
+        '__b-types-consumer.d.ts',
+        '/// <reference types="../catalog/__b-types-consumer.d.ts" />\nimport "server-only"; export {};',
+      )
+      const clients = new Map([['src/modules/catalog/__b-types-consumer.d.ts', 'export {};']])
+      const result = compile(sources, clients, [
+        ...sourceEnvironment(sources, clients).files.keys(),
+      ])
+      clean(result)
+      expect(
+        result.environment.internalTarget(
+          '../catalog/__b-types-consumer.d.ts',
+          '__b-types-consumer.d.ts',
+          'triple-slash-types-local',
+        ),
+      ).toBeUndefined()
+      expect(
+        result.environment.resolveDependency(
+          '../catalog/__b-types-consumer.d.ts',
+          path.join(moduleRoot, '__b-types-consumer.d.ts'),
+          'triple-slash-types-local',
+        ),
+      ).toBe(path.join(projectRoot, 'src/modules/catalog/__b-types-consumer.d.ts'))
+      expect(() => assertBoundary(sources, clients)).toThrow(/consumer dependency/)
+    })
+
+    it('TSTYPES-ADAPTER-MISSING fails closed for missing adapter-local declarations', () => {
+      const sources = readSources()
+      sources.set(
+        '__b-types-missing-source.d.ts',
+        '/// <reference types="./__b-types-missing.d.ts" />\nimport "server-only"; export {};',
+      )
+      const result = compile(sources, new Map(), [
+        ...sourceEnvironment(sources, new Map()).files.keys(),
+      ])
+      expect(ts.getPreEmitDiagnostics(result.program).map((diagnostic) => diagnostic.code)).toEqual(
+        [2688],
+      )
+      expect(() => assertBoundary(sources)).toThrow(unresolved)
+    })
+  })
+
+  it('TSREF-01 rejects diagnostics-clean triple-slash declaration wrapper ownership', () => {
+    const sources = readSources()
+    sources.set(
+      '__tsref-contracts.ts',
+      "import 'server-only'; export type FixtureContract = { id: string };",
+    )
+    const name = 'src/__tsref-client.ts'
+    const clients = new Map([
+      [
+        name,
+        `/// <reference path="./__tsref-globals.d.ts" />
+'use client'; export const observed: FixtureGlobal = { id: 'synthetic' };`,
+      ],
+      [
+        'src/__tsref-globals.d.ts',
+        `import type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';
+declare global { type FixtureGlobal = FixtureContract; }
+export {};`,
+      ],
+    ])
+    const environment = sourceEnvironment(sources, clients)
+    const program = ts.createProgram(
+      [path.join(projectRoot, name)],
+      { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+      environment.host,
+    )
+    expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+    const source = program.getSourceFile(path.join(projectRoot, name))!
+    expect(source.referencedFiles.map((reference) => reference.fileName)).toEqual([
+      './__tsref-globals.d.ts',
+    ])
+    expect(program.getSourceFile(path.join(projectRoot, 'src/__tsref-globals.d.ts'))).toBeDefined()
+    expect(dependencies(source, program.getTypeChecker())).toEqual([
+      {
+        name: './__tsref-globals.d.ts',
+        runtime: false,
+        explicitMarker: false,
+        origin: 'triple-slash-path',
+        node: source,
+      },
+    ])
+    expect(() => assertClientIsolation(environment)).toThrow(
+      /client runtime\/type dependency reaches adapter/,
+    )
+    expect(() => assertBoundary(sources, clients)).toThrow(
+      /client runtime\/type dependency reaches adapter/,
+    )
+  })
+
+  describe('triple-slash path dependency matrix', () => {
+    const clientName = 'src/__tsref-client.ts'
+    const wrapperName = 'src/__tsref-wrapper.d.ts'
+    const rejection = /client runtime\/type dependency reaches adapter/
+    const unresolved = /unresolved or unsupported project-local triple-slash path/
+    function fixture(reference = './__tsref-wrapper.d.ts', wrapper = 'export {};') {
+      const sources = readSources()
+      sources.set(
+        '__tsref-contracts.ts',
+        "import 'server-only'; export type FixtureContract = { id: string };",
+      )
+      const clients = new Map([
+        [
+          clientName,
+          `/// <reference path="${reference}" />
+'use client'; export {};`,
+        ],
+        [wrapperName, wrapper],
+      ])
+      const environment = sourceEnvironment(sources, clients)
+      // Only the client is a root: wrapper inclusion must come from its reference.
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      return { sources, clients, environment, program }
+    }
+    function assertRealChecks(result: ReturnType<typeof fixture>, message?: RegExp) {
+      const source = result.program.getSourceFile(path.join(projectRoot, clientName))!
+      const edges = dependencies(source, result.program.getTypeChecker())
+      expect(edges.filter((edge) => edge.origin === 'triple-slash-path')).toHaveLength(1)
+      expect(edges[0]).toMatchObject({
+        runtime: false,
+        explicitMarker: false,
+        origin: 'triple-slash-path',
+      })
+      if (message) {
+        expect(() => assertClientIsolation(result.environment)).toThrow(message)
+        expect(() => assertBoundary(result.sources, result.clients)).toThrow(message)
+      } else {
+        expect(() => assertClientIsolation(result.environment)).not.toThrow()
+        expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+      }
+    }
+
+    it('TSREF-02 traverses two diagnostics-clean declaration wrappers', () => {
+      const result = fixture(
+        './__tsref-wrapper.d.ts',
+        `/// <reference path="./__tsref-second.d.ts" />
+export {};`,
+      )
+      result.clients.set(
+        'src/__tsref-second.d.ts',
+        "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';",
+      )
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(program.getSourceFile(path.join(projectRoot, 'src/__tsref-second.d.ts'))).toBeDefined()
+      assertRealChecks({ ...result, environment, program }, rejection)
+    })
+
+    it('TSREF-03 allows a diagnostics-clean harmless declaration wrapper', () => {
+      const result = fixture(
+        './__tsref-wrapper.d.ts',
+        'export interface HarmlessContract { id: string }',
+      )
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+      assertRealChecks(result)
+      expect(assertClientIsolation(result.environment).codeEdges).toEqual([
+        {
+          importer: path.join(projectRoot, clientName),
+          name: './__tsref-wrapper.d.ts',
+          target: path.join(projectRoot, wrapperName),
+          origin: 'triple-slash-path',
+          runtime: false,
+          explicitMarker: false,
+        },
+      ])
+    })
+
+    it('TSREF-04 fails closed for missing exact project-local paths', () => {
+      const result = fixture('./__tsref-missing.d.ts')
+      expect(
+        ts.getPreEmitDiagnostics(result.program).map((diagnostic) => diagnostic.code),
+      ).toContain(6053)
+      expect(
+        result.environment.resolveReferencePath(
+          './__tsref-missing.d.ts',
+          path.join(projectRoot, clientName),
+        ),
+      ).toBeUndefined()
+      assertRealChecks(result, unresolved)
+    })
+
+    it('TSREF-05 rejects a diagnostics-clean direct adapter declaration reference', () => {
+      const result = fixture('./modules/nuvemshop/__tsref-direct.d.ts')
+      result.sources.set(
+        '__tsref-direct.d.ts',
+        "import 'server-only'; export type DirectContract = { id: string };",
+      )
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(program.getSourceFile(path.join(moduleRoot, '__tsref-direct.d.ts'))).toBeDefined()
+      assertRealChecks({ ...result, environment, program }, rejection)
+    })
+
+    it('TSREF-06 rejects diagnostics-clean global namespace wrapper ownership', () => {
+      const result = fixture(
+        './__tsref-wrapper.d.ts',
+        `import type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';
+declare global { namespace FixtureNamespace { type Contract = FixtureContract; } }
+export {};`,
+      )
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+      assertRealChecks(result, rejection)
+    })
+
+    it('TSREF-07 allows diagnostics-clean sources without triple-slash references', () => {
+      const result = fixture()
+      result.clients.set(clientName, "'use client'; export const id = 'safe';")
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(
+        dependencies(
+          program.getSourceFile(path.join(projectRoot, clientName))!,
+          program.getTypeChecker(),
+        ),
+      ).toEqual([])
+      expect(assertClientIsolation(environment).codeEdges).toEqual([])
+      expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+    })
+
+    it.each([
+      ['TSREF-08', 'lib', 'es2020.string'],
+      ['TSREF-09', 'types', 'node'],
+    ])('%s keeps other directive channels separate', (_id, channel, name) => {
+      const result = fixture()
+      result.clients.set(
+        clientName,
+        `/// <reference ${channel}="${name}" />
+'use client'; export {};`,
+      )
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      const source = program.getSourceFile(path.join(projectRoot, clientName))!
+      expect(source.referencedFiles).toEqual([])
+      expect(
+        channel === 'lib' ? source.libReferenceDirectives : source.typeReferenceDirectives,
+      ).toHaveLength(1)
+      expect(dependencies(source, program.getTypeChecker())).toEqual([])
+      expect(assertClientIsolation(environment).codeEdges).toEqual([])
+      expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+    })
+
+    it.each([
+      [
+        'TSREF-10-ROOT',
+        'index.ts',
+        `/// <reference path="./server/index.ts" />
+import 'server-only'; export {};`,
+        /root must depend on server at runtime/,
+      ],
+      [
+        'TSREF-10-MARKER',
+        'index.ts',
+        `/// <reference path="./server-only.ts" />
+export * from './server';`,
+        /index.ts must explicitly protect itself/,
+      ],
+      [
+        'TSREF-10-GUARDED',
+        '__tsref-unguarded.d.ts',
+        `/// <reference path="./server/index.ts" />
+export type UnguardedContract = { id: string };`,
+        /contracts and secrets must remain server-only/,
+      ],
+    ])('%s cannot fabricate positive runtime guards', (_id, filename, source, message) => {
+      const sources = readSources()
+      sources.set('server-only.ts', "import 'server-only'; export {};")
+      sources.set(filename, source)
+      const environment = sourceEnvironment(sources, new Map())
+      const program = ts.createProgram(
+        [...environment.files.keys()],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      const parsed = program.getSourceFile(path.join(moduleRoot, filename))!
+      const reference = dependencies(parsed, program.getTypeChecker()).find(
+        (edge) => edge.origin === 'triple-slash-path',
+      )!
+      expect(reference).toMatchObject({ runtime: false, explicitMarker: false })
+      expect(environment.internalTarget(reference.name, filename, reference.origin)).toBe(
+        filename === 'index.ts' && _id === 'TSREF-10-MARKER' ? 'server-only.ts' : 'server/index.ts',
+      )
+      expect(assertClientIsolation(environment).codeEdges).toEqual([])
+      expect(() => assertBoundary(sources)).toThrow(message)
+    })
+
+    it.each([
+      ['TSREF-11', false],
+      ['TSREF-12', true],
+    ] as const)('%s terminates declaration cycles (adapter branch: %s)', (_id, adapter) => {
+      const result = fixture(
+        './__tsref-wrapper.d.ts',
+        `/// <reference path="./__tsref-second.d.ts" />
+export {};`,
+      )
+      result.clients.set(
+        'src/__tsref-second.d.ts',
+        `/// <reference path="./__tsref-wrapper.d.ts" />
+${adapter ? "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';" : 'export {};'} `,
+      )
+      const environment = sourceEnvironment(result.sources, result.clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, clientName)],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      assertRealChecks({ ...result, environment, program }, adapter ? rejection : undefined)
+      if (!adapter) expect(assertClientIsolation(environment).codeEdges).toHaveLength(3)
+    })
+
+    it.each([
+      './nested/../__tsref-wrapper.d.ts',
+      '__tsref-wrapper.d.ts',
+      path.join(projectRoot, wrapperName),
+    ])('converges exact reference %s to compiler and overlay identity', (reference) => {
+      const result = fixture(reference)
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+      const target = result.environment.resolveReferencePath(
+        reference,
+        path.join(projectRoot, clientName),
+      )
+      expect(target).toBe(path.join(projectRoot, wrapperName))
+      expect(result.program.getSourceFile(target!)?.fileName).toBe(target)
+      assertRealChecks(result)
+      expect(
+        assertClientIsolation(result.environment).codeEdges.map((edge) => edge.target),
+      ).toEqual([target])
+    })
+
+    it.each([
+      ['./__tsref-wrapper', 'extensionless path'],
+      ['./__tsref-wrapper.d.ts?raw', 'query path'],
+      ['./__tsref-wrapper.css', 'asset path'],
+      ['../node_modules/typescript/lib/typescript.d.ts', 'package path'],
+      ['/tmp/__tsref-external.d.ts', 'external path'],
+      ['@/modules/nuvemshop/__tsref-contracts.ts', 'module alias path'],
+    ])('fails closed for bounded unsupported %s (%s)', (reference) => {
+      const result = fixture(reference)
+      // Extensionless references can be accepted by TypeScript via extension
+      // probing. This policy intentionally requires the exact named code file.
+      if (reference === './__tsref-wrapper') {
+        expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+        expect(result.program.getSourceFile(path.join(projectRoot, wrapperName))).toBeDefined()
+      }
+      expect(
+        result.environment.resolveReferencePath(reference, path.join(projectRoot, clientName)),
+      ).toBeUndefined()
+      assertRealChecks(result, unresolved)
+    })
+
+    it('resolves adapter server-to-root reference paths without module extension substitution', () => {
+      const sources = readSources()
+      sources.set(
+        'server/__tsref-root.d.ts',
+        `/// <reference path="../index.ts" />
+import 'server-only'; export {};`,
+      )
+      const environment = sourceEnvironment(sources, new Map())
+      const program = ts.createProgram(
+        [...environment.files.keys()],
+        { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(
+        environment.internalTarget('../index.ts', 'server/__tsref-root.d.ts', 'triple-slash-path'),
+      ).toBe('index.ts')
+      expect(() => assertBoundary(sources)).toThrow(/server must not depend on root/)
+    })
+  })
+
   const secretAccessCases = [
     ['SECRET-GREEN-01', 'void process.env.SECRET;'],
     ['SECRET-RED-01', "void process['env'].NUVEMSHOP_ACCESS_TOKEN;"],
