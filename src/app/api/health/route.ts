@@ -18,7 +18,8 @@ async function isSupabaseHealthy(): Promise<boolean> {
 
       return supabase
         .from(HEALTH_PROBE_RELATION as never)
-        .select('*', { head: true, count: 'exact' })
+        .select('*')
+        .limit(0)
         .abortSignal(controller.signal)
     })()
     const expired = new Promise<never>((_, reject) => {
@@ -27,11 +28,26 @@ async function isSupabaseHealthy(): Promise<boolean> {
         reject(new Error('Supabase health probe timed out'))
       }, SUPABASE_TIMEOUT_MS)
     })
-    const { error } = await Promise.race([probe, expired])
+    const { data, error, status } = await Promise.race([probe, expired])
 
     // O schema public nasce vazio. PGRST205 confirma que o Data API alcançou
     // o schema cache e que a relação sentinela, intencionalmente, não existe.
-    return error === null || error.code === 'PGRST205'
+    // Exigir o erro estruturado e seu status: o SDK normaliza 404 vazio
+    // para 204 sem erro, o que não comprova acesso ao schema cache.
+    return (
+      status === 404 &&
+      data === null &&
+      error !== null &&
+      typeof error === 'object' &&
+      !Array.isArray(error) &&
+      error.code === 'PGRST205' &&
+      typeof error.message === 'string' &&
+      error.message.trim().length > 0 &&
+      (!Object.hasOwn(error, 'details') ||
+        error.details === null ||
+        typeof error.details === 'string') &&
+      (!Object.hasOwn(error, 'hint') || error.hint === null || typeof error.hint === 'string')
+    )
   } catch {
     return false
   } finally {
