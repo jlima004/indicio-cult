@@ -610,6 +610,33 @@ function getStaticPropertyName(target: ts.PropertyAccessExpression | ts.ElementA
   return ts.isStringLiteralLike(key) ? key.text : undefined
 }
 
+// Static ambient process.env access requires the file guard, irrespective of
+// the env key. Reuse bounded syntax and binding checks; never inspect env values.
+function hasAmbientProcessEnvAccess(source: ts.SourceFile, checker: ts.TypeChecker) {
+  let found = false
+  function visit(node: ts.Node) {
+    if (found) return
+    if (
+      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+      getStaticPropertyName(node) === 'env'
+    ) {
+      const owner = unwrapTransparentCallee(node.expression)
+      if (
+        ts.isIdentifier(owner) &&
+        owner.text === 'process' &&
+        isRuntimeCapabilityIdentifier(owner) &&
+        !isProvenLocalRuntimeBinding(owner, checker)
+      ) {
+        found = true
+        return
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
+}
+
 function propertyOwner(target: ts.Expression, name?: string): ts.Expression | undefined {
   target = unwrapParentheses(target)
   if (
@@ -666,13 +693,18 @@ function isCommonJsExport(node: ts.Node) {
 function assertBoundary(sources: Sources, clients: Sources = new Map()) {
   const environment = sourceEnvironment(sources, clients)
   const { internalTarget } = environment
+  const program = environment.program()
+  const checker = program.getTypeChecker()
   const parsed = new Map(
-    [...sources].map(([filename, source]) => [
-      filename,
-      ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true),
-    ]),
+    [...sources.keys()].map((filename) => {
+      const source = program.getSourceFile(path.resolve(moduleRoot, filename))
+      expect(source, `${filename}: unreadable adapter source`).toBeDefined()
+      return [filename, source!] as const
+    }),
   )
-  const imports = new Map([...parsed].map(([filename, source]) => [filename, dependencies(source)]))
+  const imports = new Map(
+    [...parsed].map(([filename, source]) => [filename, dependencies(source, checker)]),
+  )
   const hasMarker = (filename: string) =>
     imports
       .get(filename)
@@ -754,7 +786,7 @@ function assertBoundary(sources: Sources, clients: Sources = new Map()) {
       ts.forEachChild(node, visit)
     }
     visit(source)
-    if (exportsContract || /\bprocess\.env\b/.test(sources.get(filename) ?? '')) {
+    if (exportsContract || hasAmbientProcessEnvAccess(source, checker)) {
       expect(
         isGuarded(filename),
         `${filename}: contracts and secrets must remain server-only`,
@@ -771,6 +803,87 @@ afterEach(() => {
 })
 
 describe('Nuvemshop server-only boundary', () => {
+  const secretAccessCases = [
+    ['SECRET-GREEN-01', 'void process.env.SECRET;'],
+    ['SECRET-RED-01', "void process['env'].NUVEMSHOP_ACCESS_TOKEN;"],
+    ['SECRET-RED-02', 'void process /* comment */ . env.NUVEMSHOP_ACCESS_TOKEN;'],
+    ['SECRET-DOUBLE-BRACKET', 'void process["env"].SECRET;'],
+    ['SECRET-PARENTHESIZED', 'void (process).env.SECRET;'],
+    ['SECRET-NONNULL', "void process!['env'].SECRET;"],
+    ['SECRET-AS', 'void (process as typeof process).env.SECRET;'],
+    ['SECRET-ASSERTION', 'void (<typeof process>process).env.SECRET;'],
+    ['SECRET-SATISFIES', "void (process satisfies typeof process)['env'].SECRET;"],
+    [
+      'SECRET-NESTED-WRAPPERS',
+      "void (((<typeof process>(process as typeof process)) satisfies typeof process)!)['env'].SECRET;",
+    ],
+    ['SECRET-STATIC-KEY-PARENS', "void process[(('env'))].SECRET;"],
+    ['SECRET-STATIC-TEMPLATE-KEY', 'void process[`env`].SECRET;'],
+  ] as const
+  const harmlessSecretCases = [
+    [
+      'SECRET-GREEN-05',
+      "{ const process = { env: { SECRET: 'local-fixture' } }; void process.env.SECRET; }",
+    ],
+    [
+      'SECRET-LOCAL-BRACKET',
+      "{ const process = { env: { SECRET: 'local-fixture' } }; void (process as typeof process)['env'].SECRET; }",
+    ],
+    [
+      'SECRET-LOCAL-PARAMETER',
+      'function local(process: { env: { SECRET: string } }) { return process.env.SECRET; } void local;',
+    ],
+    ['SECRET-TYPE-ONLY', 'type LocalEnv = typeof process.env;'],
+    ['SECRET-COMMENT-TEXT', '// process.env.SECRET'],
+    ['SECRET-STRING-TEXT', "const secretText = 'process.env.SECRET'; void secretText;"],
+    ['SECRET-DYNAMIC-KEY', "const envKey = 'env'; void process[envKey].SECRET;"],
+    [
+      'SECRET-DYNAMIC-TEMPLATE',
+      "const envSuffix = 'nv'; void (process as unknown as Record<string, { SECRET?: string }>)[`e${envSuffix}`]?.SECRET;",
+    ],
+    ['SECRET-UNRELATED-STATIC', 'void process.version;'],
+    ['SECRET-GREEN-06', 'const ordinarySafe = 1; void ordinarySafe;'],
+  ] as const
+
+  it('SECRET-DIAGNOSTICS keeps every static and harmless secret fixture diagnostics-clean', () => {
+    const sources = readSources()
+    for (const [id, statement] of [...secretAccessCases, ...harmlessSecretCases]) {
+      sources.set(`__fixture-${id}.ts`, statement)
+    }
+    sources.set('__fixture-SECRET-GREEN-04.ts', "import 'server-only'; void process['env'].SECRET;")
+    const environment = sourceEnvironment(sources, new Map())
+    const program = ts.createProgram(
+      [...environment.files.keys()],
+      { ...compilerOptions, incremental: false },
+      environment.host,
+    )
+    expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+  })
+
+  it.each(secretAccessCases)(
+    '%s rejects unguarded static ambient process.env through the full boundary',
+    (_id, statement) => {
+      const sources = readSources()
+      sources.set('__fixture-secret.ts', statement)
+      expect(() => assertBoundary(sources)).toThrow(/contracts and secrets must remain server-only/)
+    },
+  )
+
+  it('SECRET-GREEN-04 accepts guarded bracket process.env through the full boundary', () => {
+    const sources = readSources()
+    sources.set('__fixture-secret.ts', "import 'server-only'; void process['env'].SECRET;")
+    expect(() => assertBoundary(sources)).not.toThrow()
+  })
+
+  it.each(harmlessSecretCases)(
+    '%s preserves harmless process-like sources through the full boundary',
+    (_id, statement) => {
+      const sources = readSources()
+      sources.set('__fixture-secret.ts', statement)
+      expect(() => assertBoundary(sources)).not.toThrow()
+    },
+  )
+
   it.each([
     [
       'generic',
@@ -2431,6 +2544,118 @@ export type OwnerFactory = <T extends boolean>() => Select<T, { owner: { contact
     const sources = readSources()
     sources.set('index.ts', "import 'server-only'")
     expect(() => assertBoundary(sources)).toThrow()
+  })
+
+  it.each([
+    [
+      'GUARD-BIND-RED-01 root edge',
+      'index.ts',
+      "import 'server-only'; const require = (specifier: string) => specifier; require('./server');",
+      /root must depend on server at runtime/,
+    ],
+    [
+      'GUARD-BIND-RED-02 contract guard',
+      'server/__fixture-guard-contract.ts',
+      "export const ownerContract = true; const require = (specifier: string) => specifier; require('./index');",
+      /contracts and secrets must remain server-only/,
+    ],
+    [
+      'GUARD-BIND-RED-03 secret guard',
+      'server/__fixture-guard-secret.ts',
+      "{ const require = (specifier: string) => specifier; require('./index'); void process.env.NUVEMSHOP_ACCESS_TOKEN; }",
+      /contracts and secrets must remain server-only/,
+    ],
+  ])(
+    '%s rejects local require as positive proof through the full boundary',
+    (_id, name, source, message) => {
+      const sources = readSources()
+      sources.set(name, source)
+      const environment = sourceEnvironment(sources, new Map())
+      const program = ts.createProgram(
+        [...environment.files.keys()],
+        { ...compilerOptions, incremental: false },
+        environment.host,
+      )
+      expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+      expect(() => assertBoundary(sources)).toThrow(message)
+    },
+  )
+
+  it.each([
+    [
+      'GUARD-POS-01 static import guard',
+      'server/__fixture-guard-contract.ts',
+      "import './index'; export const ownerContract = true;",
+    ],
+    ['GUARD-POS-02 runtime root require', 'index.ts', "import 'server-only'; require('./server');"],
+    [
+      'GUARD-POS-03 transitive guard',
+      'server/__fixture-guard-contract.ts',
+      "import './__fixture-guard-bridge'; export const ownerContract = true;",
+    ],
+    [
+      'GUARD-POS-04 local require',
+      'server/__fixture-guard-contract.ts',
+      "import 'server-only'; const require = (specifier: string) => specifier; require('./__missing'); export const ownerContract = true;",
+    ],
+    [
+      'GUARD-POS-05 ambient require guard',
+      'server/__fixture-guard-contract.ts',
+      "require('./index'); export const ownerContract = true;",
+    ],
+  ])('%s retains genuine positive proof through the full boundary', (_id, name, source) => {
+    const sources = readSources()
+    sources.set(name, source)
+    sources.set('server/__fixture-guard-bridge.ts', "import './index';")
+    const environment = sourceEnvironment(sources, new Map())
+    const program = ts.createProgram(
+      [...environment.files.keys()],
+      { ...compilerOptions, incremental: false },
+      environment.host,
+    )
+    expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+    expect(() => assertBoundary(sources)).not.toThrow()
+  })
+
+  it('GUARD-PROGRAM-IDENTITY collects guard evidence with one Program and its checker', () => {
+    const sources = readSources()
+    const name = 'server/__fixture-guard-contract.ts'
+    sources.set(
+      name,
+      "import './index'; const require = (specifier: string) => specifier; require('./__missing'); export const ownerContract = true;",
+    )
+    const environment = sourceEnvironment(sources, new Map())
+    const diagnosticsProgram = ts.createProgram(
+      [...environment.files.keys()],
+      { ...compilerOptions, incremental: false },
+      environment.host,
+    )
+    expect(ts.getPreEmitDiagnostics(diagnosticsProgram)).toEqual([])
+    const program = environment.program()
+    const checker = program.getTypeChecker()
+    const source = program.getSourceFile(path.resolve(moduleRoot, name))!
+    expect(environment.program()).toBe(program)
+    expect(environment.program().getTypeChecker()).toBe(checker)
+    expect(source).toBe(environment.program().getSourceFile(path.resolve(moduleRoot, name)))
+    const collected = dependencies(source, checker)
+    expect(collected.map(({ name }) => name)).toEqual(['./index'])
+    expect(collected.every(({ node }) => node.getSourceFile() === source)).toBe(true)
+    const references: ts.Identifier[] = []
+    function visit(node: ts.Node) {
+      if (ts.isIdentifier(node) && node.text === 'require' && ts.isCallExpression(node.parent))
+        references.push(node)
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+    expect(references).toHaveLength(1)
+    expect(isProvenLocalRuntimeBinding(references[0]!, checker)).toBe(true)
+    expect(
+      checker
+        .getSymbolAtLocation(references[0]!)!
+        .getDeclarations()!
+        .every((declaration) => declaration.getSourceFile() === source),
+    ).toBe(true)
+    expect(() => assertBoundary(sources)).not.toThrow()
   })
 
   it.each([
