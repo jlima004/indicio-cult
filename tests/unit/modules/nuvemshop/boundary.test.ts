@@ -253,6 +253,10 @@ function importTypeSpecifier(node: ts.ImportTypeNode) {
   return ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined
 }
 
+function compilerScriptKind(source: ts.SourceFile): ts.ScriptKind {
+  return (source as ts.SourceFile & { readonly scriptKind: ts.ScriptKind }).scriptKind
+}
+
 // Public metadata access must include consecutive JSDoc blocks: the tag helpers
 // filter earlier blocks. Keep their type AST out of the runtime capability visitor.
 function collectJSDocTypeDependencies(parsed: ts.SourceFile) {
@@ -307,7 +311,11 @@ function dependencies(parsed: ts.SourceFile, checker?: ts.TypeChecker) {
     globalCapability?: string
     globalRootCapability?: 'WHOLE_ROOT_ESCAPE' | 'COMPUTED_GLOBAL_PROPERTY'
   }[] = []
-  result.push(...collectJSDocTypeDependencies(parsed))
+  const scriptKind = compilerScriptKind(parsed)
+  const isJavaScriptSource = scriptKind === ts.ScriptKind.JS || scriptKind === ts.ScriptKind.JSX
+  if (isJavaScriptSource) {
+    result.push(...collectJSDocTypeDependencies(parsed))
+  }
   for (const reference of parsed.referencedFiles) {
     result.push({
       name: reference.fileName,
@@ -1213,8 +1221,14 @@ describe('Nuvemshop server-only boundary', () => {
       const edges = dependencies(source, program.getTypeChecker()).filter(
         (edge) => edge.origin === 'jsdoc-type-import',
       )
-      expect(edges).toHaveLength(1)
-      expect(edges[0]).toMatchObject({ runtime: false, explicitMarker: false })
+      const scriptKind = compilerScriptKind(source)
+      const isJavaScriptSource = scriptKind === ts.ScriptKind.JS || scriptKind === ts.ScriptKind.JSX
+      if (isJavaScriptSource) {
+        expect(edges).toHaveLength(1)
+        expect(edges[0]).toMatchObject({ runtime: false, explicitMarker: false })
+      } else {
+        expect(edges).toHaveLength(0)
+      }
     })
     it.each([
       ['JSDOC-14', false],
@@ -1246,6 +1260,395 @@ describe('Nuvemshop server-only boundary', () => {
       clean(result)
       expect(result.source.fileName.endsWith('.jsx')).toBe(true)
       typeEdge(result, adapter)
+      checks(result, rejection)
+    })
+  })
+
+  describe('JSDoc ScriptKind dependency matrix', () => {
+    const rejection = /client runtime\/type dependency reaches adapter/
+    const adapter = '@/modules/nuvemshop'
+    const product = `/** @type {Product} */ const product = { id: 'synthetic' }; export { product };`
+    const safe = 'src/__jsdockind-safe.ts'
+    const safeSource = 'export type Product = { id: string }; export const id = 1;'
+    function fixture(
+      client: string,
+      additions: Sources = new Map(),
+      filename = 'src/__jsdockind-client.ts',
+      sources: Sources = new Map([
+        [
+          'index.ts',
+          "import 'server-only'; export { guarded } from './server'; export type Product = { id: string };",
+        ],
+        [
+          'server/index.ts',
+          "import 'server-only'; export const guarded = true; export type Product = { id: string };",
+        ],
+      ]),
+    ) {
+      const clients = new Map([[filename, client], ...additions])
+      const environment = sourceEnvironment(sources, clients)
+      const program = ts.createProgram(
+        [path.join(projectRoot, filename)],
+        {
+          ...compilerOptions,
+          checkJs: true,
+          incremental: false,
+          skipLibCheck: false,
+          types: [],
+        },
+        environment.host,
+      )
+      const source = program.getSourceFile(path.join(projectRoot, filename))!
+      return { sources, clients, environment, program, source }
+    }
+    function checks(result: ReturnType<typeof fixture>, message?: RegExp) {
+      if (message) {
+        expect(() => assertClientIsolation(result.environment)).toThrow(message)
+        expect(() => assertBoundary(result.sources, result.clients)).toThrow(message)
+      } else {
+        expect(() => assertClientIsolation(result.environment)).not.toThrow()
+        expect(() => assertBoundary(result.sources, result.clients)).not.toThrow()
+      }
+    }
+    function clean(result: ReturnType<typeof fixture>) {
+      expect(result.program.getCompilerOptions().allowJs).toBe(true)
+      expect(ts.getPreEmitDiagnostics(result.program)).toEqual([])
+    }
+    function jsdocImports(result: ReturnType<typeof fixture>) {
+      const found: ts.Node[] = []
+      const seen = new Set<ts.Node>()
+      function typeVisitor(node: ts.Node) {
+        if (seen.has(node)) return
+        seen.add(node)
+        if (ts.isImportTypeNode(node) || ts.isJSDocImportTag(node)) found.push(node)
+        ts.forEachChild(node, typeVisitor)
+      }
+      function visit(node: ts.Node) {
+        for (const child of node.getChildren(result.source)) {
+          if (ts.isJSDoc(child)) typeVisitor(child)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(result.source)
+      return found
+    }
+    function collected(result: ReturnType<typeof fixture>) {
+      return dependencies(result.source, result.program.getTypeChecker())
+    }
+    function jsdocTypeEdges(result: ReturnType<typeof fixture>) {
+      return collected(result).filter((edge) => edge.origin === 'jsdoc-type-import')
+    }
+
+    it('JSDOCKIND-01 permits TS documentary @type import of the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nexport const value = 1;`,
+        new Map(),
+        'src/__jsdockind-01.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(jsdocImports(result)).toHaveLength(1)
+      expect(ts.isImportTypeNode(jsdocImports(result)[0]!)).toBe(true)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(result.program.getSourceFile(path.join(moduleRoot, 'index.ts'))).toBeUndefined()
+      checks(result)
+    })
+    it('JSDOCKIND-02 permits TSX documentary @type import of the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nexport const value = 1;\nexport default function Client() { return <span>{value}</span>; }`,
+        new Map(),
+        'src/__jsdockind-02.tsx',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TSX)
+      clean(result)
+      expect(jsdocImports(result)).toHaveLength(1)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(result.program.getSourceFile(path.join(moduleRoot, 'index.ts'))).toBeUndefined()
+      checks(result)
+    })
+    it('JSDOCKIND-03 permits TS documentary @typedef import of the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @typedef {import('${adapter}').Product} Product */\nexport const value = 1;`,
+        new Map(),
+        'src/__jsdockind-03.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(jsdocImports(result)).toHaveLength(1)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(result.program.getSourceFile(path.join(moduleRoot, 'index.ts'))).toBeUndefined()
+      checks(result)
+    })
+    it('JSDOCKIND-04 permits TS/TSX documentary @import when the compiler ignores it', () => {
+      const tsResult = fixture(
+        `'use client';\n/** @import { Product } from '${adapter}' */\nexport const value = 1;`,
+        new Map(),
+        'src/__jsdockind-04.ts',
+      )
+      const tsxResult = fixture(
+        `'use client';\n/** @import { Product } from '${adapter}' */\nexport default function Client() { return <span>1</span>; }`,
+        new Map(),
+        'src/__jsdockind-04.tsx',
+      )
+      expect(compilerScriptKind(tsResult.source)).toBe(ts.ScriptKind.TS)
+      expect(compilerScriptKind(tsxResult.source)).toBe(ts.ScriptKind.TSX)
+      clean(tsResult)
+      clean(tsxResult)
+      expect(ts.isJSDocImportTag(jsdocImports(tsResult)[0]!)).toBe(true)
+      expect(ts.isJSDocImportTag(jsdocImports(tsxResult)[0]!)).toBe(true)
+      expect(jsdocTypeEdges(tsResult)).toEqual([])
+      expect(jsdocTypeEdges(tsxResult)).toEqual([])
+      expect(tsResult.program.getSourceFile(path.join(moduleRoot, 'index.ts'))).toBeUndefined()
+      expect(tsxResult.program.getSourceFile(path.join(moduleRoot, 'index.ts'))).toBeUndefined()
+      checks(tsResult)
+      checks(tsxResult)
+    })
+    it('JSDOCKIND-05 rejects JS @typedef importing the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @typedef {import('${adapter}').Product} Product */\n${product}`,
+        new Map(),
+        'src/__jsdockind-05.js',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JS)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toMatchObject([
+        { name: adapter, origin: 'jsdoc-type-import', runtime: false, explicitMarker: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-06 rejects JSX JSDoc importing the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nexport const product = { id: 'synthetic' };\nexport default function Component() { return <div>{product.id}</div>; }`,
+        new Map(),
+        'src/__jsdockind-06.jsx',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JSX)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toMatchObject([
+        { name: adapter, origin: 'jsdoc-type-import', runtime: false, explicitMarker: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-07 rejects JS @import importing the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @import { Product } from '${adapter}' */\n${product}`,
+        new Map(),
+        'src/__jsdockind-07.js',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JS)
+      clean(result)
+      expect(ts.isJSDocImportTag(jsdocImports(result)[0]!)).toBe(true)
+      expect(jsdocTypeEdges(result)).toMatchObject([
+        { name: adapter, origin: 'jsdoc-type-import', runtime: false, explicitMarker: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-08 rejects TS real import type of the adapter', () => {
+      const result = fixture(
+        `'use client';\nimport type { Product } from '${adapter}';\nexport type ClientProduct = Product;`,
+        new Map(),
+        'src/__jsdockind-08.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(collected(result)).toMatchObject([
+        { name: adapter, runtime: false, explicitMarker: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-09 rejects TS real import type node of the adapter', () => {
+      const result = fixture(
+        `'use client';\nexport type Product = import('${adapter}').Product;`,
+        new Map(),
+        'src/__jsdockind-09.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(collected(result)).toMatchObject([{ name: adapter, runtime: false }])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-10 rejects TSX real import type of the adapter', () => {
+      const result = fixture(
+        `'use client';\nimport type { Product } from '${adapter}';\nexport default function Client(_props: Product) { return <span>{_props.id}</span>; }`,
+        new Map(),
+        'src/__jsdockind-10.tsx',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TSX)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(collected(result)).toMatchObject([
+        { name: adapter, runtime: false, explicitMarker: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-11 permits TS/TSX real import type of an innocent module', () => {
+      const tsResult = fixture(
+        `'use client';\nimport type { Product } from './__jsdockind-safe';\nexport type ClientProduct = Product;`,
+        new Map([[safe, safeSource]]),
+        'src/__jsdockind-11.ts',
+      )
+      const tsxResult = fixture(
+        `'use client';\nimport type { Product } from './__jsdockind-safe';\nexport default function Client(_props: Product) { return <span>{_props.id}</span>; }`,
+        new Map([[safe, safeSource]]),
+        'src/__jsdockind-11.tsx',
+      )
+      expect(compilerScriptKind(tsResult.source)).toBe(ts.ScriptKind.TS)
+      expect(compilerScriptKind(tsxResult.source)).toBe(ts.ScriptKind.TSX)
+      clean(tsResult)
+      clean(tsxResult)
+      expect(jsdocTypeEdges(tsResult)).toEqual([])
+      expect(jsdocTypeEdges(tsxResult)).toEqual([])
+      expect(collected(tsResult)).toMatchObject([
+        { name: './__jsdockind-safe', runtime: false, explicitMarker: false },
+      ])
+      checks(tsResult)
+      checks(tsxResult)
+    })
+    it('JSDOCKIND-12 rejects JS JSDoc through a wrapper to the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @typedef {import('./__jsdockind-wrapper').Product} Product */\n${product}`,
+        new Map([['src/__jsdockind-wrapper.ts', `export type { Product } from '${adapter}';`]]),
+        'src/__jsdockind-12.js',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JS)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toMatchObject([
+        { name: './__jsdockind-wrapper', origin: 'jsdoc-type-import', runtime: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-13 rejects JSX JSDoc through a wrapper to the adapter', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('./__jsdockind-wrapper').Product} */\nexport const product = { id: 'synthetic' };\nexport default function Component() { return <div>{product.id}</div>; }`,
+        new Map([['src/__jsdockind-wrapper.ts', `export type { Product } from '${adapter}';`]]),
+        'src/__jsdockind-13.jsx',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JSX)
+      clean(result)
+      expect(jsdocTypeEdges(result)).toMatchObject([
+        { name: './__jsdockind-wrapper', origin: 'jsdoc-type-import', runtime: false },
+      ])
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-14 permits TS/TSX documentary JSDoc plus a real innocent import', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nimport type { Product } from './__jsdockind-safe';\nexport type ClientProduct = Product;`,
+        new Map([[safe, safeSource]]),
+        'src/__jsdockind-14.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(jsdocImports(result)).toHaveLength(1)
+      expect(jsdocTypeEdges(result)).toEqual([])
+      expect(collected(result)).toMatchObject([
+        { name: './__jsdockind-safe', runtime: false, explicitMarker: false },
+      ])
+      checks(result)
+    })
+    it('JSDOCKIND-15 rejects TS/TSX documentary JSDoc plus a real adapter import', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nimport type { Product } from '${adapter}';\nexport type ClientProduct = Product;`,
+        new Map(),
+        'src/__jsdockind-15.ts',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.TS)
+      clean(result)
+      expect(
+        collected(result).some(
+          (edge) =>
+            edge.name === adapter && edge.runtime === false && edge.origin !== 'jsdoc-type-import',
+        ),
+      ).toBe(true)
+      checks(result, rejection)
+    })
+    it('JSDOCKIND-16 rejects JS/JSX JSDoc used as a fabricated runtime guard', () => {
+      const text = `/** @import {} from 'server-only' */ export const guarded = true;`
+      for (const [filename, kind] of [
+        ['__jsdockind-16.js', ts.ScriptKind.JS],
+        ['__jsdockind-16.jsx', ts.ScriptKind.JSX],
+      ] as const) {
+        const sources = new Map([
+          [
+            'index.ts',
+            "import 'server-only'; export { guarded } from './server'; export type Product = { id: string };",
+          ],
+          [
+            'server/index.ts',
+            "import 'server-only'; export const guarded = true; export type Product = { id: string };",
+          ],
+          [filename, text],
+        ])
+        const environment = sourceEnvironment(sources, new Map())
+        const program = ts.createProgram(
+          [...environment.files.keys()],
+          { ...compilerOptions, checkJs: true, incremental: false, skipLibCheck: false, types: [] },
+          environment.host,
+        )
+        const source = program.getSourceFile(path.join(moduleRoot, filename))!
+        expect(compilerScriptKind(source)).toBe(kind)
+        expect(ts.getPreEmitDiagnostics(program)).toEqual([])
+        expect(() => assertBoundary(sources)).toThrow(
+          /contracts and secrets must remain server-only/,
+        )
+        const edges = dependencies(source, program.getTypeChecker()).filter(
+          (edge) => edge.origin === 'jsdoc-type-import',
+        )
+        expect(edges).toHaveLength(1)
+        expect(edges[0]).toMatchObject({
+          name: 'server-only',
+          runtime: false,
+          explicitMarker: false,
+        })
+      }
+    })
+    it('JSDOCKIND-17 ignores JSDoc prose naming require, module, globalThis, global, process', () => {
+      const prose = `/** Prose import('${adapter}').Product, require, module, globalThis, global, process. */`
+      const js = fixture(
+        `'use client';\n${prose}\nexport const product = { id: 'synthetic' };`,
+        new Map(),
+        'src/__jsdockind-17.js',
+      )
+      const tsResult = fixture(
+        `'use client';\n${prose}\nexport const value = 1;`,
+        new Map(),
+        'src/__jsdockind-17.ts',
+      )
+      expect(compilerScriptKind(js.source)).toBe(ts.ScriptKind.JS)
+      expect(compilerScriptKind(tsResult.source)).toBe(ts.ScriptKind.TS)
+      clean(js)
+      clean(tsResult)
+      expect(jsdocImports(js)).toEqual([])
+      expect(jsdocImports(tsResult)).toEqual([])
+      expect(collected(js)).toEqual([])
+      expect(collected(tsResult)).toEqual([])
+      checks(js)
+      checks(tsResult)
+    })
+    it('JSDOCKIND-18 keeps JS/JSX JSDoc type-only while preserving a real runtime import', () => {
+      const result = fixture(
+        `'use client';\n/** @type {import('${adapter}').Product} */\nimport { id } from './__jsdockind-runtime';\nexport const product = { id: 'synthetic', runtime: id };`,
+        new Map([['src/__jsdockind-runtime.js', 'export const id = 1;']]),
+        'src/__jsdockind-18.js',
+      )
+      expect(compilerScriptKind(result.source)).toBe(ts.ScriptKind.JS)
+      clean(result)
+      expect(collected(result)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: adapter,
+            origin: 'jsdoc-type-import',
+            runtime: false,
+            explicitMarker: false,
+          }),
+          expect.objectContaining({
+            name: './__jsdockind-runtime',
+            runtime: true,
+          }),
+        ]),
+      )
+      expect(jsdocTypeEdges(result)).toHaveLength(1)
       checks(result, rejection)
     })
   })
