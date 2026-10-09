@@ -1,6 +1,7 @@
 # Agent skills (instaladas localmente; reinstaláveis a partir de skills-lock.json)
 .agents/skills/
 skills-lock.json
+.cursor/mcp.json
 
 # Dependências
 node_modules/
