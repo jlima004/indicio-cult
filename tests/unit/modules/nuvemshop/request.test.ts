@@ -29,6 +29,9 @@ const CORRELATION_ID = '2a1de28d-4acf-4d42-8f39-a44b6fd25414'
 const ABOVE_MAX_SAFE = '9007199254740993'
 const ABOVE_INT64 = '9223372036854775808'
 const OFFICIAL_PRODUCTS = `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/products`
+const MAX_BODY_BYTES = 1_048_576
+const OVERFLOW_TAIL_MARKER = 'NUV04-OVERFLOW-TAIL-MARKER'
+const textEncoder = new TextEncoder()
 
 const SECRET_MARKERS = [TOKEN, CLIENT_SECRET, APP_ID, 'Bearer', 'Authorization']
 
@@ -94,6 +97,72 @@ function expectRedacted(error: unknown) {
   for (const marker of SECRET_MARKERS) expect(text).not.toContain(marker)
   expect(text).not.toContain(CLIENT_SECRET)
   expect(text).not.toContain('evil.example')
+}
+
+function chunkedBody(
+  chunks: Uint8Array[],
+  hooks?: { onPull?: (index: number, bytes: number) => void },
+) {
+  let index = 0
+  let pulled = 0
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index >= chunks.length) {
+        controller.close()
+        return
+      }
+      const chunk = chunks[index]
+      if (chunk === undefined) {
+        controller.close()
+        return
+      }
+      index += 1
+      pulled += chunk.byteLength
+      hooks?.onPull?.(index, pulled)
+      controller.enqueue(chunk)
+    },
+  })
+  return { stream, pulled: () => pulled, reads: () => index }
+}
+
+function streamJsonResponse(
+  chunks: Uint8Array[],
+  headers: Record<string, string> = {},
+  hooks?: { onPull?: (index: number, bytes: number) => void },
+) {
+  const { stream, pulled, reads } = chunkedBody(chunks, hooks)
+  const response = new Response(stream, {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=UTF-8',
+      ...headers,
+    },
+  })
+  return { response, pulled, reads }
+}
+
+function fillerChunks(totalBytes: number, chunkSize: number, tail?: Uint8Array): Uint8Array[] {
+  const chunks: Uint8Array[] = []
+  let remaining = totalBytes - (tail?.byteLength ?? 0)
+  while (remaining > 0) {
+    const size = Math.min(chunkSize, remaining)
+    chunks.push(new Uint8Array(size).fill(0x78))
+    remaining -= size
+  }
+  if (tail !== undefined) chunks.push(tail)
+  return chunks
+}
+
+function expectEarlyStop(
+  metrics: { pulled: () => number; reads: () => number },
+  chunkSize: number,
+) {
+  expect(metrics.pulled()).toBeLessThanOrEqual(MAX_BODY_BYTES + chunkSize)
+}
+
+function expectNoOverflowLeak(error: unknown) {
+  expectRedacted(error)
+  expect(serialized(error)).not.toContain(OVERFLOW_TAIL_MARKER)
 }
 
 beforeEach(() => {
@@ -646,6 +715,469 @@ describe('Nuvemshop fixed transport', () => {
       expect(error.metadata.rateLimitRemaining).toBeUndefined()
       expect(error.metadata.resetMs).toBe(1500)
       expectRedacted(error)
+    })
+  })
+
+  describe('bounded response streaming', () => {
+    const CHUNK = 32 * 1024
+
+    function overCapHostileChunks(chunkSize = CHUNK) {
+      const tail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
+      const total = MAX_BODY_BYTES + 128 * 1024 + tail.byteLength
+      return fillerChunks(total, chunkSize, tail)
+    }
+
+    it('rejects an absent Content-Length body above the cap without reading the tail (RED)', async () => {
+      const chunks = overCapHostileChunks()
+      const { response, pulled, reads } = streamJsonResponse(chunks)
+      const fetchMock = installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(OFFICIAL_PRODUCTS)
+      expectEarlyStop({ pulled, reads }, CHUNK)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('accepts an absent Content-Length body under the cap and preserves raw JSON', async () => {
+      const raw = '{"ok":true,"note":"under-cap"}'
+      const chunks = [textEncoder.encode(raw)]
+      const { response } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.value).toEqual({ status: 200, rawBody: raw })
+    })
+
+    it('accepts a declared Content-Length of exactly 1 MiB when the streamed body matches', async () => {
+      const raw = `{"k":"${'a'.repeat(MAX_BODY_BYTES - 8)}"}`
+      expect(textEncoder.encode(raw).byteLength).toBe(MAX_BODY_BYTES)
+      const { response } = streamJsonResponse([textEncoder.encode(raw)], {
+        'content-length': String(MAX_BODY_BYTES),
+      })
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.value?.status).toBe(200)
+      expect(result.value?.rawBody).toBe(raw)
+      expect(result.value?.rawBody.length).toBe(MAX_BODY_BYTES)
+    })
+
+    it('rejects a lying Content-Length under the cap when the streamed body exceeds it (RED)', async () => {
+      const chunks = overCapHostileChunks(16 * 1024)
+      const { response, pulled, reads } = streamJsonResponse(chunks, {
+        'content-length': String(MAX_BODY_BYTES - 4096),
+      })
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectEarlyStop({ pulled, reads }, 16 * 1024)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('rejects a declared Content-Length above the cap as a protocol error', async () => {
+      installFetch(
+        async () =>
+          new Response('{}', {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'content-length': String(MAX_BODY_BYTES + 1),
+            },
+          }),
+      )
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it.each(['12abc', '-1', '01', '1.5'])(
+      'rejects malformed Content-Length %j as a protocol error',
+      async (contentLength) => {
+        installFetch(
+          async () =>
+            new Response('{}', {
+              status: 200,
+              headers: {
+                'content-type': 'application/json',
+                'content-length': contentLength,
+              },
+            }),
+        )
+
+        const result = await capture()
+
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expectNoOverflowLeak(result.error)
+      },
+    )
+
+    it('rejects a huge integer Content-Length as a protocol error', async () => {
+      installFetch(
+        async () =>
+          new Response('{}', {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'content-length': `9${'0'.repeat(80)}`,
+            },
+          }),
+      )
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('stops after the cap when many small chunks exceed it only by sum (RED)', async () => {
+      const small = 4096
+      const chunks = overCapHostileChunks(small)
+      const { response, pulled, reads } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectEarlyStop({ pulled, reads }, small)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('does not pull a second chunk when one chunk alone exceeds the cap (RED)', async () => {
+      const markerTail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
+      const oversized = new Uint8Array(MAX_BODY_BYTES + 64 * 1024)
+      oversized.fill(0x79)
+      const chunks = [oversized, markerTail]
+      const { response, reads } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(reads()).toBe(1)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('stops near the cap when varied chunk sizes cross the limit (RED)', async () => {
+      const sizes = [100_000, 500_000, 400_000, 200_000]
+      const tail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
+      const chunks = [...sizes.map((n) => new Uint8Array(n).fill(0x61)), tail]
+      const maxChunk = Math.max(...sizes, tail.byteLength)
+      const { response, pulled, reads } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectEarlyStop({ pulled, reads }, maxChunk)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('maps a stream error mid-read to a network error without an unhandled rejection', async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(textEncoder.encode('{"partial":'))
+          controller.error(new TypeError('stream read failed'))
+        },
+      })
+      installFetch(
+        async () =>
+          new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      )
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopNetworkError)
+      expect(result.error).not.toBeInstanceOf(NuvemshopProtocolError)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('preserves ASCII JSON from a streamed body exactly', async () => {
+      const raw = `{"id":${ABOVE_MAX_SAFE},"variant_id":${ABOVE_INT64}}`
+      const { response } = streamJsonResponse([textEncoder.encode(raw)])
+      installFetch(async () => response)
+
+      const result = await capture({ method: 'GET', segments: ['products', ABOVE_MAX_SAFE] })
+
+      expect(result.value?.rawBody).toBe(raw)
+      expect(result.value?.rawBody).toContain(ABOVE_MAX_SAFE)
+      expect(result.value?.rawBody).toContain(ABOVE_INT64)
+      expect(result.value?.rawBody).not.toContain('9007199254740992')
+    })
+
+    it('preserves UTF-8 accents in rawBody from streamed chunks', async () => {
+      const raw = '{"label":"café","char":"ã"}'
+      const { response } = streamJsonResponse([textEncoder.encode(raw)])
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.value?.rawBody).toBe(raw)
+      expect(result.value?.rawBody).toContain('café')
+      expect(result.value?.rawBody).toContain('ã')
+    })
+
+    it('decodes a multibyte character split across chunk boundaries', async () => {
+      const full = textEncoder.encode('{"word":"café"}')
+      const splitAt = full.indexOf(0xc3)
+      expect(splitAt).toBeGreaterThan(0)
+      expect(full[splitAt + 1]).toBe(0xa9)
+      const prefix = full.subarray(0, splitAt)
+      const suffix = full.subarray(splitAt)
+      const { response } = streamJsonResponse([prefix, suffix])
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.value?.rawBody).toBe('{"word":"café"}')
+    })
+
+    it('rejects when UTF-8 byte length exceeds the cap even if string length does not (RED)', async () => {
+      const twoByteChar = '\u00e9'
+      const charCount = Math.floor(MAX_BODY_BYTES / 2) + 512
+      const inner = twoByteChar.repeat(charCount)
+      const raw = `{"data":"${inner}"}`
+      expect(raw.length).toBeLessThan(MAX_BODY_BYTES)
+      expect(textEncoder.encode(raw).byteLength).toBeGreaterThan(MAX_BODY_BYTES)
+      const chunkSize = 64 * 1024
+      const rawBytes = textEncoder.encode(raw)
+      const tail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
+      const chunks: Uint8Array[] = []
+      for (let offset = 0; offset < rawBytes.byteLength; offset += chunkSize) {
+        chunks.push(rawBytes.subarray(offset, offset + chunkSize))
+      }
+      const overflowPad = new Uint8Array(256 * 1024).fill(0x65)
+      chunks.push(overflowPad, tail)
+      const totalBytes = rawBytes.byteLength + overflowPad.byteLength + tail.byteLength
+      expect(totalBytes).toBeGreaterThan(MAX_BODY_BYTES + chunkSize)
+      const { response, pulled, reads } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(result.value).toBeUndefined()
+      expectEarlyStop({ pulled, reads }, chunkSize)
+      expect(pulled()).toBeLessThan(totalBytes)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('propagates caller abort while body chunks are being pulled', async () => {
+      const controller = new AbortController()
+      let pullCount = 0
+      let releaseSecondPull: (() => void) | undefined
+      const fetchMock = installFetch((_input, init) => {
+        const stream = new ReadableStream<Uint8Array>({
+          pull(streamController) {
+            pullCount += 1
+            if (pullCount === 1) {
+              streamController.enqueue(textEncoder.encode('{"head":'))
+              return
+            }
+            return new Promise<void>((resolve, reject) => {
+              releaseSecondPull = resolve
+              init?.signal?.addEventListener(
+                'abort',
+                () => reject(new DOMException('The operation was aborted.', 'AbortError')),
+                { once: true },
+              )
+            })
+          },
+        })
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+      })
+
+      const pending = nuvemshopRequest({
+        method: 'GET',
+        segments: ['products'],
+        signal: controller.signal,
+      })
+      for (let i = 0; i < 50 && pullCount < 2; i += 1) {
+        await Promise.resolve()
+      }
+      expect(pullCount).toBeGreaterThanOrEqual(2)
+      controller.abort()
+
+      await expect(pending).rejects.toBeInstanceOf(NuvemshopNetworkError)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      releaseSecondPull?.()
+    })
+
+    it('times out a hung streamed body at the attempt budget', async () => {
+      vi.useFakeTimers()
+      const fetchMock = installFetch((_input, init) => {
+        const stream = new ReadableStream<Uint8Array>({
+          pull() {
+            return new Promise<void>((_resolve, reject) => {
+              init?.signal?.addEventListener(
+                'abort',
+                () => reject(new DOMException('The operation was aborted.', 'AbortError')),
+                { once: true },
+              )
+            })
+          },
+        })
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+      })
+
+      const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+      const settled = pending.then(
+        () => 'resolved' as const,
+        (error: unknown) => error,
+      )
+      await vi.advanceTimersByTimeAsync(NUVEMSHOP_ATTEMPT_TIMEOUT_MS)
+
+      await expect(settled).resolves.toBeInstanceOf(NuvemshopNetworkError)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('redacts secrets and overflow markers on over-cap streaming errors (RED path)', async () => {
+      const chunks = overCapHostileChunks()
+      const { response } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectNoOverflowLeak(result.error)
+      expect(serialized(result.error)).not.toContain(TOKEN)
+      expect(serialized(result.error)).not.toContain('Authorization')
+    })
+
+    it('does not pull further when Content-Length is already above the cap', async () => {
+      const chunks = overCapHostileChunks()
+      const { response, reads } = streamJsonResponse(chunks, {
+        'content-length': String(MAX_BODY_BYTES + 1),
+      })
+      await Promise.resolve()
+      const primed = reads()
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(reads()).toBe(primed)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('preserves whitespace, newlines and JSON escapes from streamed chunks', async () => {
+      const raw = '{\n  "note": "line\\nnext",\n  "path": "a\\\\b"\n}'
+      const bytes = textEncoder.encode(raw)
+      const { response } = streamJsonResponse([bytes.subarray(0, 8), bytes.subarray(8)])
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.value?.rawBody).toBe(raw)
+    })
+
+    it('rejects invalid UTF-8 instead of inserting a replacement character', async () => {
+      const bytes = new Uint8Array([
+        ...textEncoder.encode('{"x":"'),
+        0xff,
+        ...textEncoder.encode('"}'),
+      ])
+      const { response } = streamJsonResponse([bytes])
+      installFetch(async () => response)
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(result.error).not.toBeInstanceOf(NuvemshopNetworkError)
+      expect(serialized(result.error)).not.toContain('\uFFFD')
+      expect(serialized(result.error)).not.toContain('{"x":')
+    })
+
+    it('accepts HEAD when the body is absent', async () => {
+      installFetch(async () => new Response(null, { status: 200 }))
+
+      const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+      expect(result.value).toEqual({ status: 200, rawBody: '' })
+    })
+
+    it('rejects a nonempty HEAD body without draining past the cap', async () => {
+      const chunks = overCapHostileChunks()
+      const { response, pulled, reads } = streamJsonResponse(chunks)
+      installFetch(async () => response)
+
+      const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expectEarlyStop({ pulled, reads }, CHUNK)
+      expect(reads()).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
+    })
+
+    it('accepts DELETE 204 when the body is absent', async () => {
+      installFetch(async () => new Response(null, { status: 204 }))
+
+      const result = await capture({
+        method: 'DELETE',
+        segments: ['products', ABOVE_MAX_SAFE],
+      })
+
+      expect(result.value).toEqual({ status: 204, rawBody: '' })
+    })
+
+    it('keeps the protocol error when cancel fails after the cap', async () => {
+      const chunks = overCapHostileChunks(8 * 1024)
+      let index = 0
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (index >= chunks.length) {
+            controller.close()
+            return
+          }
+          const chunk = chunks[index]
+          index += 1
+          controller.enqueue(chunk)
+        },
+        cancel() {
+          throw new Error(`cancel leaked ${OVERFLOW_TAIL_MARKER} ${TOKEN}`)
+        },
+      })
+      installFetch(
+        async () =>
+          new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      )
+
+      const result = await capture()
+
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(result.error).not.toBeInstanceOf(NuvemshopNetworkError)
+      expect(index).toBeLessThan(chunks.length)
+      expectNoOverflowLeak(result.error)
     })
   })
 

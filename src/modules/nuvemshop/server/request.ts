@@ -28,6 +28,9 @@ export const NUVEMSHOP_USER_AGENT = 'Indicio Cult (https://indiciocult.com.br)'
  */
 export const NUVEMSHOP_ATTEMPT_TIMEOUT_MS = 4_000
 
+/** Bytes consumed from an external response. Not a UTF-16 length. */
+const MAX_RESPONSE_BYTES = 1_048_576
+/** Decoded code units, also the request-body ceiling. Matches the lossless decoder. */
 const MAX_RESPONSE_CHARS = 1_048_576
 const MAX_STORE_ID_LENGTH = 256
 const MAX_TOKEN_LENGTH = 4_096
@@ -291,31 +294,187 @@ function responseLeftTarget(response: Response, expected: URL): boolean {
   }
 }
 
-async function discard(response: Response): Promise<void> {
-  try {
-    await response.body?.cancel()
-  } catch {
-    // Untrusted bytes stay out of errors and logs.
-  }
-}
-
 function acceptableLength(value: string): boolean {
   if (!/^(?:0|[1-9]\d*)$/.test(value)) return false
   const digits = value.replace(/^0+/, '') || '0'
-  const cap = String(MAX_RESPONSE_CHARS)
+  const cap = String(MAX_RESPONSE_BYTES)
   if (digits.length !== cap.length) return digits.length < cap.length
   return digits <= cap
 }
 
-async function readBounded(response: Response, context: NuvemshopErrorContext): Promise<string> {
+function abortReason(): DOMException {
+  return new DOMException('The operation was aborted.', 'AbortError')
+}
+
+/**
+ * Stops a body without waiting forever and without letting cancel failure escape.
+ * An already-aborted attempt returns immediately so cleanup cannot extend the timeout.
+ */
+async function cancelSource(
+  source: { cancel: (reason?: unknown) => Promise<void> },
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    const finished = source.cancel().then(
+      () => undefined,
+      () => undefined,
+    )
+    if (signal.aborted) return
+    await new Promise<void>((resolve) => {
+      const onAbort = () => resolve()
+      signal.addEventListener('abort', onAbort, { once: true })
+      void finished.then(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      })
+    })
+  } catch {
+    // A secondary cancel failure must not replace the primary error.
+  }
+}
+
+async function discard(response: Response, signal: AbortSignal): Promise<void> {
+  if (response.body == null) return
+  await cancelSource(response.body, signal)
+}
+
+function decodeUtf8(
+  decoder: TextDecoder,
+  context: NuvemshopErrorContext,
+  chunk?: Uint8Array,
+): string {
+  try {
+    return chunk === undefined ? decoder.decode() : decoder.decode(chunk, { stream: true })
+  } catch (error) {
+    if (error instanceof TypeError) throw new NuvemshopProtocolError(context)
+    throw error
+  }
+}
+
+type QueuedChunk = { value: ArrayBufferView; size: number }
+
+/**
+ * A queued chunk cannot go through read(): the stream refills its high-water mark
+ * before the caller observes the bytes. Shift that queue directly so the cap can
+ * reject the chunk before another pull is requested.
+ */
+function takeQueuedChunk(stream: ReadableStream<Uint8Array>): Uint8Array | undefined {
+  const stateSymbol = Object.getOwnPropertySymbols(stream).find(
+    (symbol) => symbol.description === 'kState',
+  )
+  if (stateSymbol === undefined) return undefined
+  const state = (stream as unknown as Record<symbol, { controller?: object } | undefined>)[
+    stateSymbol
+  ]
+  const controller = state?.controller
+  if (controller === undefined) return undefined
+  const controllerSymbol = Object.getOwnPropertySymbols(controller).find(
+    (symbol) => symbol.description === 'kState',
+  )
+  if (controllerSymbol === undefined) return undefined
+  const controllerState = (
+    controller as unknown as Record<
+      symbol,
+      { queue?: QueuedChunk[]; queueTotalSize?: number } | undefined
+    >
+  )[controllerSymbol]
+  if (controllerState === undefined) return undefined
+  const queue = controllerState.queue
+  if (
+    !Array.isArray(queue) ||
+    queue.length === 0 ||
+    typeof controllerState.queueTotalSize !== 'number'
+  ) {
+    return undefined
+  }
+  const entry = queue[0]
+  if (entry === undefined || !ArrayBuffer.isView(entry.value)) return undefined
+  const size = typeof entry.size === 'number' ? entry.size : 1
+  const view = entry.value
+  queue.shift()
+  controllerState.queueTotalSize = Math.max(0, controllerState.queueTotalSize - size)
+  return new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+}
+
+async function readBounded(
+  response: Response,
+  context: NuvemshopErrorContext,
+  signal: AbortSignal,
+): Promise<string> {
   const declared = response.headers.get('content-length')
   if (declared !== null && !acceptableLength(declared)) {
-    await discard(response)
+    await discard(response, signal)
     throw new NuvemshopProtocolError(context)
   }
-  const raw = await response.text()
-  if (raw.length > MAX_RESPONSE_CHARS) throw new NuvemshopProtocolError(context)
-  return raw
+
+  if (response.body == null) return ''
+
+  const body = response.body
+  const reader = body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  const parts: string[] = []
+  let receivedBytes = 0
+  let receivedChars = 0
+  const stop = () => {
+    void reader.cancel().then(
+      () => undefined,
+      () => undefined,
+    )
+  }
+  if (signal.aborted) stop()
+  else signal.addEventListener('abort', stop, { once: true })
+
+  try {
+    if (signal.aborted) throw abortReason()
+    for (;;) {
+      const queued = takeQueuedChunk(body)
+      let value: Uint8Array | undefined
+      let done = false
+      let fromRead = false
+      if (queued !== undefined) {
+        value = queued
+      } else {
+        const result = await reader.read()
+        if (signal.aborted) throw abortReason()
+        if (result.done) done = true
+        else {
+          value = result.value
+          fromRead = true
+        }
+      }
+      if (done) {
+        const flushed = decodeUtf8(decoder, context)
+        receivedChars += flushed.length
+        if (receivedChars > MAX_RESPONSE_CHARS) throw new NuvemshopProtocolError(context)
+        if (flushed.length > 0) parts.push(flushed)
+        return parts.join('')
+      }
+      if (value === undefined || value.byteLength === 0) continue
+      if (receivedBytes + value.byteLength > MAX_RESPONSE_BYTES) {
+        stop()
+        throw new NuvemshopProtocolError(context)
+      }
+      receivedBytes += value.byteLength
+      const decoded = decodeUtf8(decoder, context, value)
+      receivedChars += decoded.length
+      if (receivedChars > MAX_RESPONSE_CHARS) {
+        stop()
+        throw new NuvemshopProtocolError(context)
+      }
+      if (decoded.length > 0) parts.push(decoded)
+      // read() schedules one refill after the chunk is delivered. Let that single
+      // chunk land in the queue, then take it without asking for another.
+      if (fromRead) await Promise.resolve()
+      if (signal.aborted) throw abortReason()
+    }
+  } catch (error) {
+    stop()
+    await cancelSource(reader, signal)
+    if (signal.aborted && !(error instanceof NuvemshopProtocolError)) throw abortReason()
+    throw error
+  } finally {
+    signal.removeEventListener('abort', stop)
+  }
 }
 
 function isJsonContentType(value: string | null): boolean {
@@ -330,21 +489,22 @@ async function readSuccess(
   response: Response,
   expected: URL,
   attempt: PreparedNuvemshopAttempt,
+  signal: AbortSignal,
 ): Promise<NuvemshopRequestSuccess> {
   const context = { ...attempt.context, providerStatus: response.status }
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status <= 399)) {
-    await discard(response)
+    await discard(response, signal)
     throw new NuvemshopProtocolError(context)
   }
   if (responseLeftTarget(response, expected)) {
-    await discard(response)
+    await discard(response, signal)
     throw new NuvemshopProtocolError(context)
   }
   if (!successStatuses[attempt.method].includes(response.status)) {
-    await discard(response)
+    await discard(response, signal)
     failureForStatus(response.status, attempt.context, response.headers)
   }
-  const rawBody = await readBounded(response, context)
+  const rawBody = await readBounded(response, context, signal)
   if (expectsJson(attempt.method, response.status)) {
     if (!isJsonContentType(response.headers.get('content-type'))) {
       throw new NuvemshopProtocolError(context)
@@ -409,7 +569,7 @@ export async function performNuvemshopAttempt(
       credentials: 'omit',
       signal: attemptControl.signal,
     })
-    return await readSuccess(response, url, attempt)
+    return await readSuccess(response, url, attempt, attemptControl.signal)
   } catch (error) {
     if (isTransportFailure(error)) throw error
     throw new NuvemshopNetworkError(attempt.context)
