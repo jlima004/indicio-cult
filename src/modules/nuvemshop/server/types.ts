@@ -114,14 +114,14 @@ export type BoundedCollection<T> =
 
 export type StatusTransition = {
   readonly fromStatus: string | null
-  readonly toStatus: string
+  readonly toStatus: string | null
   readonly happenedAt: CanonicalDateTime
 }
 
 export type TrackingEvent = {
   readonly id: string
   readonly status: string
-  readonly happenedAt: CanonicalDateTime
+  readonly happenedAt: CanonicalDateTime | null
 }
 
 export type TrackingInfo = {

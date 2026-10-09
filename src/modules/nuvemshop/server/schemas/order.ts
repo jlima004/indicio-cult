@@ -123,20 +123,17 @@ function readTracking(value: unknown): TrackingInfo | null | undefined {
   return { code, url }
 }
 
+function readOptionalStatus(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null
+  return readShipmentStatus(value)
+}
+
 function readTransition(value: unknown): StatusTransition | undefined {
   if (!isRecord(value)) return undefined
-  const fromStatus =
-    value.from_status === undefined || value.from_status === null
-      ? null
-      : readShipmentStatus(value.from_status)
-  const toStatus = readShipmentStatus(value.to_status)
+  const fromStatus = readOptionalStatus(value.from_status)
+  const toStatus = readOptionalStatus(value.to_status)
   const happenedAt = readDateTime(value.happened_at)
-  if (
-    fromStatus === undefined ||
-    toStatus === null ||
-    toStatus === undefined ||
-    happenedAt === undefined
-  ) {
+  if (fromStatus === undefined || toStatus === undefined || happenedAt === undefined) {
     return undefined
   }
   return { fromStatus, toStatus, happenedAt }
@@ -146,7 +143,8 @@ function readTrackingEvent(value: unknown): TrackingEvent | undefined {
   if (!isRecord(value)) return undefined
   const id = readUlid(value.id)
   const status = readShipmentStatus(value.status)
-  const happenedAt = readDateTime(value.happened_at)
+  if (!Object.hasOwn(value, 'happened_at')) return undefined
+  const happenedAt = value.happened_at === null ? null : readDateTime(value.happened_at)
   if (id === undefined || status === null || status === undefined || happenedAt === undefined) {
     return undefined
   }
@@ -212,6 +210,13 @@ function readFulfillment(
   }
 }
 
+function isIdOnlySummary(value: unknown): boolean {
+  if (typeof value === 'string') return true
+  if (!isRecord(value)) return false
+  const keys = Object.keys(value)
+  return keys.length === 1 && keys[0] === 'id'
+}
+
 function fulfillmentCollection(
   record: Record<string, unknown>,
   requested: OrderParseOptions['fulfillmentCompleteness'],
@@ -222,6 +227,9 @@ function fulfillmentCollection(
       ? 'fulfillments'
       : undefined
   const present = key !== undefined
+  if ((requested === 'confirmed' || requested === 'incomplete') && !present) {
+    failProtocol('order')
+  }
   const completeness = requested ?? (present ? 'incomplete' : 'not_consulted')
   if (completeness === 'not_consulted') {
     if (present && Array.isArray(record[key]) && record[key].length > 0) failProtocol('order')
@@ -229,9 +237,11 @@ function fulfillmentCollection(
   }
   const source = present ? record[key] : []
   if (!Array.isArray(source) || source.length > 100) return failProtocol('order')
-  const items = source.map((item) => readFulfillment(item, completeness))
+  const resolved =
+    completeness === 'confirmed' && source.some(isIdOnlySummary) ? 'incomplete' : completeness
+  const items = source.map((item) => readFulfillment(item, resolved))
   if (items.some((item) => item === undefined)) failProtocol('order')
-  return { completeness, items: items as FulfillmentOrder[] }
+  return { completeness: resolved, items: items as FulfillmentOrder[] }
 }
 
 export function parseInvoiceListValue(value: string): readonly InvoiceReference[] {

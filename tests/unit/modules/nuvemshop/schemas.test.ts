@@ -622,6 +622,273 @@ describe('NUV-07 fulfillments', () => {
   })
 })
 
+describe('NUV-07-R1 nullable history and fulfillment completeness', () => {
+  const happened = {
+    raw: CREATED_AT,
+    offset: '+0000',
+    instant: '2022-11-15T19:36:59.000Z',
+  }
+  const shifted = {
+    raw: OFFSET_CREATED_AT,
+    offset: '-03:00',
+    instant: '2013-01-03T12:11:51.000Z',
+  }
+  const legacy = {
+    address: 'Rua Sintética',
+    number: '10',
+    floor: 'Apto 1',
+    locality: 'Centro',
+    city: 'Cidade',
+    zipcode: '00000000',
+    name: 'Destinatário Sintético',
+    phone: '+5500000000000',
+    province: 'São Paulo',
+    country: 'BR',
+  }
+
+  function parseConfirmed(fulfillment: Record<string, unknown>) {
+    return parseOrder(
+      orderRaw({
+        fulfillment_orders: [
+          {
+            id: FULFILLMENT_A,
+            status: 'PACKED',
+            tracking_info: null,
+            status_history: [],
+            tracking_events: [],
+            ...fulfillment,
+          },
+        ],
+      }),
+      { fulfillmentCompleteness: 'confirmed' },
+    )
+  }
+
+  function onlyShipment(order: ReturnType<typeof parseOrder>) {
+    if (order.fulfillments.completeness !== 'confirmed') throw new Error('confirmed')
+    const item = order.fulfillments.items[0]
+    if (!item) throw new Error('shipment')
+    return item
+  }
+
+  it('accepts a null to_status and keeps a null from_status', () => {
+    const toNull = onlyShipment(
+      parseConfirmed({
+        status_history: [{ from_status: 'UNPACKED', to_status: null, happened_at: CREATED_AT }],
+      }),
+    )
+    expect(toNull.statusHistory).toEqual({
+      completeness: 'confirmed',
+      items: [{ fromStatus: 'UNPACKED', toStatus: null, happenedAt: happened }],
+    })
+    const fromNull = onlyShipment(
+      parseConfirmed({
+        status_history: [{ from_status: null, to_status: 'PACKED', happened_at: CREATED_AT }],
+      }),
+    )
+    expect(fromNull.statusHistory).toEqual({
+      completeness: 'confirmed',
+      items: [{ fromStatus: null, toStatus: 'PACKED', happenedAt: happened }],
+    })
+  })
+
+  it('preserves a valid to_status string and rejects an object or number', () => {
+    const kept = onlyShipment(
+      parseConfirmed({
+        status_history: [{ from_status: 'UNPACKED', to_status: 'PACKED', happened_at: CREATED_AT }],
+      }),
+    )
+    expect(kept.statusHistory).toEqual({
+      completeness: 'confirmed',
+      items: [{ fromStatus: 'UNPACKED', toStatus: 'PACKED', happenedAt: happened }],
+    })
+    expectProtocol(() =>
+      parseConfirmed({
+        status_history: [
+          { from_status: 'UNPACKED', to_status: { bad: true }, happened_at: CREATED_AT },
+        ],
+      }),
+    )
+    expectProtocol(() =>
+      parseConfirmed({
+        status_history: [{ from_status: 'UNPACKED', to_status: 4, happened_at: CREATED_AT }],
+      }),
+    )
+  })
+
+  it('preserves a null tracking happened_at and a valid offset without inventing time', () => {
+    const nullable = onlyShipment(
+      parseConfirmed({
+        tracking_events: [
+          {
+            id: TRACKING_EVENT_ID,
+            status: 'dispatched',
+            description: 'ignore me',
+            happened_at: null,
+            created_at: UPDATED_AT,
+            updated_at: UPDATED_AT,
+          },
+        ],
+      }),
+    )
+    expect(nullable.trackingEvents).toEqual({
+      completeness: 'confirmed',
+      items: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happenedAt: null }],
+    })
+    const encoded = JSON.stringify(nullable.trackingEvents)
+    expect(encoded).not.toContain(UPDATED_AT)
+    expect(encoded).not.toContain(CREATED_AT)
+    const shiftedEvent = onlyShipment(
+      parseConfirmed({
+        tracking_events: [
+          { id: TRACKING_EVENT_ID, status: 'in_transit', happened_at: OFFSET_CREATED_AT },
+        ],
+      }),
+    )
+    expect(shiftedEvent.trackingEvents).toEqual({
+      completeness: 'confirmed',
+      items: [{ id: TRACKING_EVENT_ID, status: 'in_transit', happenedAt: shifted }],
+    })
+  })
+
+  it('rejects a malformed or omitted tracking timestamp and a null status-history timestamp', () => {
+    expectProtocol(() =>
+      parseConfirmed({
+        tracking_events: [
+          { id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: 'yesterday' },
+        ],
+      }),
+    )
+    expectProtocol(() =>
+      parseConfirmed({
+        tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched' }],
+      }),
+    )
+    expectProtocol(() =>
+      parseConfirmed({
+        status_history: [{ from_status: 'UNPACKED', to_status: 'PACKED', happened_at: null }],
+      }),
+    )
+    expectProtocol(() =>
+      parseConfirmed({
+        status_history: [
+          { from_status: 'UNPACKED', to_status: 'PACKED', happened_at: '2022-11-15' },
+        ],
+      }),
+    )
+  })
+
+  it('keeps Order.created_at required when a history row is legitimately nullable', () => {
+    const order = parseConfirmed({
+      status_history: [{ from_status: null, to_status: null, happened_at: CREATED_AT }],
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: null }],
+    })
+    expect(order.createdAt).toEqual(happened)
+    expect(order.createdAt.raw).not.toBe(UPDATED_AT)
+    expectProtocol(() => parseOrder(orderRaw({ created_at: null })))
+    const kept = parseOrder(orderRaw({ created_at: UPDATED_AT, updated_at: CREATED_AT }))
+    expect(kept.createdAt.raw).toBe(UPDATED_AT)
+    expect(JSON.stringify(onlyShipment(order))).not.toContain(UPDATED_AT)
+  })
+
+  it('does not confirm an empty fulfillment collection that was never present', () => {
+    expect(parseOrder(orderRaw()).fulfillments).toEqual({ completeness: 'not_consulted' })
+    expectProtocol(() => parseOrder(orderRaw(), { fulfillmentCompleteness: 'confirmed' }))
+    expectProtocol(() => parseOrder(orderRaw(), { fulfillmentCompleteness: 'incomplete' }))
+  })
+
+  it('confirms an explicit empty collection and real shipments, and keeps summaries incomplete', () => {
+    expect(
+      parseOrder(orderRaw({ fulfillment_orders: [] }), { fulfillmentCompleteness: 'confirmed' })
+        .fulfillments,
+    ).toEqual({ completeness: 'confirmed', items: [] })
+    expect(
+      parseOrder(orderRaw({ fulfillments: [] }), { fulfillmentCompleteness: 'confirmed' })
+        .fulfillments,
+    ).toEqual({ completeness: 'confirmed', items: [] })
+
+    const many = parseOrder(
+      orderRaw({
+        fulfillment_orders: [
+          { id: FULFILLMENT_A, status: 'PACKED', tracking_info: null },
+          { id: FULFILLMENT_B, status: 'DISPATCHED', tracking_info: null },
+        ],
+      }),
+      { fulfillmentCompleteness: 'confirmed' },
+    )
+    if (many.fulfillments.completeness !== 'confirmed') throw new Error('confirmed')
+    expect(many.fulfillments.items.map((item) => item.id)).toEqual([FULFILLMENT_A, FULFILLMENT_B])
+
+    const summary = parseOrder(orderRaw({ fulfillment_orders: [{ id: FULFILLMENT_A }] }))
+    expect(summary.fulfillments.completeness).toBe('incomplete')
+    if (summary.fulfillments.completeness !== 'incomplete') throw new Error('incomplete')
+    expect(summary.fulfillments.items[0]?.statusHistory).toEqual({ completeness: 'not_consulted' })
+
+    const promoted = parseOrder(orderRaw({ fulfillment_orders: [{ id: FULFILLMENT_A }] }), {
+      fulfillmentCompleteness: 'confirmed',
+    })
+    expect(promoted.fulfillments.completeness).toBe('incomplete')
+    if (promoted.fulfillments.completeness !== 'incomplete') throw new Error('incomplete')
+    expect(promoted.fulfillments.items).toHaveLength(1)
+    expect(promoted.fulfillments.items[0]?.id).toBe(FULFILLMENT_A)
+    expect(promoted.fulfillments.items[0]?.statusHistory.completeness).toBe('not_consulted')
+
+    const asId = parseOrder(orderRaw({ fulfillment_orders: [FULFILLMENT_A] }), {
+      fulfillmentCompleteness: 'confirmed',
+    })
+    expect(asId.fulfillments.completeness).toBe('incomplete')
+    if (asId.fulfillments.completeness !== 'incomplete') throw new Error('incomplete')
+    expect(asId.fulfillments.items[0]?.id).toBe(FULFILLMENT_A)
+  })
+
+  it('does not drop present shipments or infer absence from a legacy address', () => {
+    expectProtocol(() =>
+      parseOrder(
+        orderRaw({
+          fulfillment_orders: [{ id: FULFILLMENT_A, status: 'PACKED', tracking_info: null }],
+        }),
+        { fulfillmentCompleteness: 'not_consulted' },
+      ),
+    )
+    const unread = parseOrder(orderRaw({ shipping_address: legacy }))
+    expect(unread.fulfillments).toEqual({ completeness: 'not_consulted' })
+    expect(unread.provisionalAddress?.provenance).toBe('order_legacy_provisional')
+    expectProtocol(() =>
+      parseOrder(orderRaw({ shipping_address: legacy }), { fulfillmentCompleteness: 'confirmed' }),
+    )
+    const confirmedEmpty = parseOrder(orderRaw({ shipping_address: legacy, fulfillments: [] }), {
+      fulfillmentCompleteness: 'confirmed',
+    })
+    const withoutAddress = parseOrder(orderRaw({ fulfillments: [] }), {
+      fulfillmentCompleteness: 'confirmed',
+    })
+    expect(confirmedEmpty.fulfillments).toEqual({ completeness: 'confirmed', items: [] })
+    expect(withoutAddress.fulfillments).toEqual(confirmedEmpty.fulfillments)
+    expect(confirmedEmpty.provisionalAddress).not.toBeNull()
+    expect(withoutAddress.provisionalAddress).toBeNull()
+  })
+
+  it('does not read the Nuvemshop API while normalizing an order', () => {
+    const calls: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = ((input: unknown) => {
+      calls.push(String(input))
+      throw new Error('unexpected fetch')
+    }) as typeof fetch
+    try {
+      parseOrder(orderRaw())
+      parseOrder(orderRaw({ fulfillment_orders: [] }), { fulfillmentCompleteness: 'confirmed' })
+      parseConfirmed({
+        status_history: [{ from_status: null, to_status: null, happened_at: CREATED_AT }],
+        tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: null }],
+      })
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(calls).toEqual([])
+  })
+})
+
 describe('NUV-07 address minimization and provenance', () => {
   const legacy = {
     address: 'Rua Sintética',
