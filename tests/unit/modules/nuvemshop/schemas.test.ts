@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest'
 
 import { NuvemshopProtocolError, NuvemshopValidationError } from '@/modules/nuvemshop/server/errors'
 import { readDecimalId, readOrderNumber } from '@/modules/nuvemshop/server/schemas/ids'
-import { reviveLosslessInteger } from '@/modules/nuvemshop/server/schemas/lossless-json'
+import {
+  readExactUnsignedInteger,
+  reviveLosslessInteger,
+} from '@/modules/nuvemshop/server/schemas/lossless-json'
 import {
   parseAddressProjection,
   parseCallerDecimalId,
@@ -1824,6 +1827,292 @@ describe('NUV-07-R3 noncanonical numeric ID lexemes', () => {
         expect(error.message).toBe('Nuvemshop response is incompatible.')
         expect(JSON.stringify(error.toJSON())).not.toContain(LOSSY_FRACTION)
         expect(JSON.stringify(error.toJSON())).not.toContain(LOSSY_EXPONENT)
+      }
+    })
+  })
+})
+
+describe('NUV-07-R4 exact quantity and installment lexemes', () => {
+  const integerOneLexemes = [
+    '1',
+    '1.0',
+    '1.000',
+    '1e0',
+    '1E+0',
+    '10e-1',
+    '100e-2',
+    '1.00e0',
+  ] as const
+  const quantityZeroLexemes = ['0', '0.0', '0e0', '0e1000000', '-0', '-0.0'] as const
+  const installmentsZeroLexemes = ['0', '0.0', '0e1000000', '-0', '-0.0'] as const
+  const sharedRejectLexemes = [
+    '1.00000000000000001',
+    '2.00000000000000001',
+    '0.00000000000000001',
+    '1.5',
+    '1e-1',
+    '1e309',
+    '1e-1000000',
+    '-1',
+    '-1.0',
+  ] as const
+  const quantityBoundaryRejectLexemes = [
+    '9007199254740991.1',
+    '9007199254740991.4',
+    '9.0071992547409911e15',
+    '9007199254740992',
+    '9007199254740992.0',
+    '1e16',
+  ] as const
+
+  function assertNoBigInt(value: unknown): void {
+    if (typeof value === 'bigint') throw new Error('unexpected bigint')
+    if (Array.isArray(value)) {
+      for (const entry of value) assertNoBigInt(entry)
+      return
+    }
+    if (value !== null && typeof value === 'object') {
+      for (const entry of Object.values(value)) assertNoBigInt(entry)
+    }
+  }
+
+  function withQuantity(lexeme: string): string {
+    const needle = '"quantity":"1"'
+    const raw = orderRaw()
+    if (raw.indexOf(needle) === -1 || raw.indexOf(needle) !== raw.lastIndexOf(needle)) {
+      throw new Error('quantity needle')
+    }
+    return raw.replace(needle, `"quantity":${lexeme}`)
+  }
+
+  function withQuotedQuantity(literal: string): string {
+    return withQuantity(`"${literal}"`)
+  }
+
+  function withInstallments(lexeme: string): string {
+    const needle = '"installments":1'
+    const raw = orderRaw()
+    if (raw.indexOf(needle) === -1 || raw.indexOf(needle) !== raw.lastIndexOf(needle)) {
+      throw new Error('installments needle')
+    }
+    return raw.replace(needle, `"installments":${lexeme}`)
+  }
+
+  describe('accept integer forms', () => {
+    it.each(integerOneLexemes)('accepts quantity lexeme %s as 1', (lexeme) => {
+      expect(parseOrder(withQuantity(lexeme)).lineItems[0]?.quantity).toBe('1')
+    })
+
+    it.each(quantityZeroLexemes)('accepts quantity lexeme %s as 0', (lexeme) => {
+      expect(parseOrder(withQuantity(lexeme)).lineItems[0]?.quantity).toBe('0')
+    })
+
+    it.each([
+      ['9007199254740991', '9007199254740991'],
+      ['9007199254740991.0', '9007199254740991'],
+    ] as const)('accepts quantity lexeme %s as %s', (lexeme, expected) => {
+      expect(parseOrder(withQuantity(lexeme)).lineItems[0]?.quantity).toBe(expected)
+    })
+
+    it('accepts quantity lexeme 1e01 as 10', () => {
+      expect(parseOrder(withQuantity('1e01')).lineItems[0]?.quantity).toBe('10')
+    })
+
+    it('accepts quantity with many trailing fractional zeros as 1', () => {
+      const lexeme = `1.${'0'.repeat(20000)}`
+      expect(parseOrder(withQuantity(lexeme)).lineItems[0]?.quantity).toBe('1')
+    })
+
+    it('accepts quantity string of 18 nines', () => {
+      const digits = '9'.repeat(18)
+      expect(parseOrder(withQuotedQuantity(digits)).lineItems[0]?.quantity).toBe(digits)
+    })
+
+    it.each(['1.0', '01', '1e0'] as const)('rejects quantity string %s', (literal) => {
+      expectProtocol(() => parseOrder(withQuotedQuantity(literal)))
+    })
+
+    it.each(integerOneLexemes)('accepts installments lexeme %s as 1', (lexeme) => {
+      expect(parseOrder(withInstallments(lexeme)).payment.installments).toBe(1)
+    })
+
+    it.each(installmentsZeroLexemes)(
+      'accepts installments lexeme %s as unsigned zero',
+      (lexeme) => {
+        const installments = parseOrder(withInstallments(lexeme)).payment.installments
+        expect(installments).toBe(0)
+        expect(Object.is(installments, -0)).toBe(false)
+      },
+    )
+
+    it.each(['48', '48.0', '48e0'] as const)('accepts installments lexeme %s as 48', (lexeme) => {
+      expect(parseOrder(withInstallments(lexeme)).payment.installments).toBe(48)
+    })
+
+    it('accepts installments JSON null', () => {
+      expect(parseOrder(withInstallments('null')).payment.installments).toBeNull()
+    })
+
+    it('accepts a removed installments key as null', () => {
+      const raw = orderRaw().replace(
+        '"credit_card_company":null,"installments":1',
+        '"credit_card_company":null',
+      )
+      expect(parseOrder(raw).payment.installments).toBeNull()
+    })
+  })
+
+  describe('reject fractions', () => {
+    it.each(sharedRejectLexemes)('rejects quantity lexeme %s', (lexeme) => {
+      expectProtocol(() => parseOrder(withQuantity(lexeme)))
+    })
+
+    it.each(sharedRejectLexemes)('rejects installments lexeme %s', (lexeme) => {
+      expectProtocol(() => parseOrder(withInstallments(lexeme)))
+    })
+
+    it.each(quantityBoundaryRejectLexemes)('rejects quantity lexeme %s', (lexeme) => {
+      expectProtocol(() => parseOrder(withQuantity(lexeme)))
+    })
+  })
+
+  describe('reject exponents, boundaries and adversarial lexemes', () => {
+    it.each(['49', '49.0'] as const)('rejects installments lexeme %s', (lexeme) => {
+      expectProtocol(() => parseOrder(withInstallments(lexeme)))
+    })
+
+    it('rejects quantity lexeme 1e1000000', () => {
+      expectProtocol(() => parseOrder(withQuantity('1e1000000')))
+    })
+
+    it('rejects installments lexeme 1e1000000', () => {
+      expectProtocol(() => parseOrder(withInstallments('1e1000000')))
+    })
+
+    it('rejects quantity with a non-zero digit after many fractional zeros', () => {
+      expectProtocol(() => parseOrder(withQuantity(`1.${'0'.repeat(20000)}1`)))
+    })
+  })
+
+  describe('order contract', () => {
+    it('preserves the rest of a valid order when quantity is 1.0', () => {
+      const order = parseOrder(withQuantity('1.0'))
+      expect(order.lineItems[0]?.quantity).toBe('1')
+      expect(order.total).toBe('80.00')
+      expect(order.createdAt.raw).toBe(CREATED_AT)
+      expect(order.lineItems).toHaveLength(1)
+      expect(order.payment.installments).toBe(1)
+      const encoded = JSON.stringify(order)
+      expect(encoded).toContain('"quantity":"1"')
+      expect(encoded).not.toContain('"quantity":1.0')
+      expect(encoded).not.toContain('"quantity":"1.0"')
+      assertNoBigInt(order)
+    })
+
+    it('rejects only the second line-item quantity 9007199254740991.1 without a partial order', () => {
+      const raw = orderRaw()
+      const open = '"products":['
+      const start = raw.indexOf(open)
+      const close = raw.indexOf(',"shipping_address"', start)
+      if (start === -1 || close === -1) throw new Error('products array')
+      const first = raw.slice(start + open.length, close - 1)
+      const second = first.replace('"quantity":"1"', '"quantity":9007199254740991.1')
+      const twoItems = `${raw.slice(0, start + open.length)}${first},${second}${raw.slice(close - 1)}`
+      expectProtocol(() => parseOrder(twoItems))
+    })
+
+    it('ignores an unknown lossy numeric field on a line item', () => {
+      const order = parseOrder(
+        orderRaw().replace('"quantity":"1"', '"ignored_extra":9007199254740991.1,"quantity":"1"'),
+      )
+      expect(order.lineItems[0]?.quantity).toBe('1')
+      expect(order).not.toHaveProperty('ignored_extra')
+      expect(order.lineItems[0]).not.toHaveProperty('ignored_extra')
+      expect(JSON.stringify(order)).not.toContain('ignored_extra')
+      expect(JSON.stringify(order)).not.toContain('9007199254740991.1')
+    })
+
+    it('rejects quoted installments string 1', () => {
+      expectProtocol(() => parseOrder(withInstallments('"1"')))
+    })
+
+    it.each(['NaN', 'Infinity'] as const)(
+      'rejects unquoted quantity %s as invalid JSON',
+      (lexeme) => {
+        expectProtocol(() => parseOrder(withQuantity(lexeme)))
+      },
+    )
+
+    it.each(['NaN', 'Infinity'] as const)('rejects quantity string %s', (literal) => {
+      expectProtocol(() => parseOrder(withQuotedQuantity(literal)))
+    })
+  })
+
+  describe('ID isolation', () => {
+    it('rejects product id lexeme 1.0', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '1.0')))
+    })
+
+    it('rejects product id lexeme 1e0', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '1e0')))
+    })
+
+    it('does not treat a missing-source quantity box as a decimal id', () => {
+      expect(readDecimalId(reviveLosslessInteger('quantity', 1, undefined))).toBeUndefined()
+    })
+  })
+
+  describe('missing lexical provenance', () => {
+    it('rejects a revived quantity when context.source is absent or empty', () => {
+      expect(
+        readExactUnsignedInteger(
+          reviveLosslessInteger('quantity', 1, undefined),
+          '9007199254740991',
+        ),
+      ).toBeUndefined()
+      expect(
+        readExactUnsignedInteger(reviveLosslessInteger('quantity', 1, {}), '48'),
+      ).toBeUndefined()
+      expect(
+        readExactUnsignedInteger(reviveLosslessInteger('quantity', 1, { source: '' }), '48'),
+      ).toBeUndefined()
+    })
+
+    it('rejects a revived lossy fraction from its source instead of the rounded number', () => {
+      const revived = reviveLosslessInteger('quantity', 9007199254740991, {
+        source: '9007199254740991.1',
+      })
+      expect(readExactUnsignedInteger(revived, '9007199254740991')).toBeUndefined()
+    })
+
+    it('accepts revived 1.0 and 10e-1 from their sources', () => {
+      expect(
+        readExactUnsignedInteger(reviveLosslessInteger('quantity', 1, { source: '1.0' }), '48'),
+      ).toBe('1')
+      expect(
+        readExactUnsignedInteger(
+          reviveLosslessInteger('installments', 1, { source: '10e-1' }),
+          '48',
+        ),
+      ).toBe('1')
+    })
+
+    it('keeps canonical safe integers inside the caller limit and rejects 49', () => {
+      expect(readExactUnsignedInteger(0, '48')).toBe('0')
+      expect(readExactUnsignedInteger(1, '48')).toBe('1')
+      expect(readExactUnsignedInteger(49, '48')).toBeUndefined()
+      expect(readExactUnsignedInteger(-0, '48')).toBe('0')
+    })
+
+    it('does not echo a lossy quantity lexeme in the protocol error', () => {
+      try {
+        parseOrder(withQuantity('9007199254740991.1'))
+        expect.fail('expected NuvemshopProtocolError')
+      } catch (error) {
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        if (!(error instanceof NuvemshopProtocolError)) throw error
+        expect(JSON.stringify(error.toJSON())).not.toContain('9007199254740991.1')
+        expect(JSON.stringify(error.toJSON())).not.toContain('buyer@example.test')
       }
     })
   })

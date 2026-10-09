@@ -19,7 +19,12 @@ import { minimizeFulfillmentAddress, emptyMinimizedAddress, minimizeLegacyAddres
 import { readDateTime } from './datetime'
 import { failProtocol } from './fail'
 import { readDecimalId, readOrderNumber, readUlid } from './ids'
-import { decodeLosslessJson, decodeObject, isRecord, readUnprovenJsonNumber } from './lossless-json'
+import {
+  decodeLosslessJson,
+  decodeObject,
+  isRecord,
+  readExactUnsignedInteger,
+} from './lossless-json'
 import { readMoney } from './money'
 import { readBoundedString, readContactEmail, readHttpUrl } from './text'
 
@@ -284,26 +289,30 @@ function invoiceCollection(options: OrderParseOptions): BoundedCollection<Invoic
   return { completeness: resolved, items: parseInvoiceListValue(value) }
 }
 
-function readJsonNumber(value: unknown): number | undefined {
-  if (typeof value === 'number') return value
-  return readUnprovenJsonNumber(value)
-}
+const MAX_QUANTITY_DIGITS = '9007199254740991'
+const MAX_INSTALLMENTS_DIGITS = '48'
 
 function readQuantity(value: unknown): string | undefined {
-  const numeric = readJsonNumber(value)
-  if (numeric !== undefined && Number.isSafeInteger(numeric) && numeric >= 0) return String(numeric)
+  const digits = readExactUnsignedInteger(value, MAX_QUANTITY_DIGITS)
+  if (digits !== undefined) return digits
   if (typeof value === 'string' && /^(?:0|[1-9]\d*)$/.test(value) && value.length <= 18)
     return value
   return undefined
 }
 
+function digitsToNumber(digits: string): number {
+  let value = 0
+  for (let index = 0; index < digits.length; index += 1) {
+    value = value * 10 + digits.charCodeAt(index) - 48
+  }
+  return value
+}
+
 function readInstallments(value: unknown): number | null | undefined {
   if (value === undefined || value === null) return null
-  const numeric = readJsonNumber(value)
-  if (numeric !== undefined && Number.isSafeInteger(numeric) && numeric >= 0 && numeric <= 48) {
-    return numeric
-  }
-  return undefined
+  const digits = readExactUnsignedInteger(value, MAX_INSTALLMENTS_DIGITS)
+  if (digits === undefined) return undefined
+  return digitsToNumber(digits)
 }
 
 function readLineItem(value: unknown): LineItem | undefined {
