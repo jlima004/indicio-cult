@@ -1134,3 +1134,345 @@ describe('NUV-07 privacy and server-only schemas', () => {
     }
   })
 })
+
+describe('NUV-07-R2 numeric token integrity', () => {
+  const SAFE_BOUNDARY = '9007199254740991'
+  const UNSAFE_EXACT = '9007199254740992'
+  const UNSAFE_ROUNDED = HUGE_ID
+
+  describe('6.1 legitimate ID precision', () => {
+    it('preserves product id unquoted ABOVE_INT32_ID', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', ABOVE_INT32_ID))
+      expect(product.id).toBe(ABOVE_INT32_ID)
+    })
+
+    it('preserves product id unquoted SAFE_BOUNDARY', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', SAFE_BOUNDARY))
+      expect(product.id).toBe(SAFE_BOUNDARY)
+    })
+
+    it('preserves product id unquoted UNSAFE_EXACT', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', UNSAFE_EXACT))
+      expect(product.id).toBe(UNSAFE_EXACT)
+    })
+
+    it('preserves product id unquoted UNSAFE_ROUNDED (HUGE_ID)', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', UNSAFE_ROUNDED))
+      expect(product.id).toBe(UNSAFE_ROUNDED)
+    })
+
+    it('preserves product id unquoted ABOVE_INT64_ID', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', ABOVE_INT64_ID))
+      expect(product.id).toBe(ABOVE_INT64_ID)
+    })
+
+    it('preserves product id as a JSON string of HUGE_ID', () => {
+      const product = parseProduct(productRaw({ id: HUGE_ID }))
+      expect(product.id).toBe(HUGE_ID)
+    })
+
+    it('preserves variant id, product_id, and nested category id as unquoted unsafe integers', () => {
+      const raw = withUnquotedId(productRaw(), 'id', SAFE_BOUNDARY)
+        .replace('"variants":[{"id":101', `"variants":[{"id":${UNSAFE_EXACT}`)
+        .replace('"product_id":1234', `"product_id":${UNSAFE_ROUNDED}`)
+        .replace('"categories":[{"id":4567', `"categories":[{"id":${ABOVE_INT64_ID}`)
+      const product = parseProduct(raw)
+      expect(product.id).toBe(SAFE_BOUNDARY)
+      expect(product.variants[0]?.id).toBe(UNSAFE_EXACT)
+      expect(product.variants[0]?.productId).toBe(UNSAFE_ROUNDED)
+      expect(product.categoryIds).toEqual([ABOVE_INT64_ID])
+    })
+
+    it('preserves nested numeric category entries without object wrappers', () => {
+      const raw = productRaw().replace(
+        '"categories":[{"id":4567,"name":{"pt":"Série"},"description":{"pt":"não exportar"}}]',
+        `"categories":[${UNSAFE_EXACT},${UNSAFE_ROUNDED}]`,
+      )
+      const product = parseProduct(raw)
+      expect(product.categoryIds).toEqual([UNSAFE_EXACT, UNSAFE_ROUNDED])
+    })
+
+    it('preserves category id unquoted unsafe integer via parseCategory', () => {
+      const category = parseCategory(withUnquotedId(categoryRaw(), 'id', UNSAFE_EXACT))
+      expect(category.id).toBe(UNSAFE_EXACT)
+    })
+
+    it('preserves order id and line-item ids as unquoted unsafe integers', () => {
+      const raw = withUnquotedId(orderRaw(), 'id', UNSAFE_EXACT)
+        .replace('"products":[{"id":1069053829', `"products":[{"id":${UNSAFE_ROUNDED}`)
+        .replace('"product_id":111', `"product_id":${ABOVE_INT64_ID}`)
+        .replace('"variant_id":"426215948"', `"variant_id":${SAFE_BOUNDARY}`)
+      const order = parseOrder(raw)
+      expect(order.id).toBe(UNSAFE_EXACT)
+      expect(order.lineItems[0]?.id).toBe(UNSAFE_ROUNDED)
+      expect(order.lineItems[0]?.productId).toBe(ABOVE_INT64_ID)
+      expect(order.lineItems[0]?.variantId).toBe(SAFE_BOUNDARY)
+    })
+
+    it('preserves order.number unquoted HUGE_ID as exact decimal', () => {
+      const order = parseOrder(withUnquotedId(orderRaw(), 'number', HUGE_ID))
+      expect(order.number).toBe(HUGE_ID)
+    })
+
+    it('rejects rounded unsafe numbers from JSON.parse on caller decimal ids', () => {
+      const roundedHuge = JSON.parse(HUGE_ID) as number
+      expect(String(roundedHuge)).not.toBe(HUGE_ID)
+      expectValidation(() => parseCallerDecimalId(roundedHuge))
+      const unsafeExactNum = Number(UNSAFE_EXACT)
+      expect(Number.isSafeInteger(unsafeExactNum)).toBe(false)
+      expectValidation(() => parseCallerDecimalId(unsafeExactNum))
+      const roundedInt64 = JSON.parse(ABOVE_INT64_ID) as number
+      expectValidation(() => parseCallerDecimalId(roundedInt64))
+      expectValidation(() => parseCallerDecimalId(BigInt(HUGE_ID)))
+    })
+
+    it('stringifies normalized product with huge id without bigint markers', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', HUGE_ID))
+      const encoded = JSON.stringify(product)
+      expect(encoded).toContain(HUGE_ID)
+      expect(encoded).not.toContain('bigint')
+      expect(() => JSON.stringify(product)).not.toThrow()
+    })
+
+    it('stringifies normalized order with huge id without bigint markers', () => {
+      const order = parseOrder(withUnquotedId(orderRaw(), 'id', HUGE_ID))
+      const encoded = JSON.stringify(order)
+      expect(encoded).toContain(HUGE_ID)
+      expect(encoded).not.toContain('bigint')
+      expect(() => JSON.stringify(order)).not.toThrow()
+    })
+  })
+
+  describe('6.2 invalid provider types (expect protocol)', () => {
+    it('rejects variant regular price as unquoted unsafe integer', () => {
+      const raw = productRaw().replace('"price":"25.00"', `"price":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects variant promotional price as unquoted unsafe integer', () => {
+      const raw = productRaw().replace(
+        '"promotional_price":"19.00"',
+        `"promotional_price":${UNSAFE_ROUNDED}`,
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects product tags as unquoted unsafe integer', () => {
+      const raw = productRaw().replace('"tags":"tema, cor, tamanho"', `"tags":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects localized product name pt as unquoted unsafe integer (RED: type-loss)', () => {
+      const raw = productRaw().replace(
+        '"name":{"pt":"Peça sintética"}',
+        `"name":{"pt":${UNSAFE_ROUNDED}}`,
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects localized handle pt as unquoted unsafe integer', () => {
+      const raw = productRaw().replace(
+        '"handle":{"pt":"peca-sintetica"}',
+        `"handle":{"pt":${UNSAFE_ROUNDED}}`,
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects localized attribute Cor pt as unquoted unsafe integer', () => {
+      const raw = productRaw().replace(
+        '"attributes":[{"pt":"Cor"}',
+        `"attributes":[{"pt":${UNSAFE_ROUNDED}}`,
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects order status as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace('"status":"open"', `"status":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects fulfillment status as unquoted unsafe integer', () => {
+      const raw = orderRaw({
+        fulfillment_orders: [{ id: FULFILLMENT_A, status: 'PACKED', tracking_info: null }],
+      }).replace('"status":"PACKED"', `"status":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw, { fulfillmentCompleteness: 'confirmed' }))
+    })
+
+    it('rejects invoice fiscal key as unquoted unsafe integer', () => {
+      const raw = `[{"key":${UNSAFE_ROUNDED},"link":"${INVOICE_LINK}"}]`
+      expectProtocol(() => parseInvoiceListValue(raw))
+    })
+
+    it('rejects line item name as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace('"name":"Peça A"', `"name":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects line item price as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace('"price":"40.00"', `"price":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects order total as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace('"total":"80.00"', `"total":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects line item quantity as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace('"quantity":"1"', `"quantity":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects legacy address street as unquoted unsafe integer', () => {
+      const raw = orderRaw().replace(
+        '"shipping_address":null',
+        `"shipping_address":{"address":${UNSAFE_ROUNDED}}`,
+      )
+      expectProtocol(() => parseOrder(raw))
+    })
+
+    it('rejects a 26-digit numeric fulfillment id that would match a ULID string', () => {
+      const digits = '90071992547409939007199254'
+      const raw = orderRaw().replace(
+        '"shipping_address":null',
+        `"fulfillment_orders":[${digits}],"shipping_address":null`,
+      )
+      expectProtocol(() => parseOrder(raw, { fulfillmentCompleteness: 'confirmed' }))
+    })
+
+    it('rejects fulfillment tracking code as unquoted unsafe integer', () => {
+      const raw = orderRaw({
+        fulfillment_orders: [
+          {
+            id: FULFILLMENT_A,
+            status: 'PACKED',
+            tracking_info: { code: 'TRACK-1', url: null },
+          },
+        ],
+      }).replace('"code":"TRACK-1"', `"code":${UNSAFE_ROUNDED}`)
+      expectProtocol(() => parseOrder(raw, { fulfillmentCompleteness: 'confirmed' }))
+    })
+
+    it('preservation: ignored seo_title as unquoted unsafe integer still parses and drops field', () => {
+      const raw = productRaw().replace(
+        '"seo_title":"não exportar"',
+        `"seo_title":${UNSAFE_ROUNDED}`,
+      )
+      const product = parseProduct(raw)
+      expect(product).not.toHaveProperty('seo_title')
+      expect(JSON.stringify(product)).not.toContain(UNSAFE_ROUNDED)
+    })
+  })
+
+  describe('6.3 lexically invalid JSON (expect protocol, no repair)', () => {
+    it('rejects product id with leading zero unsafe integer lexeme', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '09007199254740993')))
+    })
+
+    it('rejects product id with negative leading-zero unsafe lexeme', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '-09007199254740993')))
+    })
+
+    it('rejects trailing comma after unsafe integer id object', () => {
+      expectProtocol(() => parseProduct('{"id":9007199254740993,}'))
+    })
+
+    it('rejects trailing garbage after closed id object', () => {
+      expectProtocol(() => parseProduct('{"id":9007199254740993} trailing'))
+    })
+
+    it('rejects fractional unsafe integer used as id', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740993.5')))
+    })
+
+    it('rejects incomplete exponent on unsafe integer id', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740993e')))
+    })
+
+    it('rejects invalid escape in localized name string', () => {
+      const raw = productRaw().replace('"name":{"pt":"Peça sintética"}', '"name":{"pt":"\\q"}')
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects unterminated string in product raw', () => {
+      expectProtocol(() => parseProduct(productRaw().slice(0, -1)))
+    })
+
+    it('rejects truncated object with unsafe integer id', () => {
+      expectProtocol(() => parseProduct('{"id":9007199254740993'))
+    })
+
+    it('rejects negative unsafe integer id (valid JSON, invalid id)', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', `-${UNSAFE_ROUNDED}`)))
+    })
+
+    it('rejects unsafe integer id with explicit .0 fraction', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740993.0')))
+    })
+
+    it('rejects localized name pt with leading-zero unquoted unsafe lexeme (RED: syntax repair)', () => {
+      const raw = productRaw().replace(
+        '"name":{"pt":"Peça sintética"}',
+        '"name":{"pt":09007199254740993}',
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+  })
+
+  describe('6.4 legitimate strings (expect success)', () => {
+    it('accepts variant regular price as quoted unsafe digit string', () => {
+      const raw = productRaw().replace('"price":"25.00"', `"price":"${UNSAFE_ROUNDED}"`)
+      const product = parseProduct(raw)
+      expect(product.variants[0]?.regular).toBe(UNSAFE_ROUNDED)
+    })
+
+    it('preserves tags string containing unsafe digit lexeme', () => {
+      const raw = productRaw().replace('"tags":"tema, cor, tamanho"', `"tags":"${UNSAFE_ROUNDED}"`)
+      const product = parseProduct(raw)
+      expect(product.tags).toEqual([UNSAFE_ROUNDED])
+    })
+
+    it('preserves name pt string exactly matching unsafe digits', () => {
+      const raw = productRaw().replace(
+        '"name":{"pt":"Peça sintética"}',
+        `"name":{"pt":"${UNSAFE_ROUNDED}"}`,
+      )
+      const product = parseProduct(raw)
+      expect(product.name).toEqual({ pt: UNSAFE_ROUNDED })
+    })
+
+    it('preserves name pt with escaped quotes and backslashes', () => {
+      const literal = String.raw`say \"${UNSAFE_ROUNDED}\" \\ path`
+      const raw = productRaw().replace(
+        '"name":{"pt":"Peça sintética"}',
+        `"name":{"pt":"${literal.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"}`,
+      )
+      const product = parseProduct(raw)
+      expect(product.name?.pt).toBe(literal)
+    })
+
+    it('preserves marker-like name strings literally', () => {
+      for (const literal of [`bigint:${UNSAFE_ROUNDED}`, `{"source":"${UNSAFE_ROUNDED}"}`]) {
+        const escaped = literal.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        const raw = productRaw().replace(
+          '"name":{"pt":"Peça sintética"}',
+          `"name":{"pt":"${escaped}"}`,
+        )
+        const product = parseProduct(raw)
+        expect(product.name?.pt).toBe(literal)
+      }
+    })
+
+    it('preserves order number as JSON string of unsafe digits', () => {
+      const order = parseOrder(orderRaw({ number: UNSAFE_ROUNDED }))
+      expect(order.number).toBe(UNSAFE_ROUNDED)
+    })
+  })
+
+  describe('6.5 limits and safety', () => {
+    it('rejects raw payload longer than 1_048_576 characters', () => {
+      const padding = ' '.repeat(1_048_576 - productRaw().length + 1)
+      expectProtocol(() => parseProduct(productRaw() + padding))
+    })
+  })
+})
