@@ -19,7 +19,7 @@ import { minimizeFulfillmentAddress, emptyMinimizedAddress, minimizeLegacyAddres
 import { readDateTime } from './datetime'
 import { failProtocol } from './fail'
 import { readDecimalId, readOrderNumber, readUlid } from './ids'
-import { decodeLosslessJson, decodeObject, isRecord } from './lossless-json'
+import { decodeLosslessJson, decodeObject, isRecord, readUnprovenJsonNumber } from './lossless-json'
 import { readMoney } from './money'
 import { readBoundedString, readContactEmail, readHttpUrl } from './text'
 
@@ -284,8 +284,14 @@ function invoiceCollection(options: OrderParseOptions): BoundedCollection<Invoic
   return { completeness: resolved, items: parseInvoiceListValue(value) }
 }
 
+function readJsonNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return value
+  return readUnprovenJsonNumber(value)
+}
+
 function readQuantity(value: unknown): string | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value)
+  const numeric = readJsonNumber(value)
+  if (numeric !== undefined && Number.isSafeInteger(numeric) && numeric >= 0) return String(numeric)
   if (typeof value === 'string' && /^(?:0|[1-9]\d*)$/.test(value) && value.length <= 18)
     return value
   return undefined
@@ -293,8 +299,9 @@ function readQuantity(value: unknown): string | undefined {
 
 function readInstallments(value: unknown): number | null | undefined {
   if (value === undefined || value === null) return null
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 48) {
-    return value
+  const numeric = readJsonNumber(value)
+  if (numeric !== undefined && Number.isSafeInteger(numeric) && numeric >= 0 && numeric <= 48) {
+    return numeric
   }
   return undefined
 }

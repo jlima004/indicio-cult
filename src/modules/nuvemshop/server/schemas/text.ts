@@ -1,13 +1,14 @@
 import 'server-only'
 
 import type { LocalizedText } from '../types'
+import { isRecord } from './lossless-json'
 
 const LOCALE = /^[a-z]{2,3}(?:[_-][A-Za-z0-9]+)?$/
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function readLocalized(value: unknown, required: boolean): LocalizedText | null | undefined {
   if (value === undefined || value === null) return required ? undefined : null
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  if (!isRecord(value)) return undefined
   const entries = Object.entries(value)
   if (entries.length > 16) return undefined
   const localized: Record<string, string> = {}

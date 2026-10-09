@@ -4,6 +4,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { NuvemshopProtocolError, NuvemshopValidationError } from '@/modules/nuvemshop/server/errors'
+import { readDecimalId, readOrderNumber } from '@/modules/nuvemshop/server/schemas/ids'
+import { reviveLosslessInteger } from '@/modules/nuvemshop/server/schemas/lossless-json'
 import {
   parseAddressProjection,
   parseCallerDecimalId,
@@ -1473,6 +1475,356 @@ describe('NUV-07-R2 numeric token integrity', () => {
     it('rejects raw payload longer than 1_048_576 characters', () => {
       const padding = ' '.repeat(1_048_576 - productRaw().length + 1)
       expectProtocol(() => parseProduct(productRaw() + padding))
+    })
+  })
+})
+
+describe('NUV-07-R3 noncanonical numeric ID lexemes', () => {
+  const MAX_SAFE = '9007199254740991'
+  const LOSSY_FRACTION = '9007199254740991.1'
+  const LOSSY_EXPONENT = '9.0071992547409911e15'
+  const NONCANONICAL_ONE = '1.0'
+
+  const noncanonicalProductIdTokens = [
+    LOSSY_FRACTION,
+    '9007199254740991.4',
+    '9007199254740991.0',
+    LOSSY_EXPONENT,
+    '1e0',
+    '1E+0',
+    '1.000e0',
+    NONCANONICAL_ONE,
+  ] as const
+
+  function assertNoBigInt(value: unknown): void {
+    if (typeof value === 'bigint') throw new Error('unexpected bigint')
+    if (Array.isArray(value)) {
+      for (const entry of value) assertNoBigInt(entry)
+      return
+    }
+    if (value !== null && typeof value === 'object') {
+      for (const entry of Object.values(value)) assertNoBigInt(entry)
+    }
+  }
+
+  describe('7.1 and 7.2 fractions and exponents on Product.id', () => {
+    it.each(noncanonicalProductIdTokens)('rejects product id lexeme %s', (token) => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', token)))
+    })
+
+    it('does not accept 9007199254740991.1 as exact decimal id 9007199254740991', () => {
+      try {
+        const product = parseProduct(withUnquotedId(productRaw(), 'id', LOSSY_FRACTION))
+        expect(product.id).not.toBe(MAX_SAFE)
+        expect.fail('expected NuvemshopProtocolError')
+      } catch (error) {
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+      }
+    })
+  })
+
+  describe('7.3 nested IDs', () => {
+    const nestedTargets = [
+      {
+        label: 'Variant.id',
+        build: (token: string) =>
+          productRaw().replace('"variants":[{"id":101', `"variants":[{"id":${token}`),
+        parse: parseProduct,
+      },
+      {
+        label: 'Variant.product_id',
+        build: (token: string) =>
+          productRaw().replace('"product_id":1234', `"product_id":${token}`),
+        parse: parseProduct,
+      },
+      {
+        label: 'Product.categories[].id',
+        build: (token: string) =>
+          productRaw().replace('"categories":[{"id":4567', `"categories":[{"id":${token}`),
+        parse: parseProduct,
+      },
+      {
+        label: 'Product.categories[] bare id',
+        build: (token: string) =>
+          productRaw().replace(
+            '"categories":[{"id":4567,"name":{"pt":"Série"},"description":{"pt":"não exportar"}}]',
+            `"categories":[${token}]`,
+          ),
+        parse: parseProduct,
+      },
+      {
+        label: 'Category.id',
+        build: (token: string) => withUnquotedId(categoryRaw(), 'id', token),
+        parse: parseCategory,
+      },
+      {
+        label: 'Category.parent',
+        build: (token: string) => categoryRaw().replace('"parent":null', `"parent":${token}`),
+        parse: parseCategory,
+      },
+      {
+        label: 'Order.id',
+        build: (token: string) => withUnquotedId(orderRaw(), 'id', token),
+        parse: parseOrder,
+      },
+      {
+        label: 'Order.number',
+        build: (token: string) => withUnquotedId(orderRaw(), 'number', token),
+        parse: parseOrder,
+      },
+      {
+        label: 'Order.products[].id',
+        build: (token: string) =>
+          orderRaw().replace('"products":[{"id":1069053829', `"products":[{"id":${token}`),
+        parse: parseOrder,
+      },
+      {
+        label: 'Order.products[].product_id',
+        build: (token: string) => orderRaw().replace('"product_id":111', `"product_id":${token}`),
+        parse: parseOrder,
+      },
+      {
+        label: 'Order.products[].variant_id',
+        build: (token: string) =>
+          orderRaw().replace('"variant_id":"426215948"', `"variant_id":${token}`),
+        parse: parseOrder,
+      },
+    ] as const
+
+    const nestedTokens = [LOSSY_FRACTION, LOSSY_EXPONENT, NONCANONICAL_ONE] as const
+
+    it.each(
+      nestedTargets.flatMap((target) =>
+        nestedTokens.map((token) => [token, target.label, target] as const),
+      ),
+    )('rejects noncanonical lexeme %s on %s', (token, label, target) => {
+      expectProtocol(() => target.parse(target.build(token)))
+    })
+  })
+
+  describe('7.4 valid canonical ids', () => {
+    it('preserves fixture product id 1234', () => {
+      expect(parseProduct(productRaw()).id).toBe('1234')
+    })
+
+    it('preserves unquoted MAX_SAFE_INTEGER product id', () => {
+      expect(parseProduct(withUnquotedId(productRaw(), 'id', MAX_SAFE)).id).toBe(MAX_SAFE)
+    })
+
+    it('preserves unquoted first integer above MAX_SAFE_INTEGER', () => {
+      expect(parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740992')).id).toBe(
+        '9007199254740992',
+      )
+    })
+
+    it('preserves unquoted HUGE_ID product id', () => {
+      expect(parseProduct(withUnquotedId(productRaw(), 'id', HUGE_ID)).id).toBe(HUGE_ID)
+    })
+
+    it('preserves unquoted ABOVE_INT64_ID product id', () => {
+      expect(parseProduct(withUnquotedId(productRaw(), 'id', ABOVE_INT64_ID)).id).toBe(
+        ABOVE_INT64_ID,
+      )
+    })
+
+    it('preserves JSON string product id HUGE_ID', () => {
+      expect(parseProduct(productRaw({ id: HUGE_ID })).id).toBe(HUGE_ID)
+    })
+
+    it('keeps order number distinct from order id', () => {
+      const order = parseOrder(orderRaw())
+      expect(order.number).toBe('306')
+      expect(order.id).toBe('871254203')
+      expect(order.number).not.toBe(order.id)
+    })
+
+    it('canonicalizes zero-padded order number JSON string', () => {
+      expect(parseOrder(orderRaw({ number: '0306' })).number).toBe('306')
+    })
+
+    it('accepts canonical unquoted product id 1', () => {
+      expect(parseProduct(withUnquotedId(productRaw(), 'id', '1')).id).toBe('1')
+    })
+  })
+
+  describe('7.5 non-ID fields', () => {
+    it('ignores unknown numeric seo_title 1.5', () => {
+      const raw = productRaw().replace('"seo_title":"não exportar"', '"seo_title":1.5')
+      const product = parseProduct(raw)
+      expect(product).not.toHaveProperty('seo_title')
+      expect(JSON.stringify(product)).not.toContain('1.5')
+      expect(product.id).toBe('1234')
+    })
+
+    it('ignores unknown numeric seo_title lossy fraction', () => {
+      const raw = productRaw().replace(
+        '"seo_title":"não exportar"',
+        `"seo_title":${LOSSY_FRACTION}`,
+      )
+      const product = parseProduct(raw)
+      expect(product).not.toHaveProperty('seo_title')
+      expect(JSON.stringify(product)).not.toContain(LOSSY_FRACTION)
+      expect(product.id).toBe('1234')
+    })
+
+    it('rejects variant price as unquoted 1.0', () => {
+      expectProtocol(() => parseProduct(productRaw().replace('"price":"25.00"', '"price":1.0')))
+    })
+
+    it('rejects order total as unquoted 1.0', () => {
+      expectProtocol(() => parseOrder(orderRaw().replace('"total":"80.00"', '"total":1.0')))
+    })
+
+    it('rejects localized name pt as lossy fraction', () => {
+      const raw = productRaw().replace(
+        '"name":{"pt":"Peça sintética"}',
+        `"name":{"pt":${LOSSY_FRACTION}}`,
+      )
+      expectProtocol(() => parseProduct(raw))
+    })
+
+    it('rejects product tags as unquoted 1.0', () => {
+      expectProtocol(() =>
+        parseProduct(productRaw().replace('"tags":"tema, cor, tamanho"', '"tags":1.0')),
+      )
+    })
+
+    it('rejects order status as unquoted 1.0', () => {
+      expectProtocol(() => parseOrder(orderRaw().replace('"status":"open"', '"status":1.0')))
+    })
+
+    it('accepts canonical unquoted quantity 1 as string 1', () => {
+      const order = parseOrder(orderRaw().replace('"quantity":"1"', '"quantity":1'))
+      expect(order.lineItems[0]?.quantity).toBe('1')
+    })
+
+    it('preserves fixture quantity string 1', () => {
+      expect(parseOrder(orderRaw()).lineItems[0]?.quantity).toBe('1')
+    })
+
+    it('accepts quantity string 0', () => {
+      expect(
+        parseOrder(orderRaw().replace('"quantity":"1"', '"quantity":"0"')).lineItems[0]?.quantity,
+      ).toBe('0')
+    })
+
+    it('preserves payment installments 1 on fixture order', () => {
+      expect(parseOrder(orderRaw()).payment.installments).toBe(1)
+    })
+
+    it('keeps quantity 1.0 on the existing safe-integer rule', () => {
+      const order = parseOrder(orderRaw().replace('"quantity":"1"', '"quantity":1.0'))
+      expect(order.lineItems[0]?.quantity).toBe('1')
+    })
+
+    it('keeps installments 1e0 on the existing safe-integer rule', () => {
+      const order = parseOrder(orderRaw().replace('"installments":1', '"installments":1e0'))
+      expect(order.payment.installments).toBe(1)
+    })
+
+    it('rejects optional handle as unquoted 1.0', () => {
+      expectProtocol(() =>
+        parseProduct(productRaw().replace('"handle":{"pt":"peca-sintetica"}', '"handle":1.0')),
+      )
+    })
+
+    it('rejects payment_details as unquoted 1.0', () => {
+      expectProtocol(() =>
+        parseOrder(
+          orderRaw().replace(
+            '"payment_details":{"method":"custom","credit_card_company":null,"installments":1}',
+            '"payment_details":1.0',
+          ),
+        ),
+      )
+    })
+  })
+
+  describe('7.6 lexically invalid JSON', () => {
+    it('rejects product id leading zero lexeme 01', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '01')))
+    })
+
+    it('rejects incomplete exponent on MAX_SAFE_INTEGER id', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740991e')))
+    })
+
+    it('rejects incomplete fraction on MAX_SAFE_INTEGER id', () => {
+      expectProtocol(() => parseProduct(withUnquotedId(productRaw(), 'id', '9007199254740991.')))
+    })
+
+    it('rejects trailing comma object', () => {
+      expectProtocol(() => parseProduct('{"id":123,}'))
+    })
+
+    it('rejects trailing garbage after object', () => {
+      expectProtocol(() => parseProduct('{"id":123} extra'))
+    })
+
+    it('rejects unterminated product raw string', () => {
+      expectProtocol(() => parseProduct(productRaw().slice(0, -1)))
+    })
+
+    it('rejects invalid escape in localized name', () => {
+      const raw = productRaw().replace('"name":{"pt":"Peça sintética"}', '"name":{"pt":"\\q"}')
+      expectProtocol(() => parseProduct(raw))
+    })
+  })
+
+  describe('7.7 missing context.source', () => {
+    it('does not treat a safe integer as a canonical numeric id when the lexeme is unavailable', () => {
+      const revived = reviveLosslessInteger('id', 9007199254740991, {})
+      expect(readDecimalId(revived)).toBeUndefined()
+      expect(readOrderNumber(revived)).toBeUndefined()
+
+      const revivedOne = reviveLosslessInteger('number', 1, undefined)
+      expect(readDecimalId(revivedOne)).toBeUndefined()
+      expect(readOrderNumber(revivedOne)).toBeUndefined()
+    })
+
+    it('preserves parseCallerDecimalId for safe integers', () => {
+      expect(parseCallerDecimalId(42)).toBe('42')
+      expect(parseCallerDecimalId(9007199254740991)).toBe('9007199254740991')
+    })
+
+    it('preserves JSON string product id via parseProduct', () => {
+      expect(parseProduct(productRaw({ id: HUGE_ID })).id).toBe(HUGE_ID)
+    })
+
+    it('rejects bigint caller decimal id', () => {
+      expectValidation(() => parseCallerDecimalId(BigInt(HUGE_ID)))
+    })
+
+    it('rejects unsafe number caller decimal id', () => {
+      expectValidation(() => parseCallerDecimalId(Number(HUGE_ID)))
+    })
+  })
+
+  describe('7.8 safety', () => {
+    it('rejects raw payload longer than 1_048_576 characters', () => {
+      const padding = ' '.repeat(1_048_576 - productRaw().length + 1)
+      expectProtocol(() => parseProduct(productRaw() + padding))
+    })
+
+    it('stringifies normalized huge id product without bigint values', () => {
+      const product = parseProduct(withUnquotedId(productRaw(), 'id', HUGE_ID))
+      const encoded = JSON.stringify(product)
+      expect(encoded).toContain(HUGE_ID)
+      expect(encoded).not.toContain('bigint')
+      assertNoBigInt(product)
+    })
+
+    it('does not echo lossy id lexeme in protocol error payload', () => {
+      try {
+        parseProduct(withUnquotedId(productRaw(), 'id', LOSSY_FRACTION))
+        expect.fail('expected NuvemshopProtocolError')
+      } catch (error) {
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        if (!(error instanceof NuvemshopProtocolError)) throw error
+        expect(error.message).toBe('Nuvemshop response is incompatible.')
+        expect(JSON.stringify(error.toJSON())).not.toContain(LOSSY_FRACTION)
+        expect(JSON.stringify(error.toJSON())).not.toContain(LOSSY_EXPONENT)
+      }
     })
   })
 })
