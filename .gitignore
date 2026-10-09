@@ -15,6 +15,7 @@ next-env.d.ts
 coverage/
 playwright-report/
 test-results/
+.vitest/
 
 # Variáveis de ambiente (segredos Nuvemshop, Reserva Ink, Supabase)
 .env

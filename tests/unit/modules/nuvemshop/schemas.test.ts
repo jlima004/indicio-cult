@@ -167,6 +167,22 @@ describe('NUV-07 identifier precision', () => {
       .join('\n')
     expect(sources).not.toMatch(/\bparseInt\s*\(/)
     expect(sources).not.toMatch(/\bNumber\s*\(/)
+  })
+
+  it('keeps provider fetch inside the transport owner', () => {
+    const sources = readdirSync(path.join(moduleRoot, 'server'), { recursive: true })
+      .filter((entry) => {
+        const name = String(entry)
+        return (
+          name.endsWith('.ts') &&
+          name !== 'request.ts' &&
+          name !== 'client.ts' &&
+          !name.endsWith('/request.ts') &&
+          !name.endsWith('/client.ts')
+        )
+      })
+      .map((entry) => readFileSync(path.join(moduleRoot, 'server', String(entry)), 'utf8'))
+      .join('\n')
     expect(sources).not.toMatch(/\bfetch\s*\(/)
   })
 })
