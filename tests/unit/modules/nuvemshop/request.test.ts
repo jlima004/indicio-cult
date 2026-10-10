@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -156,8 +158,10 @@ function fillerChunks(totalBytes: number, chunkSize: number, tail?: Uint8Array):
 function expectEarlyStop(
   metrics: { pulled: () => number; reads: () => number },
   chunkSize: number,
+  refillBytes = chunkSize,
 ) {
-  expect(metrics.pulled()).toBeLessThanOrEqual(MAX_BODY_BYTES + chunkSize)
+  // The rejected chunk plus one platform refill. The application does not append either.
+  expect(metrics.pulled()).toBeLessThanOrEqual(MAX_BODY_BYTES + chunkSize + refillBytes)
 }
 
 function expectNoOverflowLeak(error: unknown) {
@@ -854,25 +858,29 @@ describe('Nuvemshop fixed transport', () => {
       expectNoOverflowLeak(result.error)
     })
 
-    it('does not pull a second chunk when one chunk alone exceeds the cap (RED)', async () => {
+    it('stops after one platform refill when a single chunk exceeds the cap (RED)', async () => {
       const markerTail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
       const oversized = new Uint8Array(MAX_BODY_BYTES + 64 * 1024)
       oversized.fill(0x79)
-      const chunks = [oversized, markerTail]
+      const chunks = [oversized, markerTail, new Uint8Array([0x63])]
       const { response, reads } = streamJsonResponse(chunks)
       installFetch(async () => response)
 
       const result = await capture()
 
       expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
-      expect(reads()).toBe(1)
+      expect(reads()).toBe(2)
       expectNoOverflowLeak(result.error)
     })
 
     it('stops near the cap when varied chunk sizes cross the limit (RED)', async () => {
       const sizes = [100_000, 500_000, 400_000, 200_000]
       const tail = textEncoder.encode(OVERFLOW_TAIL_MARKER)
-      const chunks = [...sizes.map((n) => new Uint8Array(n).fill(0x61)), tail]
+      const chunks = [
+        ...sizes.map((n) => new Uint8Array(n).fill(0x61)),
+        tail,
+        new Uint8Array([0x62]),
+      ]
       const maxChunk = Math.max(...sizes, tail.byteLength)
       const { response, pulled, reads } = streamJsonResponse(chunks)
       installFetch(async () => response)
@@ -972,7 +980,7 @@ describe('Nuvemshop fixed transport', () => {
 
       expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
       expect(result.value).toBeUndefined()
-      expectEarlyStop({ pulled, reads }, chunkSize)
+      expectEarlyStop({ pulled, reads }, chunkSize, overflowPad.byteLength)
       expect(pulled()).toBeLessThan(totalBytes)
       expect(reads()).toBeLessThan(chunks.length)
       expectNoOverflowLeak(result.error)
@@ -1178,6 +1186,296 @@ describe('Nuvemshop fixed transport', () => {
       expect(result.error).not.toBeInstanceOf(NuvemshopNetworkError)
       expect(index).toBeLessThan(chunks.length)
       expectNoOverflowLeak(result.error)
+    })
+
+    describe('readable stream close transition', () => {
+      async function settleBeforeTimeout<T>(pending: Promise<T>): Promise<T> {
+        let settled = false
+        const guarded = pending.finally(() => {
+          settled = true
+        })
+        void guarded.catch(() => undefined)
+        await vi.advanceTimersByTimeAsync(0)
+        for (let turn = 0; turn < 20 && !settled; turn += 1) {
+          await Promise.resolve()
+        }
+        if (!settled) {
+          await vi.advanceTimersByTimeAsync(NUVEMSHOP_ATTEMPT_TIMEOUT_MS)
+        }
+        return await guarded
+      }
+
+      function jsonResponseFromStart(
+        start: (controller: ReadableStreamDefaultController<Uint8Array>) => void,
+        headers: Record<string, string> = {},
+      ) {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            start(controller)
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type': 'application/json; charset=UTF-8',
+            ...headers,
+          },
+        })
+      }
+
+      it('accepts JSON enqueued in start before close is requested', async () => {
+        vi.useFakeTimers()
+        const raw = '{"ok":true}'
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(textEncoder.encode(raw))
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('joins two chunks enqueued in start before close into one JSON body', async () => {
+        vi.useFakeTimers()
+        const raw = '{"part":1}'
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(textEncoder.encode('{"part":'))
+            controller.enqueue(textEncoder.encode('1}'))
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('joins many small chunks enqueued in start before close', async () => {
+        vi.useFakeTimers()
+        const raw = '{"n":12345678}'
+        const pieces = [...raw].map((char) => char)
+        expect(pieces.length).toBeGreaterThanOrEqual(8)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            for (const piece of pieces) {
+              controller.enqueue(textEncoder.encode(piece))
+            }
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('closes during a later pull while an earlier chunk remains queued', async () => {
+        vi.useFakeTimers()
+        const raw = '{"part":1}'
+        let pullCount = 0
+        const fetchMock = installFetch(async () => {
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(textEncoder.encode('{"part":'))
+            },
+            pull(controller) {
+              pullCount += 1
+              if (pullCount === 1) return
+              controller.enqueue(textEncoder.encode('1}'))
+              controller.close()
+            },
+          })
+          return new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'application/json; charset=UTF-8' },
+          })
+        })
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(pullCount).toBeGreaterThanOrEqual(2)
+      })
+
+      it('rejects an empty stream closed in start as a protocol error', async () => {
+        vi.useFakeTimers()
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart(() => {
+            /* enqueue nothing */
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(error).not.toBeInstanceOf(NuvemshopNetworkError)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('accepts a single-chunk body of exactly 1 MiB enqueued in start before close', async () => {
+        vi.useFakeTimers()
+        const raw = `{"k":"${'a'.repeat(MAX_BODY_BYTES - 8)}"}`
+        expect(textEncoder.encode(raw).byteLength).toBe(MAX_BODY_BYTES)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(textEncoder.encode(raw))
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result.status).toBe(200)
+        expect(result.rawBody).toBe(raw)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('rejects one chunk above the cap enqueued in start before close', async () => {
+        vi.useFakeTimers()
+        const oversized = new Uint8Array(MAX_BODY_BYTES + 1).fill(0x7b)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(oversized)
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(error).not.toBeInstanceOf(NuvemshopNetworkError)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('rejects many start-enqueued chunks above the cap without Content-Length', async () => {
+        vi.useFakeTimers()
+        const chunkSize = 256 * 1024
+        const chunkCount = Math.ceil((MAX_BODY_BYTES + 64 * 1024) / chunkSize)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            for (let i = 0; i < chunkCount; i += 1) {
+              controller.enqueue(new Uint8Array(chunkSize).fill(0x78))
+            }
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(error).not.toBeInstanceOf(NuvemshopNetworkError)
+        expectNoOverflowLeak(error)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('rejects a lying Content-Length when start-enqueued body exceeds the cap', async () => {
+        vi.useFakeTimers()
+        const chunkSize = 256 * 1024
+        const chunkCount = Math.ceil((MAX_BODY_BYTES + 64 * 1024) / chunkSize)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart(
+            (controller) => {
+              for (let i = 0; i < chunkCount; i += 1) {
+                controller.enqueue(new Uint8Array(chunkSize).fill(0x78))
+              }
+            },
+            { 'content-length': '16' },
+          ),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        expectNoOverflowLeak(error)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('decodes UTF-8 split across start-enqueued chunks before close', async () => {
+        vi.useFakeTimers()
+        const full = textEncoder.encode('{"word":"café"}')
+        const splitAt = full.indexOf(0xc3)
+        expect(splitAt).toBeGreaterThan(0)
+        const prefix = full.subarray(0, splitAt)
+        const suffix = full.subarray(splitAt)
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(prefix)
+            controller.enqueue(suffix)
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result).toEqual({ status: 200, rawBody: '{"word":"café"}' })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('rejects invalid UTF-8 enqueued in start before close without replacement chars', async () => {
+        vi.useFakeTimers()
+        const bytes = new Uint8Array([
+          ...textEncoder.encode('{"x":"'),
+          0xff,
+          ...textEncoder.encode('"}'),
+        ])
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(bytes)
+          }),
+        )
+
+        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(error).not.toBeInstanceOf(NuvemshopNetworkError)
+        expect(serialized(error)).not.toContain('\uFFFD')
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('preserves large decimal ids from a start-enqueued JSON body before close', async () => {
+        vi.useFakeTimers()
+        const raw = `{"id":${ABOVE_MAX_SAFE},"variant_id":${ABOVE_INT64}}`
+        const fetchMock = installFetch(async () =>
+          jsonResponseFromStart((controller) => {
+            controller.enqueue(textEncoder.encode(raw))
+          }),
+        )
+
+        const pending = nuvemshopRequest({
+          method: 'GET',
+          segments: ['products', ABOVE_MAX_SAFE],
+        })
+        const result = await settleBeforeTimeout(pending)
+
+        expect(result.status).toBe(200)
+        expect(result.rawBody).toBe(raw)
+        expect(result.rawBody).toContain(ABOVE_MAX_SAFE)
+        expect(result.rawBody).toContain(ABOVE_INT64)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('does not read queued chunks via ReadableStream private queue state', () => {
+        const source = readFileSync(
+          `${process.cwd()}/src/modules/nuvemshop/server/request.ts`,
+          'utf8',
+        )
+        expect(source).not.toContain('kState')
+        expect(source).not.toContain('queueTotalSize')
+        expect(source).not.toContain('queue.shift')
+      })
     })
   })
 
