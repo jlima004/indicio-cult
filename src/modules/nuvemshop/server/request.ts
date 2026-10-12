@@ -296,12 +296,14 @@ function responseLeftTarget(response: Response, expected: URL): boolean {
   }
 }
 
+function isCanonicalLength(value: string): boolean {
+  return /^(?:0|[1-9]\d*)$/.test(value)
+}
+
 function acceptableLength(value: string): boolean {
-  if (!/^(?:0|[1-9]\d*)$/.test(value)) return false
-  const digits = value.replace(/^0+/, '') || '0'
   const cap = String(MAX_RESPONSE_BYTES)
-  if (digits.length !== cap.length) return digits.length < cap.length
-  return digits <= cap
+  if (value.length !== cap.length) return value.length < cap.length
+  return value <= cap
 }
 
 function abortReason(): DOMException {
@@ -355,11 +357,16 @@ function decodeUtf8(
 
 async function readBounded(
   response: Response,
+  method: Method,
   context: NuvemshopErrorContext,
   signal: AbortSignal,
 ): Promise<string> {
   const declared = response.headers.get('content-length')
-  if (declared !== null && !acceptableLength(declared)) {
+  // HEAD declares the corresponding GET representation's size, not received bytes.
+  if (
+    declared !== null &&
+    (!isCanonicalLength(declared) || (method !== 'HEAD' && !acceptableLength(declared)))
+  ) {
     await discard(response, signal)
     throw new NuvemshopProtocolError(context)
   }
@@ -422,7 +429,7 @@ async function readBounded(
               pump()
               return
             }
-            if (receivedBytes + value.byteLength > MAX_RESPONSE_BYTES) {
+            if (method === 'HEAD' || receivedBytes + value.byteLength > MAX_RESPONSE_BYTES) {
               fail(new NuvemshopProtocolError(context))
               return
             }
@@ -479,7 +486,7 @@ async function readSuccess(
     await discard(response, signal)
     failureForStatus(response.status, attempt.context, response.headers)
   }
-  const rawBody = await readBounded(response, context, signal)
+  const rawBody = await readBounded(response, attempt.method, context, signal)
   if (expectsJson(attempt.method, response.status)) {
     if (!isJsonContentType(response.headers.get('content-type'))) {
       throw new NuvemshopProtocolError(context)

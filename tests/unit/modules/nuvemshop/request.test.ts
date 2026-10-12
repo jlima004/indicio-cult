@@ -1276,6 +1276,226 @@ describe('Nuvemshop fixed transport', () => {
       expect(result.value).toEqual({ status: 200, rawBody: '' })
     })
 
+    describe('R4 HEAD representation length', () => {
+      const HUGE_LENGTH = `9${'0'.repeat(80)}`
+
+      it.each(['0', '1048576', '1048577', '1099511627776', ABOVE_MAX_SAFE, HUGE_LENGTH])(
+        'accepts a null HEAD body with canonical Content-Length %s',
+        async (contentLength) => {
+          const response = new Response(null, {
+            status: 200,
+            headers: { 'content-length': contentLength },
+          })
+          const fetchMock = installFetch(async () => response)
+
+          const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          expect(requestUrl(fetchMock)).toBe(OFFICIAL_PRODUCTS)
+          expect(requestInit(fetchMock)).toMatchObject({
+            method: 'HEAD',
+            redirect: 'manual',
+            credentials: 'omit',
+          })
+          expect(response.body).toBeNull()
+          expect(response.bodyUsed).toBe(false)
+          expect(result.error).toBeUndefined()
+          expect(result.value).toEqual({ status: 200, rawBody: '' })
+        },
+      )
+
+      // Preserve the existing canonical decimal policy, including rejection of
+      // leading zeroes; RFC digit syntax alone is broader than that local policy.
+      it.each(['', '12abc', '-1', '+1', '01', '00', '1.5', '1e6', '1,1'])(
+        'rejects a null HEAD body with invalid local Content-Length %j',
+        async (contentLength) => {
+          const fetchMock = installFetch(
+            async () =>
+              new Response(null, {
+                status: 200,
+                headers: { 'content-length': contentLength },
+              }),
+          )
+
+          const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+          expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          expectNoOverflowLeak(result.error)
+        },
+      )
+
+      it.each([undefined, '1048577', HUGE_LENGTH])(
+        'accepts an empty HEAD stream with Content-Length %s',
+        async (contentLength) => {
+          const { response, pulled, reads } = streamJsonResponse(
+            [],
+            contentLength === undefined ? {} : { 'content-length': contentLength },
+          )
+          const fetchMock = installFetch(async () => response)
+
+          const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          expect(pulled()).toBe(0)
+          expect(reads()).toBe(0)
+          expect(result.error).toBeUndefined()
+          expect(result.value).toEqual({ status: 200, rawBody: '' })
+        },
+      )
+
+      it.each([
+        ['ASCII', [textEncoder.encode('x')]],
+        ['UTF-8 BOM', [new Uint8Array([0xef, 0xbb, 0xbf])]],
+        ['split UTF-8 BOM', [new Uint8Array([0xef]), new Uint8Array([0xbb, 0xbf])]],
+      ])('rejects real HEAD bytes even for %s decoded content', async (_label, chunks) => {
+        const { response, pulled } = streamJsonResponse(chunks)
+        const fetchMock = installFetch(async () => response)
+
+        const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+        expect(pulled()).toBeGreaterThan(0)
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(result.value).toBeUndefined()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expectNoOverflowLeak(result.error)
+      })
+
+      it('rejects an oversized HEAD stream despite a huge representation length, bounded', async () => {
+        const chunks = overCapHostileChunks()
+        const { response, pulled, reads } = streamJsonResponse(chunks, {
+          'content-length': HUGE_LENGTH,
+        })
+        const fetchMock = installFetch(async () => response)
+
+        const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expectEarlyStop({ pulled, reads }, CHUNK)
+        expect(reads()).toBeLessThan(chunks.length)
+        expectNoOverflowLeak(result.error)
+      })
+
+      it.each(['abort', 'timeout'] as const)(
+        'maps a hanging HEAD stream with huge Content-Length to NetworkError on %s',
+        async (termination) => {
+          vi.useFakeTimers()
+          const caller = new AbortController()
+          let releasePull: (() => void) | undefined
+          const cancel = vi.fn()
+          const stream = new ReadableStream<Uint8Array>({
+            pull() {
+              return new Promise<void>((resolve) => {
+                releasePull = resolve
+              })
+            },
+            cancel,
+          })
+          const fetchMock = installFetch(
+            async () =>
+              new Response(stream, {
+                status: 200,
+                headers: { 'content-length': HUGE_LENGTH },
+              }),
+          )
+          const pending = capture({
+            method: 'HEAD',
+            segments: ['products'],
+            signal: caller.signal,
+          })
+          await vi.advanceTimersByTimeAsync(0)
+          if (termination === 'abort') caller.abort()
+          else await vi.advanceTimersByTimeAsync(NUVEMSHOP_ATTEMPT_TIMEOUT_MS)
+
+          const result = await pending
+          releasePull?.()
+          expect(result.error).toBeInstanceOf(NuvemshopNetworkError)
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          expect(cancel).toHaveBeenCalledTimes(1)
+          expectNoOverflowLeak(result.error)
+        },
+      )
+
+      it('preserves the HEAD ProtocolError when oversized stream cancellation fails', async () => {
+        const cancel = vi.fn(() => {
+          throw new Error(`cancel ${TOKEN} ${OVERFLOW_TAIL_MARKER}`)
+        })
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(MAX_BODY_BYTES + 1).fill(0x78))
+          },
+          cancel,
+        })
+        installFetch(async () => new Response(stream, { status: 200 }))
+
+        const result = await capture({ method: 'HEAD', segments: ['products'] })
+
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expectNoOverflowLeak(result.error)
+      })
+
+      it.each(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const)(
+        'retains declared excess rejection for %s, including null bodies',
+        async (method) => {
+          for (const body of [null, '{}']) {
+            const response = new Response(body, {
+              status: 200,
+              headers: { 'content-length': '1048577', 'content-type': 'application/json' },
+            })
+            const fetchMock = installFetch(async () => response)
+
+            const result = await capture({ method, segments: ['products'] })
+
+            expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+            expect(result.value).toBeUndefined()
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+            expectNoOverflowLeak(result.error)
+          }
+        },
+      )
+
+      it('retains GET JSON rejection when the body is null', async () => {
+        const fetchMock = installFetch(
+          async () =>
+            new Response(null, {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+        )
+
+        const result = await capture()
+
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      // Snapshot approved R3 behavior only. RFC forbids Content-Length on 204,
+      // but R4 does not authorize general status/header policy changes.
+      it.each(['0', '1048576', '1048577'])(
+        'preserves DELETE 204 local Content-Length policy for %s',
+        async (contentLength) => {
+          const fetchMock = installFetch(
+            async () =>
+              new Response(null, {
+                status: 204,
+                headers: { 'content-length': contentLength },
+              }),
+          )
+
+          const result = await capture({ method: 'DELETE', segments: ['products'] })
+
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          if (contentLength === '1048577') {
+            expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+          } else {
+            expect(result.value).toEqual({ status: 204, rawBody: '' })
+          }
+        },
+      )
+    })
+
     it('rejects a nonempty HEAD body without draining past the cap', async () => {
       const chunks = overCapHostileChunks()
       const { response, pulled, reads } = streamJsonResponse(chunks)
