@@ -1851,3 +1851,534 @@ describe('Nuvemshop fixed transport', () => {
     await expect(import('@/modules/nuvemshop/server/client')).rejects.toThrow(/Client Component/)
   })
 })
+
+// R5 uses the real preparation/client path; only fetch and synthetic env are substituted.
+describe('NUV-04-R5 input accessor boundary', () => {
+  const marker = 'SENSITIVE_TEST_MARKER'
+  type HostileFixture = { input: unknown; original?: unknown; accesses: () => number }
+  type HostileCase = { label: string; create: () => HostileFixture }
+
+  function validInput(): NuvemshopRequestInput {
+    return { method: 'GET', segments: ['products'] }
+  }
+
+  function throwingField(field: keyof NuvemshopRequestInput, original: unknown): HostileFixture {
+    let accesses = 0
+    const input = validInput()
+    Object.defineProperty(input, field, {
+      get() {
+        accesses += 1
+        throw original
+      },
+    })
+    return { input, original, accesses: () => accesses }
+  }
+
+  function throwingSegments(property: string): HostileFixture {
+    let accesses = 0
+    const original = new Error(marker)
+    const segments = new Proxy(['products'], {
+      get(target, key, receiver) {
+        if (key === property) {
+          accesses += 1
+          throw original
+        }
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    return { input: { ...validInput(), segments }, original, accesses: () => accesses }
+  }
+
+  const hostileCases: HostileCase[] = [
+    ...(
+      [
+        'method',
+        'operation',
+        'resourceKind',
+        'correlationId',
+        'segments',
+        'body',
+        'signal',
+      ] as const
+    ).map((field, index) => ({
+      label: `RED-0${index + 1} throwing ${field} getter`,
+      create: () => throwingField(field, new Error(marker)),
+    })),
+    {
+      label: 'RED-08 throwing input get trap',
+      create() {
+        let accesses = 0
+        const original = new Error(marker)
+        const input = new Proxy(validInput(), {
+          get(target, key, receiver) {
+            if (key === 'method') {
+              accesses += 1
+              throw original
+            }
+            return Reflect.get(target, key, receiver)
+          },
+        })
+        return { input, original, accesses: () => accesses }
+      },
+    },
+    {
+      label: 'RED-09 revoked input proxy',
+      create() {
+        const { proxy, revoke } = Proxy.revocable(validInput(), {})
+        revoke()
+        return { input: proxy, accesses: () => 1 }
+      },
+    },
+    ...['length', '0'].map((property) => ({
+      label: `RED-10 throwing segments ${property} trap`,
+      create: () => throwingSegments(property),
+    })),
+    {
+      label: 'RED-10 revoked segments proxy',
+      create() {
+        const { proxy, revoke } = Proxy.revocable(['products'], {})
+        revoke()
+        return { input: { ...validInput(), segments: proxy }, accesses: () => 1 }
+      },
+    },
+    {
+      label: 'RED-11 throwing array index getter',
+      create() {
+        let accesses = 0
+        const original = new Error(marker)
+        const segments = ['products']
+        Object.defineProperty(segments, '0', {
+          get() {
+            accesses += 1
+            throw original
+          },
+        })
+        return { input: { ...validInput(), segments }, original, accesses: () => accesses }
+      },
+    },
+    ...[
+      { label: 'string', original: marker },
+      { label: 'number', original: 8675309 },
+      {
+        label: 'object with throwing coercion',
+        original: {
+          sensitive: marker,
+          toString() {
+            throw new Error(marker)
+          },
+          toJSON() {
+            throw new Error(marker)
+          },
+        },
+      },
+    ].map(({ label, original }) => ({
+      label: `RED-12 thrown ${label}`,
+      create: () => throwingField('method', original),
+    })),
+    {
+      label: 'RED-12 thrown revoked proxy',
+      create() {
+        const { proxy, revoke } = Proxy.revocable({}, {})
+        revoke()
+        return throwingField('method', proxy)
+      },
+    },
+    {
+      label: 'RED-12 forged ValidationError prototype',
+      create() {
+        const original = Object.create(NuvemshopValidationError.prototype) as Error
+        Object.defineProperty(original, 'message', { value: marker })
+        Object.defineProperty(original, 'stack', { value: marker })
+        return throwingField('method', original)
+      },
+    },
+    {
+      label: 'RED-12 caller-created ValidationError with hostile stack',
+      create() {
+        const original = new NuvemshopValidationError()
+        original.stack = marker
+        return throwingField('method', original)
+      },
+    },
+    {
+      label: 'downstream signal getPrototypeOf trap',
+      create() {
+        let accesses = 0
+        const original = new Error(marker)
+        const signal = new Proxy(
+          {},
+          {
+            getPrototypeOf() {
+              accesses += 1
+              throw original
+            },
+          },
+        )
+        return { input: { ...validInput(), signal }, original, accesses: () => accesses }
+      },
+    },
+    {
+      label: 'downstream native-prototype signal impostor',
+      create() {
+        const signal = Object.create(AbortSignal.prototype) as AbortSignal
+        return { input: { ...validInput(), signal }, accesses: () => 1 }
+      },
+    },
+    {
+      label: 'downstream JSON body getter',
+      create() {
+        let accesses = 0
+        const original = new Error(marker)
+        const body = {
+          get product() {
+            accesses += 1
+            throw original
+          },
+        }
+        return {
+          input: { ...validInput(), method: 'POST', body },
+          original,
+          accesses: () => accesses,
+        }
+      },
+    },
+    {
+      label: 'downstream JSON body ownKeys trap',
+      create() {
+        let accesses = 0
+        const original = new Error(marker)
+        const body = new Proxy(
+          {},
+          {
+            ownKeys() {
+              accesses += 1
+              throw original
+            },
+          },
+        )
+        return {
+          input: { ...validInput(), method: 'POST', body },
+          original,
+          accesses: () => accesses,
+        }
+      },
+    },
+  ]
+
+  describe.each(['synthetic configuration', 'RED-13 missing configuration'] as const)(
+    '%s',
+    (config) => {
+      it.each(hostileCases)('$label: RED-14 safe validation and zero fetch', async ({ create }) => {
+        if (config === 'RED-13 missing configuration') {
+          stubConfig({ NUVEMSHOP_STORE_ID: undefined, NUVEMSHOP_ACCESS_TOKEN: undefined })
+        }
+        const fetchMock = installFetch()
+        const fixture = create()
+        const result = await capture(fixture.input as NuvemshopRequestInput)
+
+        // These assertions run before inspecting any untrusted thrown value.
+        expect(fetchMock).not.toHaveBeenCalled()
+        expect(fixture.accesses()).toBeGreaterThan(0)
+        let isValidation = false
+        try {
+          isValidation = result.error instanceof NuvemshopValidationError
+        } catch {
+          // A thrown revoked Proxy must not be inspected by the reporter.
+        }
+        expect(isValidation).toBe(true)
+        const error = result.error as NuvemshopValidationError
+        expect(error === fixture.original).toBe(false)
+        expect(error.message).toBe('Nuvemshop input is invalid.')
+        expect(error.code).toBe('NUVEMSHOP_VALIDATION_ERROR')
+        expect(error.retryEligible).toBe(false)
+        expect('cause' in error).toBe(false)
+        expect(Object.isFrozen(error.metadata)).toBe(true)
+        const projection = error.toJSON()
+        const publicText = JSON.stringify({
+          message: error.message,
+          stack: error.stack,
+          metadata: error.metadata,
+          projection,
+        })
+        expect(publicText.includes(marker)).toBe(false)
+        expect(publicText.includes('8675309')).toBe(false)
+        expect(Object.values(error.metadata).some((value) => value === fixture.original)).toBe(
+          false,
+        )
+        expect(Object.values(projection).some((value) => value === fixture.original)).toBe(false)
+      })
+    },
+  )
+
+  it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as const)(
+    'preserves valid %s with optional fields absent',
+    async (method) => {
+      const fetchMock = installFetch(async () =>
+        method === 'HEAD'
+          ? new Response(null, { status: 200 })
+          : new Response('{"ok":true}', {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+      )
+      const result = await capture({ method, segments: ['products'] })
+      expect(result.error).toBeUndefined()
+      expect(result.value?.status).toBe(200)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestInit(fetchMock).method).toBe(method)
+    },
+  )
+
+  it('accepts valid getters for every public field, JSON and AbortSignal', async () => {
+    const controller = new AbortController()
+    const values: NuvemshopRequestInput = {
+      method: 'POST',
+      segments: ['products', ABOVE_INT64],
+      body: { product: { name: 'synthetic product' } },
+      signal: controller.signal,
+      operation: 'lookup',
+      resourceKind: 'product',
+      correlationId: CORRELATION_ID,
+    }
+    const input = validInput()
+    for (const key of Object.keys(values) as (keyof NuvemshopRequestInput)[]) {
+      Object.defineProperty(input, key, { get: () => values[key] })
+    }
+    const fetchMock = installFetch()
+    const result = await capture(input)
+    expect(result.error).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requestUrl(fetchMock)).toBe(`${OFFICIAL_PRODUCTS}/${ABOVE_INT64}`)
+    expect(requestInit(fetchMock).body).toBe(JSON.stringify(values.body))
+    expect(requestInit(fetchMock).signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('accepts forwarding input and segments proxies with an exact ULID', async () => {
+    const ulid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    const segments = new Proxy(['orders', ulid], { get: Reflect.get })
+    const input = new Proxy({ ...validInput(), segments }, { get: Reflect.get })
+    const fetchMock = installFetch()
+    const result = await capture(input)
+    expect(result.error).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requestUrl(fetchMock)).toBe(
+      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/orders/${ulid}`,
+    )
+  })
+
+  it.each(['map', 'species'] as const)(
+    'validates real array indices without consulting caller %s behavior',
+    async (surface) => {
+      const segments = ['products', ABOVE_MAX_SAFE]
+      let accesses = 0
+      const throwIfConsulted = () => {
+        accesses += 1
+        throw new Error(marker)
+      }
+      if (surface === 'map') {
+        Object.defineProperty(segments, 'map', { get: throwIfConsulted })
+      } else {
+        const constructor = {}
+        Object.defineProperty(constructor, Symbol.species, { get: throwIfConsulted })
+        Object.defineProperty(segments, 'constructor', { value: constructor })
+      }
+      const fetchMock = installFetch()
+      const result = await capture({ ...validInput(), segments })
+      expect(result.error === undefined).toBe(true)
+      expect(accesses).toBe(0)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(`${OFFICIAL_PRODUCTS}/${ABOVE_MAX_SAFE}`)
+    },
+  )
+
+  it('supports AbortSignal.any in the existing jsdom environment', () => {
+    expect(typeof AbortSignal.any).toBe('function')
+  })
+
+  it.each(['native', 'subclass', 'forwarding proxy'] as const)(
+    'preserves valid %s signals and propagates actual abort',
+    async (surface) => {
+      const controller = new AbortController()
+      let signal = controller.signal
+      if (surface === 'subclass') {
+        class CallerSignal extends AbortSignal {}
+        Object.setPrototypeOf(signal, CallerSignal.prototype)
+        expect(signal).toBeInstanceOf(CallerSignal)
+      } else if (surface === 'forwarding proxy') {
+        signal = new Proxy(signal, { get: Reflect.get })
+      }
+      const fetchMock = installFetch(async (_url, init) => {
+        await new Promise<void>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error(marker)), { once: true })
+          controller.abort()
+        })
+        return new Response(null, { status: 200 })
+      })
+      const result = await capture({ ...validInput(), signal })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(controller.signal.aborted).toBe(true)
+      expect(requestInit(fetchMock).signal?.aborted).toBe(true)
+      expect(result.error instanceof NuvemshopNetworkError).toBe(true)
+      expect(serialized(result.error).includes(marker)).toBe(false)
+    },
+  )
+
+  describe.each(['synthetic configuration', 'missing configuration'] as const)(
+    'native signals with %s',
+    (config) => {
+      it.each(['native getter', 'proxy get trap'] as const)(
+        'contains a throwing aborted %s if normalization executes it',
+        async (surface) => {
+          if (config === 'missing configuration') {
+            stubConfig({ NUVEMSHOP_STORE_ID: undefined, NUVEMSHOP_ACCESS_TOKEN: undefined })
+          }
+          const controller = new AbortController()
+          const original = new Error(marker)
+          let accesses = 0
+          const throwOnRead = () => {
+            accesses += 1
+            throw original
+          }
+          let signal = controller.signal
+          if (surface === 'native getter') {
+            Object.defineProperty(signal, 'aborted', { get: throwOnRead })
+          } else {
+            signal = new Proxy(signal, {
+              get(target, property, receiver) {
+                if (property === 'aborted') return throwOnRead()
+                return Reflect.get(target, property, receiver)
+              },
+            })
+          }
+          const fetchMock = installFetch()
+          const result = await capture({ ...validInput(), signal })
+          if (accesses > 0) {
+            expect(fetchMock).not.toHaveBeenCalled()
+            expect(result.error instanceof NuvemshopValidationError).toBe(true)
+            const error = result.error as NuvemshopValidationError
+            expect(error === original).toBe(false)
+            expect(serialized(error).includes(marker)).toBe(false)
+            expect('cause' in error).toBe(false)
+          } else if (config === 'missing configuration') {
+            expect(fetchMock).not.toHaveBeenCalled()
+            expect(result.error instanceof NuvemshopConfigurationError).toBe(true)
+          } else {
+            expect(result.error === undefined).toBe(true)
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+          }
+        },
+      )
+
+      it.each(['addEventListener', 'removeEventListener'] as const)(
+        'bypasses a throwing own %s accessor while preserving the native signal',
+        async (property) => {
+          if (config === 'missing configuration') {
+            stubConfig({ NUVEMSHOP_STORE_ID: undefined, NUVEMSHOP_ACCESS_TOKEN: undefined })
+          }
+          const controller = new AbortController()
+          let accesses = 0
+          Object.defineProperty(controller.signal, property, {
+            get() {
+              accesses += 1
+              throw new Error(marker)
+            },
+          })
+          const fetchMock = installFetch()
+          const result = await capture({ ...validInput(), signal: controller.signal })
+          if (config === 'missing configuration') {
+            expect(fetchMock).not.toHaveBeenCalled()
+            expect(result.error instanceof NuvemshopConfigurationError).toBe(true)
+          } else {
+            expect(result.error === undefined).toBe(true)
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+          }
+          expect(accesses).toBe(0)
+        },
+      )
+    },
+  )
+
+  it('isolates a valid signal proxy that becomes hostile after fetch begins', async () => {
+    const controller = new AbortController()
+    let started = false
+    let hostileAccesses = 0
+    const signal = new Proxy(controller.signal, {
+      get(target, property, receiver) {
+        if (started) {
+          hostileAccesses += 1
+          throw new Error(marker)
+        }
+        return Reflect.get(target, property, receiver)
+      },
+      getPrototypeOf(target) {
+        if (started) {
+          hostileAccesses += 1
+          throw new Error(marker)
+        }
+        return Reflect.getPrototypeOf(target)
+      },
+    })
+    const fetchMock = installFetch(async () => {
+      started = true
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const result = await capture({ ...validInput(), signal })
+    expect(result.error === undefined).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(hostileAccesses).toBe(0)
+  })
+
+  it('retains full validated context for ordinary invalid segments before configuration', async () => {
+    stubConfig({ NUVEMSHOP_STORE_ID: undefined, NUVEMSHOP_ACCESS_TOKEN: undefined })
+    const fetchMock = installFetch()
+    const result = await capture({
+      method: 'GET',
+      segments: ['..'],
+      operation: 'lookup',
+      resourceKind: 'product',
+      correlationId: CORRELATION_ID,
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.error instanceof NuvemshopValidationError).toBe(true)
+    expect((result.error as NuvemshopValidationError).metadata).toEqual({
+      method: 'GET',
+      operation: 'lookup',
+      resourceKind: 'product',
+      correlationId: CORRELATION_ID,
+    })
+  })
+
+  it('keeps absent configuration distinct for valid input', async () => {
+    stubConfig({ NUVEMSHOP_STORE_ID: undefined, NUVEMSHOP_ACCESS_TOKEN: undefined })
+    const fetchMock = installFetch()
+    const result = await capture(validInput())
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.error instanceof NuvemshopConfigurationError).toBe(true)
+  })
+
+  it('keeps a real fetch rejection distinct and preserves validated request context', async () => {
+    const fetchMock = installFetch(async () => {
+      throw new Error(marker)
+    })
+    const result = await capture({
+      ...validInput(),
+      operation: 'lookup',
+      resourceKind: 'product',
+      correlationId: CORRELATION_ID,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.error instanceof NuvemshopNetworkError).toBe(true)
+    const error = result.error as NuvemshopNetworkError
+    expect(error.metadata).toEqual({
+      method: 'GET',
+      operation: 'lookup',
+      resourceKind: 'product',
+      correlationId: CORRELATION_ID,
+    })
+    expect(serialized(error).includes(marker)).toBe(false)
+    expect('cause' in error).toBe(false)
+  })
+})

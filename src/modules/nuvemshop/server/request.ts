@@ -143,10 +143,22 @@ function readSegment(segment: unknown, context: NuvemshopErrorContext): string {
 }
 
 function readSegments(value: unknown, context: NuvemshopErrorContext): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SEGMENTS) {
+  if (!Array.isArray(value)) failValidation(context)
+  const length: unknown = value.length
+  if (
+    typeof length !== 'number' ||
+    !Number.isInteger(length) ||
+    length < 1 ||
+    length > MAX_SEGMENTS
+  ) {
     failValidation(context)
   }
-  return value.map((segment) => readSegment(segment, context))
+  // Keep caller methods, species and proxies out of the prepared path.
+  const segments: string[] = []
+  for (let index = 0; index < length; index += 1) {
+    segments.push(readSegment(value[index], context))
+  }
+  return segments
 }
 
 function readBody(
@@ -172,28 +184,39 @@ function readBody(
 function readSignal(value: unknown, context: NuvemshopErrorContext): AbortSignal | undefined {
   if (value === undefined) return undefined
   if (!(value instanceof AbortSignal)) failValidation(context)
-  return value
+  const aborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')?.get?.call(
+    value,
+  )
+  if (typeof aborted !== 'boolean') failValidation(context)
+  // Check the native brand, then stop retaining caller accessors for later reads.
+  return AbortSignal.any([value])
 }
 
 /** Validates caller input before configuration is read and before any fetch. */
 export function prepareNuvemshopAttempt(input: NuvemshopRequestInput): PreparedNuvemshopAttempt {
-  if (typeof input !== 'object' || input === null) failValidation()
-  const method = readMethod(input.method)
-  const operation = readOperation(input.operation)
-  const resourceKind = readResourceKind(input.resourceKind)
-  const correlationId = readCorrelationId(input.correlationId)
-  const context: AttemptContext = {
-    operation,
-    method,
-    ...(resourceKind === undefined ? {} : { resourceKind }),
-    ...(correlationId === undefined ? {} : { correlationId }),
-  }
-  return {
-    method,
-    segments: readSegments(input.segments, context),
-    body: readBody(method, input.body, context),
-    signal: readSignal(input.signal, context),
-    context,
+  let context: AttemptContext | undefined
+  try {
+    if (typeof input !== 'object' || input === null) failValidation()
+    const method = readMethod(input.method)
+    const operation = readOperation(input.operation)
+    const resourceKind = readResourceKind(input.resourceKind)
+    const correlationId = readCorrelationId(input.correlationId)
+    context = {
+      operation,
+      method,
+      ...(resourceKind === undefined ? {} : { resourceKind }),
+      ...(correlationId === undefined ? {} : { correlationId }),
+    }
+    return {
+      method,
+      segments: readSegments(input.segments, context),
+      body: readBody(method, input.body, context),
+      signal: readSignal(input.signal, context),
+      context,
+    }
+  } catch {
+    // Never inspect or rethrow a caller-controlled exception, even an Error subclass.
+    failValidation(context)
   }
 }
 
