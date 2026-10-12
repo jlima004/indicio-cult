@@ -157,13 +157,15 @@ function readBody(
   if (body === undefined) return undefined
   if (method === 'GET' || method === 'HEAD' || method === 'DELETE') failValidation(context)
   if (typeof body !== 'object' || body === null) failValidation(context)
-  let encoded: string
+  let encoded: unknown
   try {
     encoded = JSON.stringify(body)
   } catch {
     failValidation(context)
   }
-  if (encoded.length === 0 || encoded.length > MAX_RESPONSE_CHARS) failValidation(context)
+  if (typeof encoded !== 'string' || encoded.length === 0 || encoded.length > MAX_RESPONSE_CHARS) {
+    failValidation(context)
+  }
   return encoded
 }
 

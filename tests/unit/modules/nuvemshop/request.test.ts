@@ -632,6 +632,151 @@ describe('Nuvemshop fixed transport', () => {
     )
   })
 
+  describe('JSON request body serialization', () => {
+    const bodyMarker = 'NUV04-R3-SENSITIVE-BODY-MARKER'
+    const sensitiveMessage = `${bodyMarker} ${TOKEN} ${CLIENT_SECRET} ${APP_ID}`
+
+    it.each<[string, () => object]>([
+      ['toJSON returns undefined', () => ({ toJSON: () => undefined })],
+      ['toJSON returns Symbol', () => ({ toJSON: () => Symbol(bodyMarker) })],
+      ['toJSON returns function', () => ({ toJSON: () => () => bodyMarker })],
+      [
+        'toJSON throws a sensitive error',
+        () => ({
+          toJSON() {
+            throw new Error(sensitiveMessage)
+          },
+        }),
+      ],
+      [
+        'toJSON getter throws a sensitive error',
+        () => ({
+          get toJSON() {
+            throw new Error(sensitiveMessage)
+          },
+        }),
+      ],
+      [
+        'circular reference',
+        () => {
+          const body: { marker: string; self?: unknown } = { marker: bodyMarker }
+          body.self = body
+          return body
+        },
+      ],
+      ['nested BigInt', () => ({ nested: { marker: bodyMarker, value: BigInt(1) } })],
+    ])('rejects %s safely before fetch without retry', async (_label, makeBody) => {
+      const fetchMock = installFetch()
+      const body = makeBody()
+      Object.assign(body, { marker: bodyMarker, access_token: TOKEN, client_secret: CLIENT_SECRET })
+
+      const result = await capture({ method: 'POST', segments: ['products'], body })
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(result.error).not.toBeInstanceOf(TypeError)
+      const error = result.error as NuvemshopValidationError
+      expect(error.retryEligible).toBe(false)
+      expect(error.message).toBe('Nuvemshop input is invalid.')
+      expect(error.toJSON().code).toBe('NUVEMSHOP_VALIDATION_ERROR')
+      expectRedacted(error)
+      expect(serialized(error)).not.toContain(bodyMarker)
+      expect(JSON.stringify(error)).not.toContain(bodyMarker)
+      for (const marker of SECRET_MARKERS) expect(JSON.stringify(error)).not.toContain(marker)
+    })
+
+    it('rejects undefined serialization before reading missing configuration', async () => {
+      stubConfig({ NUVEMSHOP_ACCESS_TOKEN: undefined, NUVEMSHOP_STORE_ID: undefined })
+      const fetchMock = installFetch()
+      const result = await capture({
+        method: 'POST',
+        segments: ['products'],
+        body: { toJSON: () => undefined },
+      })
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(result.error).not.toBeInstanceOf(NuvemshopConfigurationError)
+      expect((result.error as NuvemshopValidationError).retryEligible).toBe(false)
+      expectRedacted(result.error)
+    })
+
+    it.each([
+      ['object', { name: 'synthetic', quantity: 2 }, '{"name":"synthetic","quantity":2}'],
+      ['array', [{ name: 'synthetic' }, 2], '[{"name":"synthetic"},2]'],
+      [
+        'nested optional undefined',
+        { nested: { name: 'synthetic', optional: undefined } },
+        '{"nested":{"name":"synthetic"}}',
+      ],
+      ['valid toJSON object', { toJSON: () => ({ quantity: 2 }) }, '{"quantity":2}'],
+      ['valid toJSON string', { toJSON: () => 'synthetic' }, '"synthetic"'],
+      ['valid toJSON null', { toJSON: () => null }, 'null'],
+    ])('preserves the exact JSON payload for %s', async (_label, body, expectedBody) => {
+      const fetchMock = installFetch()
+
+      const result = await capture({ method: 'POST', segments: ['products'], body })
+
+      expect(result.error).toBeUndefined()
+      expect(result.value?.status).toBe(200)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestInit(fetchMock).body).toBe(expectedBody)
+      expect(headerRecord(requestInit(fetchMock))['Content-Type']).toBe(
+        'application/json; charset=utf-8',
+      )
+    })
+
+    it('serializes a valid toJSON body exactly once', async () => {
+      const fetchMock = installFetch()
+      const toJSON = vi.fn(() => ({ name: 'synthetic' }))
+
+      const result = await capture({
+        method: 'POST',
+        segments: ['products'],
+        body: { toJSON },
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.value?.status).toBe(200)
+      expect(toJSON).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestInit(fetchMock).body).toBe('{"name":"synthetic"}')
+      expect(headerRecord(requestInit(fetchMock))['Content-Type']).toBe(
+        'application/json; charset=utf-8',
+      )
+    })
+
+    it.each([0, 1])(
+      'enforces the existing UTF-16 request cap with %i extra character',
+      async (extra) => {
+        const fetchMock = installFetch()
+        // JSON quotes add two characters; multibyte text distinguishes characters from bytes.
+        const payload = `"${'é'.repeat(MAX_BODY_BYTES - 2 + extra)}"`
+        const result = await capture({
+          method: 'POST',
+          segments: ['products'],
+          body: { toJSON: () => payload.slice(1, -1) },
+        })
+
+        expect(payload.length).toBe(1_048_576 + extra)
+        if (extra === 0) {
+          expect(result.error).toBeUndefined()
+          expect(result.value?.status).toBe(200)
+          expect(fetchMock).toHaveBeenCalledTimes(1)
+          expect(requestInit(fetchMock).body).toBe(payload)
+          expect(headerRecord(requestInit(fetchMock))['Content-Type']).toBe(
+            'application/json; charset=utf-8',
+          )
+        } else {
+          expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+          expect((result.error as NuvemshopValidationError).retryEligible).toBe(false)
+          expect(fetchMock).not.toHaveBeenCalled()
+          expectRedacted(result.error)
+        }
+      },
+    )
+  })
+
   describe('local validation and redaction', () => {
     it('preserves a configured store id with leading zeros exactly', async () => {
       stubConfig({ NUVEMSHOP_STORE_ID: '000123' })
