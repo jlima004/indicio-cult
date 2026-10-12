@@ -1,17 +1,18 @@
 # Spec: `nuvemshop`
 
-| Campo                             | Valor                                                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Status                            | **HUMAN RE-APPROVED — 2026-10-01**                                                                    |
-| Capability                        | `nuvemshop`                                                                                           |
-| Tipo                              | Adapter de integração server-only, sem UI                                                             |
-| Baseline histórico de planning    | `e8f76ab86df13425de4b415aba1551eec62fcc39` (merge PR #27; baseline histórico de planning)             |
-| Baseline da convergência PR #27   | `02252f2b874f812179526c9394b0fdc33427277e`                                                            |
-| Data da pesquisa atualizada       | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico                               |
-| Plano                             | [plan.md](../../tasks/nuvemshop/plan.md), **HUMAN APPROVED — 2026-10-01**                             |
-| Implementação                     | **AUTH GRANTED / IN PROGRESS — 2026-10-01**                                                           |
-| Âncora do estado de implementação | `245ebac5c498da71e55e0a28cc6a3b4ed9b79adf` (main após NUV-01/02, merge PR #30)                        |
-| Próximos gates                    | Dependências e HR específicos por task; review, CI e release humana por candidate HEAD antes de merge |
+| Campo                           | Valor                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Status                          | **HUMAN RE-APPROVED — 2026-10-01**                                                                    |
+| Capability                      | `nuvemshop`                                                                                           |
+| Tipo                            | Adapter de integração server-only, sem UI                                                             |
+| Baseline histórico de planning  | `e8f76ab86df13425de4b415aba1551eec62fcc39` (merge PR #27; baseline histórico de planning)             |
+| Baseline da convergência PR #27 | `02252f2b874f812179526c9394b0fdc33427277e`                                                            |
+| Data da pesquisa atualizada     | 2026-09-30; pesquisa inicial em 2026-09-28/29 preservada como histórico                               |
+| Plano                           | [plan.md](../../tasks/nuvemshop/plan.md), **HUMAN APPROVED — 2026-10-01**                             |
+| Implementação                   | **AUTH GRANTED / IN PROGRESS — 2026-10-01**                                                           |
+| Âncora histórica (2026-10-01)   | `245ebac5c498da71e55e0a28cc6a3b4ed9b79adf` (main após NUV-01/02, merge PR #30)                        |
+| Âncora corrente (2026-10-09)    | `be617b71c80c65d6621d22f966245514e97344c9` (main após NUV-07, merge PR #34)                           |
+| Próximos gates                  | Dependências e HR específicos por task; review, CI e release humana por candidate HEAD antes de merge |
 
 Este documento separa contratos upstream do repositório, **fatos externos verificados**, **decisões de design do projeto** e **decisões humanas/account-specific**. Design do projeto não é garantia do provider.
 
@@ -21,7 +22,7 @@ A revisão anterior foi **HUMAN APPROVED / PLANNING ALLOWED em 2026-09-29**: lim
 
 A convergência contratual autorizada em 2026-09-30 foi **HUMAN RE-APPROVED em 2026-10-01** no HEAD `02d2684ea009ac58d7c756d39e212e15728c78ca` e mergeada pela PR #27 em `e8f76ab86df13425de4b415aba1551eec62fcc39`. O plano reconciliado em `tasks/nuvemshop/` foi **HUMAN APPROVED** na mesma adjudicação. `NUV-HR-01` foi **CLOSED em 2026-10-01** por atestação do owner da loja/app, registrada em [`tasks/nuvemshop/HR-01.md`](../../tasks/nuvemshop/HR-01.md): alvo single-store confirmado, `store_id` confirmado fora do repositório e mantido non-public, app autorizada e nenhum token/secret registrado. `NUV-HR-02` a `NUV-HR-08` permanecem **OPEN**. Naquela aprovação e no fechamento de HR-01, o estado histórico era **NOT AUTHORIZED / NOT READY**, com `AUTH` ausente; a aprovação de SPEC + PLAN, por si só, não autorizou implementação. O registro de AUTH em `HR-01.md` retrata esse momento histórico de fechamento, anterior à decisão posterior abaixo.
 
-### Estado corrente de implementação — 2026-10-01
+### Snapshot histórico de implementação — 2026-10-01
 
 Em decisão humana separada e posterior à aprovação do plano, o owner concedeu **IMPLEMENTATION AUTH GRANTED em 2026-10-01**. A implementação está **IN PROGRESS**; AUTH e HR-01 CLOSED satisfazem os pré-requisitos globais, sem fechar HR-02–08 nem substituir dependências, verificação de fontes, provenance das fixtures ou gates específicos por task.
 
@@ -31,6 +32,19 @@ Em decisão humana separada e posterior à aprovação do plano, o owner concede
 Merges e SHAs foram conferidos no GitHub nesta sincronização; deploys concluídos e AUTH são fatos atestados pelo owner no pedido de 2026-10-01. A âncora deste estado é main após PR #30; não substitui os baselines históricos de planning/convergência. NUV-03 e NUV-07 estão **READY / NOT STARTED** e não são implementadas nesta execução; nova execução deve aguardar o merge documental e usar o novo SHA exato de main.
 
 **AUTH não equivale a MERGE AUTH.** Cada futuro candidato exige review, CI e aprovação humana explícita de release vinculada ao HEAD revisado antes de merge; mudança de HEAD exige nova aprovação. Deploy automático após merge não é autorização prévia. Esta sincronização não autoriza merge nem deploy.
+
+### Estado corrente de implementação — 2026-10-09
+
+O snapshot de 2026-10-01 acima permanece histórico. Esta seção não substitui a reaprovação humana da spec nem a aprovação humana do plano, ambas de 2026-10-01, e não registra nova aprovação humana. O grafo de dependências não muda. `NUV-HR-01` continua **CLOSED**; `NUV-HR-02`–`NUV-HR-08` continuam **OPEN**. O adapter não está operacional e NUV-25 não está concluída.
+
+- **NUV-01 / NUV-02:** permanecem COMPLETE / MERGED / DEPLOYED, com a evidência já registrada em 2026-10-01.
+- **NUV-03: MERGED** — [PR #33](https://github.com/jlima004/indicio-cult/pull/33), candidate HEAD `898e447eccc31e95cac5f54b1009a7a4db6d074d`, merge `2fc01cbec679f84d0e46c1e4e0c2e5a45b651d0d` em 2026-10-08. Taxonomia segura de erros implementada. Este registro não promove NUV-03 a COMPLETE / DEPLOYED por inferência e não marca os critérios de aceite individuais.
+- **NUV-07: COMPLETE / MERGED / DEPLOYED** — [PR #34](https://github.com/jlima004/indicio-cult/pull/34), candidate HEAD `9ae12ee2fa036df7ad6d2ce28f2f652c24f0b86d`, merge `be617b71c80c65d6621d22f966245514e97344c9` em 2026-10-09. Schemas e tipos normalizados implementados. Remediações no mesmo PR, em ordem: `ac0cfa7` (histórico anulável e completude de fulfillment; precedente das threads e tratado aqui como R1), R2 `da182ce` (integridade do token numérico JSON; rótulo do owner na PR), R3 `b329d96` (léxicos numéricos não canônicos de ID; rótulo do owner na PR), R4 `9ae12ee` (léxicos de quantidade e parcelas; rótulo do owner na PR). O pedido desta sincronização atesta que as três threads P2 históricas da PR #34 foram resolvidas. Não há run ID de CI ou de deploy recuperado para citar.
+- **Produção:** o owner atestou, para a versão mergeada de NUV-07, `status=ok`, `supabase=ok`, `version=be617b71c80c65d6621d22f966245514e97344c9`. Isso é atestação humana, distinta da evidência de merge conferida no GitHub.
+- **NUV-04: IN PROGRESS** — Draft [PR #35](https://github.com/jlima004/indicio-cult/pull/35), branch `feat/nuv-04-transport`, candidate HEAD `02b4d63ec8a3dafc556c2610b49f2d93d0d8388b`. Não está COMPLETE, MERGED nem DEPLOYED. HR-02 continua bloqueando uso autenticado real.
+- **NUV-05 / NUV-06:** aguardam NUV-04 mergeada. **NUV-14:** elegível para desenvolvimento local com fixtures sintéticas; HR-03 permanece obrigatório para HMAC operacional.
+
+Merges, SHAs e o estado MERGED das PRs #33 e #34 foram conferidos no GitHub em 2026-10-09. AUTH, deploys anteriores e a saúde de produção acima são atestações do owner. Nenhuma destas linhas autoriza merge ou deploy.
 
 ## 1. Objetivo
 
