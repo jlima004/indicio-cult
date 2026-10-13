@@ -2577,3 +2577,62 @@ describe('NUV-04-R6 route identifier boundary', () => {
     },
   )
 })
+
+describe('NUV-04-R7 canonical ULID caller boundary', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each(['8', '9', 'A', 'Z', 'a', 'z'])(
+    'rejects overflow first character %s before config and fetch',
+    async (first) => {
+      const id = `${first}${'Z'.repeat(25)}`
+      expect(id).toHaveLength(26)
+      const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+      const fetchMock = installFetch()
+      const result = await capture({
+        method: 'GET',
+        segments: ['orders', '123456', 'fulfillment-orders', id],
+        operation: 'lookup',
+        resourceKind: 'order',
+        correlationId: CORRELATION_ID,
+      })
+      expect.soft(configReads).not.toHaveBeenCalled()
+      expect.soft(fetchMock).not.toHaveBeenCalled()
+      expect.soft(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect.soft(result.value).toBeUndefined()
+      if (result.error instanceof NuvemshopValidationError) {
+        expect(result.error.message).toBe('Nuvemshop input is invalid.')
+        expectRedacted(result.error)
+        expect(serialized(result.error)).not.toContain(id)
+        expect(result.error).not.toHaveProperty('cause')
+      }
+    },
+  )
+
+  it.each([
+    '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    `7${'Z'.repeat(25)}`,
+    '01arz3ndektsv4rrffq69g5fav',
+    `7${'z'.repeat(25)}`,
+    '01aRz3NdEkTsV4rRfFq69G5fAv',
+  ])('preserves valid fulfillment ULID %s and exact large-decimal parent URL', async (id) => {
+    expect(id).toHaveLength(26)
+    for (const orderId of ['123456', ABOVE_MAX_SAFE, ABOVE_INT64]) {
+      const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+      const fetchMock = installFetch()
+      const result = await capture({
+        method: 'GET',
+        segments: ['orders', orderId, 'fulfillment-orders', id],
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.value?.status).toBe(200)
+      expect(configReads).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(
+        `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/orders/${orderId}/fulfillment-orders/${id}`,
+      )
+      configReads.mockRestore()
+    }
+  })
+})

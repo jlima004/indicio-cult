@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { NuvemshopProtocolError, NuvemshopValidationError } from '@/modules/nuvemshop/server/errors'
-import { readDecimalId, readOrderNumber } from '@/modules/nuvemshop/server/schemas/ids'
+import { readDecimalId, readOrderNumber, readUlid } from '@/modules/nuvemshop/server/schemas/ids'
 import {
   readExactUnsignedInteger,
   reviveLosslessInteger,
@@ -2131,5 +2131,216 @@ describe('NUV-07-R4 exact quantity and installment lexemes', () => {
         expect(JSON.stringify(error.toJSON())).not.toContain('buyer@example.test')
       }
     })
+  })
+})
+
+describe('NUV-04-R7 canonical ULID validation', () => {
+  const maximum = `7${'Z'.repeat(25)}`
+  const validIds = [
+    ...['0', '1', '2', '3', '4', '5', '6', '7'].map((first) => `${first}${'0'.repeat(25)}`),
+    maximum,
+    maximum.toLowerCase(),
+    '01aRz3NdEkTsV4rRfFq69G5fAv',
+    FULFILLMENT_A,
+    FULFILLMENT_B,
+    TRACKING_EVENT_ID,
+  ]
+  const overflowIds = ['8', '9', 'A', 'Z', 'a', 'z'].map((first) => `${first}${'Z'.repeat(25)}`)
+
+  it.each(validIds)('preserves valid 128-bit ULID %s exactly', (id) => {
+    expect(id).toHaveLength(26)
+    expect(readUlid(id)).toBe(id)
+  })
+
+  it.each(overflowIds)('rejects 26-character overflow ULID %s directly', (id) => {
+    expect(id).toHaveLength(26)
+    expect(readUlid(id)).toBeUndefined()
+  })
+
+  it.each([
+    ['25 characters', '0'.repeat(25)],
+    ['27 characters', '0'.repeat(27)],
+    ...['I', 'L', 'O', 'U', 'i', 'l', 'o', 'u', '-', '/', '@', 'é'].map(
+      (char): [string, unknown] => [`forbidden character ${char}`, `0${'0'.repeat(24)}${char}`],
+    ),
+    ['number', 123456],
+    ['bigint', BigInt(123456)],
+    ['null', null],
+    ['undefined', undefined],
+    ['object', {}],
+    ['array', []],
+  ])('rejects invalid ULID %s', (_label, value) => {
+    expect(readUlid(value)).toBeUndefined()
+  })
+
+  function expectOverflowProtocol(run: () => unknown, id: string) {
+    let caught: unknown
+    try {
+      run()
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(NuvemshopProtocolError)
+    if (!(caught instanceof NuvemshopProtocolError)) throw new Error('expected protocol error')
+    expect(caught.message).toBe('Nuvemshop response is incompatible.')
+    expect(caught.name).toBe('NuvemshopProtocolError')
+    const publicError = JSON.stringify({
+      message: caught.message,
+      stack: caught.stack,
+      metadata: caught.metadata,
+      projection: caught.toJSON(),
+    })
+    expect(publicError).not.toContain(id)
+    expect(publicError).not.toContain(INVOICE_KEY)
+    expect(publicError).not.toContain(INVOICE_LINK)
+    expect(caught).not.toHaveProperty('cause')
+  }
+
+  describe.each(['object', 'string', 'ID-only object'] as const)(
+    '%s fulfillment representation',
+    (shape) => {
+      function fulfillment(id: string) {
+        if (shape === 'string') return id
+        if (shape === 'ID-only object') return { id }
+        return {
+          id,
+          status: 'PACKED',
+          tracking_info: null,
+          tracking_events: [],
+          status_history: [],
+        }
+      }
+
+      it.each(
+        overflowIds.flatMap((id) =>
+          (['confirmed', 'incomplete'] as const).map((completeness) => [id, completeness] as const),
+        ),
+      )('rejects overflow %s in a present %s nonempty collection', (id, completeness) => {
+        expect(id).toHaveLength(26)
+        expectOverflowProtocol(
+          () =>
+            parseOrder(
+              orderRaw({ fulfillment_orders: [fulfillment(FULFILLMENT_A), fulfillment(id)] }),
+              { fulfillmentCompleteness: completeness },
+            ),
+          id,
+        )
+      })
+
+      it.each(validIds)('preserves valid %s and collection completeness', (id) => {
+        const result = parseOrder(
+          orderRaw({ fulfillment_orders: [fulfillment(id), fulfillment(FULFILLMENT_B)] }),
+          {
+            fulfillmentCompleteness: 'confirmed',
+          },
+        ).fulfillments
+        const expectedCompleteness = shape === 'object' ? 'confirmed' : 'incomplete'
+        expect(result.completeness).toBe(expectedCompleteness)
+        if (result.completeness === 'not_consulted') throw new Error('present collection lost')
+        expect(result.items).toHaveLength(2)
+        expect(result.items.map((item) => item.id)).toEqual([id, FULFILLMENT_B])
+      })
+    },
+  )
+
+  function trackingOrder(id: string) {
+    return parseOrder(
+      orderRaw({
+        fulfillment_orders: [
+          {
+            id: FULFILLMENT_A,
+            status: 'DISPATCHED',
+            tracking_info: null,
+            tracking_events: [
+              { id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: null },
+              { id, status: 'delivered', happened_at: CREATED_AT },
+            ],
+          },
+        ],
+      }),
+      { fulfillmentCompleteness: 'confirmed' },
+    )
+  }
+
+  it.each(overflowIds)(
+    'rejects overflow tracking event %s without dropping a collection member',
+    (id) => {
+      expectOverflowProtocol(() => trackingOrder(id), id)
+    },
+  )
+
+  it.each(validIds)('preserves valid tracking event %s with nullable timestamp control', (id) => {
+    const result = trackingOrder(id).fulfillments
+    if (result.completeness !== 'confirmed') throw new Error('confirmed collection expected')
+    const events = result.items[0]?.trackingEvents
+    expect(events?.completeness).toBe('confirmed')
+    if (events?.completeness !== 'confirmed') throw new Error('confirmed events expected')
+    expect(events.items).toHaveLength(2)
+    expect(events.items.map((event) => event.id)).toEqual([TRACKING_EVENT_ID, id])
+    expect(events.items[0]?.happenedAt).toBeNull()
+    expect(events.items[1]?.happenedAt?.raw).toBe(CREATED_AT)
+  })
+
+  function invoiceList(id: string) {
+    return JSON.stringify([
+      { key: INVOICE_KEY, link: INVOICE_LINK, fulfillment_order_id: FULFILLMENT_A },
+      { key: INVOICE_KEY, link: INVOICE_LINK, fulfillment_order_id: id },
+    ])
+  }
+
+  it.each(overflowIds)('rejects overflow invoice reference %s in the list parser', (id) => {
+    expectOverflowProtocol(() => parseInvoiceListValue(invoiceList(id)), id)
+  })
+
+  it.each(overflowIds)('rejects overflow invoice reference %s in the order projection', (id) => {
+    expectOverflowProtocol(
+      () =>
+        parseOrder(orderRaw(), {
+          invoiceCompleteness: 'confirmed',
+          invoiceValue: invoiceList(id),
+        }),
+      id,
+    )
+  })
+
+  it.each(validIds)('preserves valid invoice reference %s exactly', (id) => {
+    const list = parseInvoiceListValue(invoiceList(id))
+    expect(list).toHaveLength(2)
+    expect(list.map((item) => item.fulfillmentOrderId)).toEqual([FULFILLMENT_A, id])
+    const result = parseOrder(orderRaw(), {
+      invoiceCompleteness: 'confirmed',
+      invoiceValue: invoiceList(id),
+    }).invoices
+    expect(result.completeness).toBe('confirmed')
+    if (result.completeness !== 'confirmed') throw new Error('confirmed invoice list expected')
+    expect(result.items).toEqual(list)
+  })
+
+  it('keeps only contractually optional invoice ids nullable or absent', () => {
+    expect(
+      parseInvoiceListValue(
+        JSON.stringify([
+          { key: INVOICE_KEY, link: INVOICE_LINK, fulfillment_order_id: null },
+          { key: INVOICE_KEY, link: INVOICE_LINK },
+        ]),
+      ).map((item) => item.fulfillmentOrderId),
+    ).toEqual([null, null])
+    expect(parseOrder(orderRaw()).fulfillments).toEqual({ completeness: 'not_consulted' })
+    expect(parseOrder(orderRaw()).invoices).toEqual({ completeness: 'not_consulted' })
+    expectProtocol(() =>
+      parseOrder(orderRaw({ fulfillment_orders: [null] }), {
+        fulfillmentCompleteness: 'confirmed',
+      }),
+    )
+    expectProtocol(() =>
+      parseOrder(orderRaw({ fulfillment_orders: [{ id: null }] }), {
+        fulfillmentCompleteness: 'confirmed',
+      }),
+    )
+    expectProtocol(() =>
+      parseOrder(orderRaw({ fulfillment_orders: [{ status: 'PACKED' }] }), {
+        fulfillmentCompleteness: 'confirmed',
+      }),
+    )
   })
 })
