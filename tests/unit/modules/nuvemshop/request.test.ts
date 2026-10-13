@@ -8,7 +8,6 @@ import {
   NUVEMSHOP_API_VERSION,
   NUVEMSHOP_ATTEMPT_TIMEOUT_MS,
   NUVEMSHOP_USER_AGENT,
-  nuvemshopRequest,
   type NuvemshopRequestInput,
 } from '@/modules/nuvemshop/server/client'
 import {
@@ -23,6 +22,10 @@ import {
   NuvemshopRateLimitError,
   NuvemshopValidationError,
 } from '@/modules/nuvemshop/server/errors'
+import {
+  prepareNuvemshopAttempt,
+  performNuvemshopAttempt,
+} from '@/modules/nuvemshop/server/request'
 
 const STORE_ID = '123456789012345678901234567890'
 const TOKEN = 'synthetic-access-token'
@@ -37,6 +40,50 @@ const OVERFLOW_TAIL_MARKER = 'NUV04-OVERFLOW-TAIL-MARKER'
 const textEncoder = new TextEncoder()
 
 const SECRET_MARKERS = [TOKEN, CLIENT_SECRET, APP_ID, 'Bearer', 'Authorization']
+
+// Preserve NUV-04's one-attempt/R1-R7 policy proofs through its real primitive.
+// retry.test.ts exercises the managed client, including its preparation boundary.
+async function singleAttemptRequest(input: NuvemshopRequestInput) {
+  const attempt = prepareNuvemshopAttempt(input)
+  let config: ReturnType<typeof nuvemshopConfig.getNuvemshopApiConfig>
+  try {
+    config = nuvemshopConfig.getNuvemshopApiConfig()
+  } catch {
+    throw new NuvemshopConfigurationError({ operation: 'configuration' })
+  }
+  if (config.apiVersion !== NUVEMSHOP_API_VERSION) {
+    throw new NuvemshopConfigurationError({ operation: 'configuration' })
+  }
+  return performNuvemshopAttempt(attempt, config)
+}
+
+function expectedSuccess(
+  status: number,
+  rawBody: string,
+  method: NuvemshopRequestInput['method'] = 'GET',
+  segments: readonly string[] = ['products'],
+) {
+  return {
+    status,
+    rawBody,
+    metadata: {
+      request: {
+        origin: NUVEMSHOP_API_ORIGIN,
+        apiVersion: NUVEMSHOP_API_VERSION,
+        storeId: STORE_ID,
+        method,
+        segments,
+        pagination: null,
+      },
+      rateLimit: {
+        limit: { kind: 'absent' },
+        remaining: { kind: 'absent' },
+        resetMs: { kind: 'absent' },
+      },
+      pagination: { totalCount: { kind: 'absent' }, links: { kind: 'absent' } },
+    },
+  }
+}
 
 function stubConfig(overrides: Record<string, string | undefined> = {}) {
   vi.stubEnv('NODE_ENV', 'test')
@@ -78,7 +125,7 @@ function headerRecord(init: RequestInit): Record<string, string> {
 
 async function capture(input: NuvemshopRequestInput = { method: 'GET', segments: ['products'] }) {
   try {
-    return { value: await nuvemshopRequest(input) }
+    return { value: await singleAttemptRequest(input) }
   } catch (error) {
     return { error }
   }
@@ -477,7 +524,7 @@ describe('Nuvemshop fixed transport', () => {
 
       const result = await capture({ method: 'GET', segments: ['products', ABOVE_MAX_SAFE] })
 
-      expect(result.value).toEqual({ status: 200, rawBody: raw })
+      expect(result.value).toEqual(expectedSuccess(200, raw, 'GET', ['products', ABOVE_MAX_SAFE]))
       expect(result.value?.rawBody).not.toContain('9007199254740992')
       expect(json).not.toHaveBeenCalled()
       expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -578,7 +625,7 @@ describe('Nuvemshop fixed transport', () => {
         })
       })
 
-      const pending = nuvemshopRequest({
+      const pending = singleAttemptRequest({
         method: 'GET',
         segments: ['products'],
         signal: controller.signal,
@@ -600,7 +647,7 @@ describe('Nuvemshop fixed transport', () => {
         })
       })
 
-      const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+      const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
       const settled = pending.then(
         () => 'resolved' as const,
         (error: unknown) => error,
@@ -900,7 +947,7 @@ describe('Nuvemshop fixed transport', () => {
 
       const result = await capture()
 
-      expect(result.value).toEqual({ status: 200, rawBody: raw })
+      expect(result.value).toEqual(expectedSuccess(200, raw))
     })
 
     it('accepts a declared Content-Length of exactly 1 MiB when the streamed body matches', async () => {
@@ -1162,7 +1209,7 @@ describe('Nuvemshop fixed transport', () => {
         )
       })
 
-      const pending = nuvemshopRequest({
+      const pending = singleAttemptRequest({
         method: 'GET',
         segments: ['products'],
         signal: controller.signal,
@@ -1200,7 +1247,7 @@ describe('Nuvemshop fixed transport', () => {
         )
       })
 
-      const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+      const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
       const settled = pending.then(
         () => 'resolved' as const,
         (error: unknown) => error,
@@ -1274,7 +1321,7 @@ describe('Nuvemshop fixed transport', () => {
 
       const result = await capture({ method: 'HEAD', segments: ['products'] })
 
-      expect(result.value).toEqual({ status: 200, rawBody: '' })
+      expect(result.value).toEqual(expectedSuccess(200, '', 'HEAD'))
     })
 
     describe('R4 HEAD representation length', () => {
@@ -1301,7 +1348,7 @@ describe('Nuvemshop fixed transport', () => {
           expect(response.body).toBeNull()
           expect(response.bodyUsed).toBe(false)
           expect(result.error).toBeUndefined()
-          expect(result.value).toEqual({ status: 200, rawBody: '' })
+          expect(result.value).toEqual(expectedSuccess(200, '', 'HEAD'))
         },
       )
 
@@ -1341,7 +1388,7 @@ describe('Nuvemshop fixed transport', () => {
           expect(pulled()).toBe(0)
           expect(reads()).toBe(0)
           expect(result.error).toBeUndefined()
-          expect(result.value).toEqual({ status: 200, rawBody: '' })
+          expect(result.value).toEqual(expectedSuccess(200, '', 'HEAD'))
         },
       )
 
@@ -1491,7 +1538,7 @@ describe('Nuvemshop fixed transport', () => {
           if (contentLength === '1048577') {
             expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
           } else {
-            expect(result.value).toEqual({ status: 204, rawBody: '' })
+            expect(result.value).toEqual(expectedSuccess(204, '', 'DELETE'))
           }
         },
       )
@@ -1518,7 +1565,7 @@ describe('Nuvemshop fixed transport', () => {
         segments: ['products', ABOVE_MAX_SAFE],
       })
 
-      expect(result.value).toEqual({ status: 204, rawBody: '' })
+      expect(result.value).toEqual(expectedSuccess(204, '', 'DELETE', ['products', ABOVE_MAX_SAFE]))
     })
 
     it('keeps the protocol error when cancel fails after the cap', async () => {
@@ -1599,10 +1646,10 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
-        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(result).toEqual(expectedSuccess(200, raw))
         expect(fetchMock).toHaveBeenCalledTimes(1)
       })
 
@@ -1616,10 +1663,10 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
-        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(result).toEqual(expectedSuccess(200, raw))
         expect(fetchMock).toHaveBeenCalledTimes(1)
       })
 
@@ -1636,10 +1683,10 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
-        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(result).toEqual(expectedSuccess(200, raw))
         expect(fetchMock).toHaveBeenCalledTimes(1)
       })
 
@@ -1665,10 +1712,10 @@ describe('Nuvemshop fixed transport', () => {
           })
         })
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
-        expect(result).toEqual({ status: 200, rawBody: raw })
+        expect(result).toEqual(expectedSuccess(200, raw))
         expect(fetchMock).toHaveBeenCalledTimes(1)
         expect(pullCount).toBeGreaterThanOrEqual(2)
       })
@@ -1681,7 +1728,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
 
         expect(error).toBeInstanceOf(NuvemshopProtocolError)
@@ -1699,7 +1746,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
         expect(result.status).toBe(200)
@@ -1716,7 +1763,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
 
         expect(error).toBeInstanceOf(NuvemshopProtocolError)
@@ -1736,7 +1783,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
 
         expect(error).toBeInstanceOf(NuvemshopProtocolError)
@@ -1760,7 +1807,7 @@ describe('Nuvemshop fixed transport', () => {
           ),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
 
         expect(error).toBeInstanceOf(NuvemshopProtocolError)
@@ -1782,10 +1829,10 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const result = await settleBeforeTimeout(pending)
 
-        expect(result).toEqual({ status: 200, rawBody: '{"word":"café"}' })
+        expect(result).toEqual(expectedSuccess(200, '{"word":"café"}'))
         expect(fetchMock).toHaveBeenCalledTimes(1)
       })
 
@@ -1802,7 +1849,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({ method: 'GET', segments: ['products'] })
+        const pending = singleAttemptRequest({ method: 'GET', segments: ['products'] })
         const error = await settleBeforeTimeout(pending).catch((caught: unknown) => caught)
 
         expect(error).toBeInstanceOf(NuvemshopProtocolError)
@@ -1820,7 +1867,7 @@ describe('Nuvemshop fixed transport', () => {
           }),
         )
 
-        const pending = nuvemshopRequest({
+        const pending = singleAttemptRequest({
           method: 'GET',
           segments: ['products', ABOVE_MAX_SAFE],
         })
@@ -2386,7 +2433,7 @@ describe('NUV-04-R5 input accessor boundary', () => {
   })
 })
 
-// R6 exercises the real client and config getter; only fetch and synthetic env are replaced.
+// R6 exercises the real preparation/attempt primitives and config getter; fetch/env are synthetic.
 describe('NUV-04-R6 route identifier boundary', () => {
   const ulid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
   const routeMarker = 'sensitive-route-marker'

@@ -15,6 +15,15 @@ import {
 } from './errors'
 import { readDecimalId, readUlid } from './schemas/ids'
 import { decodeLosslessJson } from './schemas/lossless-json'
+import {
+  claimNuvemshopAttempt,
+  inspectNuvemshopLease,
+  nuvemshopMonotonicNow,
+  observeNuvemshopResponse,
+  rememberNuvemshopAttemptFailure,
+  settleNuvemshopLease,
+  wakeNuvemshopAdmission,
+} from './rate-budget'
 
 /** Official Nuvemshop host. Callers cannot select `api.tiendanube.com`. */
 export const NUVEMSHOP_API_ORIGIN = 'https://api.nuvemshop.com.br'
@@ -64,9 +73,30 @@ const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 const operations = ['read', 'lookup'] as const
 const resourceKinds = ['product', 'variant', 'category', 'order', 'store', 'webhook'] as const
 
-type Method = (typeof methods)[number]
-type Operation = (typeof operations)[number]
-type ResourceKind = (typeof resourceKinds)[number]
+export type NuvemshopMethod = (typeof methods)[number]
+export type NuvemshopOperation = (typeof operations)[number]
+export type NuvemshopResourceKind = (typeof resourceKinds)[number]
+export type NuvemshopDecimalId = string
+export type NuvemshopUlid = string
+export type NuvemshopRoute =
+  | readonly ['products']
+  | readonly ['products', NuvemshopDecimalId]
+  | readonly ['products', NuvemshopDecimalId, 'variants']
+  | readonly ['products', NuvemshopDecimalId, 'variants', NuvemshopDecimalId]
+  | readonly ['categories']
+  | readonly ['categories', NuvemshopDecimalId]
+  | readonly ['orders']
+  | readonly ['orders', NuvemshopDecimalId]
+  | readonly ['orders', NuvemshopDecimalId, 'fulfillment-orders']
+  | readonly ['orders', NuvemshopDecimalId, 'fulfillment-orders', NuvemshopUlid]
+  | readonly ['store']
+  | readonly ['webhooks']
+  | readonly ['webhooks', NuvemshopDecimalId]
+  | readonly ['metafields', 'orders']
+
+type Method = NuvemshopMethod
+type Operation = NuvemshopOperation
+type ResourceKind = NuvemshopResourceKind
 
 const successStatuses: Record<Method, readonly number[]> = {
   GET: [200],
@@ -78,6 +108,7 @@ const successStatuses: Record<Method, readonly number[]> = {
 }
 
 const transportFailures = [
+  NuvemshopConfigurationError,
   NuvemshopAuthenticationError,
   NuvemshopAuthorizationError,
   NuvemshopAccountSuspendedError,
@@ -89,7 +120,17 @@ const transportFailures = [
   NuvemshopProviderError,
 ] as const
 
-export type NuvemshopRequestInput = {
+export interface NuvemshopPaginationQuery {
+  readonly page?: number
+  readonly perPage?: number
+}
+
+export interface NuvemshopPagePosition {
+  readonly page: number
+  readonly perPage: number
+}
+
+export interface NuvemshopRequestInput {
   readonly method: Method
   /** Supported path under `/{version}/{store_id}`; each template fixes ID domains. */
   readonly segments: readonly string[]
@@ -98,26 +139,76 @@ export type NuvemshopRequestInput = {
   readonly operation?: Operation
   readonly resourceKind?: ResourceKind
   readonly correlationId?: string
+  readonly query?: NuvemshopPaginationQuery
+  readonly readGeneration?: number
 }
 
-export type NuvemshopRequestSuccess = {
+export interface NuvemshopRequestSuccess {
   readonly status: number
   readonly rawBody: string
+  readonly metadata: NuvemshopResponseMetadata
 }
 
-type AttemptContext = {
+export interface NuvemshopAttemptContext {
   readonly operation: Operation
   readonly method: Method
   readonly resourceKind?: ResourceKind
   readonly correlationId?: string
 }
 
-type PreparedNuvemshopAttempt = {
+type AttemptContext = NuvemshopAttemptContext
+
+export interface PreparedNuvemshopAttempt {
   readonly method: Method
-  readonly segments: readonly string[]
+  readonly segments: NuvemshopRoute
   readonly body?: string
   readonly signal?: AbortSignal
   readonly context: AttemptContext
+  readonly pagination: NuvemshopPagePosition | null
+  readonly readGeneration: number
+}
+
+export type NuvemshopHeaderField<T> =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'invalid' }
+  | { readonly kind: 'valid'; readonly value: T }
+
+export interface NuvemshopRateLimitMetadata {
+  readonly limit: NuvemshopHeaderField<number>
+  readonly remaining: NuvemshopHeaderField<number>
+  readonly resetMs: NuvemshopHeaderField<number>
+}
+
+export type NuvemshopLinkRelation = 'next' | 'prev' | 'first' | 'last'
+export interface NuvemshopLinkTarget {
+  readonly relation: NuvemshopLinkRelation
+  readonly origin: 'https://api.nuvemshop.com.br'
+  readonly apiVersion: '2025-03'
+  readonly storeId: string
+  readonly segments: NuvemshopRoute
+  readonly pagination: NuvemshopPagePosition
+}
+export interface NuvemshopPaginationHeaders {
+  readonly totalCount: NuvemshopHeaderField<number>
+  readonly links: NuvemshopHeaderField<readonly NuvemshopLinkTarget[]>
+}
+export interface NuvemshopRequestIdentity {
+  readonly origin: 'https://api.nuvemshop.com.br'
+  readonly apiVersion: '2025-03'
+  readonly storeId: string
+  readonly method: NuvemshopMethod
+  readonly segments: NuvemshopRoute
+  readonly pagination: NuvemshopPagePosition | null
+}
+export interface NuvemshopResponseMetadata {
+  readonly request: NuvemshopRequestIdentity
+  readonly rateLimit: NuvemshopRateLimitMetadata
+  readonly pagination: NuvemshopPaginationHeaders
+}
+
+declare const nuvemshopLeaseBrand: unique symbol
+export interface NuvemshopAttemptLease {
+  readonly [nuvemshopLeaseBrand]: true
 }
 
 function failValidation(context?: NuvemshopErrorContext): never {
@@ -162,7 +253,7 @@ function matchesRoutePart(segment: string, part: RoutePart): boolean {
   return segment === part
 }
 
-function readSegments(value: unknown, context: NuvemshopErrorContext): readonly string[] {
+function readSegments(value: unknown, context: NuvemshopErrorContext): NuvemshopRoute {
   if (!Array.isArray(value)) failValidation(context)
   const length: unknown = value.length
   if (
@@ -191,7 +282,70 @@ function readSegments(value: unknown, context: NuvemshopErrorContext): readonly 
   if (!supported) {
     failValidation(context)
   }
-  return segments
+  return Object.freeze(segments) as NuvemshopRoute
+}
+
+function isPageCollection(method: Method, segments: NuvemshopRoute): boolean {
+  return (
+    (method === 'GET' || method === 'HEAD') &&
+    ((segments.length === 1 &&
+      ['products', 'categories', 'orders', 'webhooks'].includes(segments[0])) ||
+      (segments.length === 3 && segments[0] === 'products' && segments[2] === 'variants'))
+  )
+}
+
+function readPagination(
+  value: unknown,
+  method: Method,
+  segments: NuvemshopRoute,
+  context: AttemptContext,
+): NuvemshopPagePosition | null {
+  if (value === undefined) return null
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) failValidation(context)
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) failValidation(context)
+  const keys = Reflect.ownKeys(value)
+  if (keys.length > 2 || keys.some((key) => key !== 'page' && key !== 'perPage'))
+    failValidation(context)
+  if (!isPageCollection(method, segments)) failValidation(context)
+  const query = value as NuvemshopPaginationQuery
+  for (const key of ['page', 'perPage'] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (keys.includes(key) !== (descriptor !== undefined)) failValidation(context)
+    if (descriptor === undefined && key in query) failValidation(context)
+  }
+  const pageValue = query.page
+  const perPageValue = query.perPage
+  if (
+    (!keys.includes('page') && pageValue !== undefined) ||
+    (!keys.includes('perPage') && perPageValue !== undefined)
+  )
+    failValidation(context)
+  const page = pageValue === undefined ? 1 : pageValue
+  const perPage = perPageValue === undefined ? 30 : perPageValue
+  if (
+    !Number.isSafeInteger(page) ||
+    page < 1 ||
+    !Number.isSafeInteger(perPage) ||
+    perPage < 1 ||
+    perPage > 200
+  ) {
+    failValidation(context)
+  }
+  return Object.freeze({ page, perPage })
+}
+
+function readGenerationValue(value: unknown, method: Method, context: AttemptContext): number {
+  if (value === undefined) return 0
+  if (
+    (method !== 'GET' && method !== 'HEAD') ||
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    failValidation(context)
+  }
+  return value
 }
 
 function readBody(
@@ -234,19 +388,24 @@ export function prepareNuvemshopAttempt(input: NuvemshopRequestInput): PreparedN
     const operation = readOperation(input.operation)
     const resourceKind = readResourceKind(input.resourceKind)
     const correlationId = readCorrelationId(input.correlationId)
-    context = {
+    context = Object.freeze({
       operation,
       method,
       ...(resourceKind === undefined ? {} : { resourceKind }),
       ...(correlationId === undefined ? {} : { correlationId }),
-    }
-    return {
+    })
+    const segments = readSegments(input.segments, context)
+    const pagination = readPagination(input.query, method, segments, context)
+    const readGeneration = readGenerationValue(input.readGeneration, method, context)
+    return Object.freeze({
       method,
-      segments: readSegments(input.segments, context),
+      segments,
       body: readBody(method, input.body, context),
       signal: readSignal(input.signal, context),
       context,
-    }
+      pagination,
+      readGeneration,
+    })
   } catch {
     // Never inspect or rethrow a caller-controlled exception, even an Error subclass.
     failValidation(context)
@@ -263,7 +422,12 @@ function assertTransportSecret(accessToken: string): void {
   }
 }
 
-function fixedUrl(storeId: string, segments: readonly string[], context: AttemptContext): URL {
+function fixedUrl(
+  storeId: string,
+  segments: readonly string[],
+  context: AttemptContext,
+  pagination: NuvemshopPagePosition | null,
+): URL {
   if (
     storeId.length === 0 ||
     storeId.length > MAX_STORE_ID_LENGTH ||
@@ -280,6 +444,9 @@ function fixedUrl(storeId: string, segments: readonly string[], context: Attempt
     failValidation(context)
   }
   const pathname = `/${NUVEMSHOP_API_VERSION}/${storeId}/${path}`
+  const search =
+    pagination === null ? '' : `?page=${pagination.page}&per_page=${pagination.perPage}`
+  url.search = search
   if (
     url.protocol !== 'https:' ||
     url.hostname !== 'api.nuvemshop.com.br' ||
@@ -287,7 +454,7 @@ function fixedUrl(storeId: string, segments: readonly string[], context: Attempt
     url.username !== '' ||
     url.password !== '' ||
     url.hash !== '' ||
-    url.search !== '' ||
+    url.search !== search ||
     url.pathname !== pathname
   ) {
     failValidation(context)
@@ -299,42 +466,179 @@ function headerCount(value: string | null): number | undefined {
   if (value === null || !/^(?:0|[1-9]\d{0,15})$/.test(value)) return undefined
   let parsed = 0
   for (let index = 0; index < value.length; index += 1) {
-    parsed = parsed * 10 + value.charCodeAt(index) - 48
+    // Subtract on the bounded digit before adding; an intermediate char-code
+    // addition near MAX_SAFE_INTEGER would round an otherwise valid scalar.
+    parsed = parsed * 10 + (value.charCodeAt(index) - 48)
   }
   if (!Number.isSafeInteger(parsed) || parsed < 0) return undefined
   return parsed
 }
 
-function rateLimitMetadata(
-  headers: Headers,
+function absent<T>(): NuvemshopHeaderField<T> {
+  return Object.freeze({ kind: 'absent' })
+}
+
+function invalid<T>(): NuvemshopHeaderField<T> {
+  return Object.freeze({ kind: 'invalid' })
+}
+
+function valid<T>(value: T): NuvemshopHeaderField<T> {
+  return Object.freeze({ kind: 'valid', value })
+}
+
+function scalarHeader(value: string | null): NuvemshopHeaderField<number> {
+  if (value === null) return absent()
+  const parsed = headerCount(value)
+  return parsed === undefined ? invalid() : valid(parsed)
+}
+
+function parseRateLimit(headers: Headers): NuvemshopRateLimitMetadata {
+  let limit = scalarHeader(headers.get('x-rate-limit-limit'))
+  let remaining = scalarHeader(headers.get('x-rate-limit-remaining'))
+  const resetMs = scalarHeader(headers.get('x-rate-limit-reset'))
+  if (limit.kind === 'valid' && limit.value === 0) limit = invalid()
+  if (remaining.kind === 'valid') {
+    if (limit.kind !== 'valid') remaining = invalid()
+    else if (remaining.value > limit.value) {
+      limit = invalid()
+      remaining = invalid()
+    }
+  }
+  return Object.freeze({ limit, remaining, resetMs })
+}
+
+function publicRateMetadata(
+  rate: NuvemshopRateLimitMetadata,
 ): Pick<NuvemshopErrorContext, 'rateLimitLimit' | 'rateLimitRemaining' | 'resetMs'> {
-  const limit = headerCount(headers.get('x-rate-limit-limit'))
-  const remaining = headerCount(headers.get('x-rate-limit-remaining'))
-  const resetMs = headerCount(headers.get('x-rate-limit-reset'))
   return {
-    ...(limit !== undefined && limit > 0 && remaining !== undefined && remaining <= limit
-      ? { rateLimitLimit: limit, rateLimitRemaining: remaining }
+    ...(rate.limit.kind === 'valid' && rate.remaining.kind === 'valid'
+      ? { rateLimitLimit: rate.limit.value, rateLimitRemaining: rate.remaining.value }
       : {}),
-    ...(resetMs === undefined ? {} : { resetMs }),
+    ...(rate.resetMs.kind === 'valid' ? { resetMs: rate.resetMs.value } : {}),
   }
 }
 
-function failureForStatus(status: number, base: AttemptContext, headers: Headers): never {
+/** Lexical projection only. NUV-06 owns request/link navigation equality. */
+function parseLinks(value: string | null): NuvemshopHeaderField<readonly NuvemshopLinkTarget[]> {
+  if (value === null) return absent()
+  if (value.length > 8192 || /[\u0000-\u0008\u000A-\u001F\u007F-\uFFFF]/.test(value))
+    return invalid()
+  const entries = value.split(',')
+  if (entries.length < 1 || entries.length > 4) return invalid()
+  const targets: NuvemshopLinkTarget[] = []
+  const seen = new Set<string>()
+  try {
+    for (const entry of entries) {
+      const match = /^[ \t]*<([^<>\s]+)>[ \t]*;[ \t]*rel="(next|prev|first|last)"[ \t]*$/.exec(
+        entry,
+      )
+      if (!match) return invalid()
+      const uri = match[1]!
+      const relation = match[2]! as NuvemshopLinkRelation
+      if (
+        uri.length > 1536 ||
+        seen.has(relation) ||
+        !uri.startsWith(`${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/`) ||
+        /[%\\#]/.test(uri)
+      )
+        return invalid()
+      seen.add(relation)
+      const parts = uri.split('?')
+      if (parts.length !== 2) return invalid()
+      const url = new URL(uri)
+      const rawPath = parts[0]!.slice(NUVEMSHOP_API_ORIGIN.length)
+      if (
+        url.origin !== NUVEMSHOP_API_ORIGIN ||
+        url.pathname !== rawPath ||
+        url.username !== '' ||
+        url.password !== '' ||
+        url.port !== '' ||
+        url.hash !== ''
+      )
+        return invalid()
+      const path = rawPath.split('/')
+      const storeId = path[2]!
+      if (
+        storeId.length === 0 ||
+        storeId.length > MAX_STORE_ID_LENGTH ||
+        /[^0-9]/.test(storeId) ||
+        !/[1-9]/.test(storeId)
+      )
+        return invalid()
+      const segments = readSegments(path.slice(3), {})
+      const fields = parts[1]!.split('&')
+      if (fields.length !== 2) return invalid()
+      let page: number | undefined
+      let perPage: number | undefined
+      for (const field of fields) {
+        const pair = field.split('=')
+        if (pair.length !== 2) return invalid()
+        const number = headerCount(pair[1]!)
+        if (number === undefined || number < 1) return invalid()
+        if (pair[0] === 'page' && page === undefined) page = number
+        else if (pair[0] === 'per_page' && perPage === undefined && number <= 200) perPage = number
+        else return invalid()
+      }
+      if (page === undefined || perPage === undefined) return invalid()
+      targets.push(
+        Object.freeze({
+          relation,
+          origin: NUVEMSHOP_API_ORIGIN,
+          apiVersion: NUVEMSHOP_API_VERSION,
+          storeId,
+          segments,
+          pagination: Object.freeze({ page, perPage }),
+        }),
+      )
+    }
+    return valid(Object.freeze(targets))
+  } catch {
+    return invalid()
+  }
+}
+
+function responseMetadata(
+  headers: Headers,
+  expected: URL,
+  attempt: PreparedNuvemshopAttempt,
+): NuvemshopResponseMetadata {
+  return Object.freeze({
+    request: Object.freeze({
+      origin: NUVEMSHOP_API_ORIGIN,
+      apiVersion: NUVEMSHOP_API_VERSION,
+      storeId: expected.pathname.split('/')[2]!,
+      method: attempt.method,
+      segments: Object.freeze([...attempt.segments]) as NuvemshopRoute,
+      pagination: attempt.pagination === null ? null : Object.freeze({ ...attempt.pagination }),
+    }),
+    rateLimit: parseRateLimit(headers),
+    pagination: Object.freeze({
+      totalCount: scalarHeader(headers.get('x-total-count')),
+      links: parseLinks(headers.get('link')),
+    }),
+  })
+}
+
+function errorForStatus(
+  status: number,
+  base: AttemptContext,
+  rate: NuvemshopRateLimitMetadata,
+): Error {
   const context = { ...base, providerStatus: status }
   switch (status) {
     case 401:
-      throw new NuvemshopAuthenticationError(context)
+      return new NuvemshopAuthenticationError(context)
     case 402:
-      throw new NuvemshopAccountSuspendedError(context)
+      return new NuvemshopAccountSuspendedError(context)
     case 403:
-      throw new NuvemshopAuthorizationError(context)
+      return new NuvemshopAuthorizationError(context)
     case 404:
-      throw new NuvemshopNotFoundError(context)
+      return new NuvemshopNotFoundError(context)
     case 429:
-      throw new NuvemshopRateLimitError({ ...context, ...rateLimitMetadata(headers) })
+      return new NuvemshopRateLimitError({ ...context, ...publicRateMetadata(rate) })
     default:
-      if (status >= 500 && status <= 599) throw new NuvemshopProviderError(context)
-      throw new NuvemshopProtocolError(context)
+      if (status >= 500 && status <= 599) return new NuvemshopProviderError(context)
+      return new NuvemshopProtocolError(context)
   }
 }
 
@@ -345,7 +649,10 @@ function responseLeftTarget(response: Response, expected: URL): boolean {
     return (
       actual.origin !== expected.origin ||
       actual.pathname !== expected.pathname ||
-      actual.search !== ''
+      actual.search !== expected.search ||
+      actual.hash !== '' ||
+      actual.username !== '' ||
+      actual.password !== ''
     )
   } catch {
     return true
@@ -416,6 +723,7 @@ async function readBounded(
   method: Method,
   context: NuvemshopErrorContext,
   signal: AbortSignal,
+  lease?: NuvemshopAttemptLease,
 ): Promise<string> {
   const declared = response.headers.get('content-length')
   // HEAD declares the corresponding GET representation's size, not received bytes.
@@ -423,8 +731,10 @@ async function readBounded(
     declared !== null &&
     (!isCanonicalLength(declared) || (method !== 'HEAD' && !acceptableLength(declared)))
   ) {
+    const error = new NuvemshopProtocolError(context)
+    if (lease !== undefined) rememberNuvemshopAttemptFailure(lease, error)
     await discard(response, signal)
-    throw new NuvemshopProtocolError(context)
+    throw error
   }
 
   if (response.body == null) return ''
@@ -506,6 +816,8 @@ async function readBounded(
       pump()
     })
   } catch (error) {
+    if (lease !== undefined && error instanceof NuvemshopProtocolError)
+      rememberNuvemshopAttemptFailure(lease, error)
     stop()
     await cancelSource({ cancel: () => canceling ?? Promise.resolve() }, signal)
     if (signal.aborted && !(error instanceof NuvemshopProtocolError)) throw abortReason()
@@ -528,21 +840,30 @@ async function readSuccess(
   expected: URL,
   attempt: PreparedNuvemshopAttempt,
   signal: AbortSignal,
+  lease?: NuvemshopAttemptLease,
 ): Promise<NuvemshopRequestSuccess> {
   const context = { ...attempt.context, providerStatus: response.status }
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status <= 399)) {
+    const error = new NuvemshopProtocolError(context)
+    if (lease !== undefined) rememberNuvemshopAttemptFailure(lease, error)
     await discard(response, signal)
-    throw new NuvemshopProtocolError(context)
+    throw error
   }
   if (responseLeftTarget(response, expected)) {
+    const error = new NuvemshopProtocolError(context)
+    if (lease !== undefined) rememberNuvemshopAttemptFailure(lease, error)
     await discard(response, signal)
-    throw new NuvemshopProtocolError(context)
+    throw error
   }
+  const metadata = responseMetadata(response.headers, expected, attempt)
+  if (lease !== undefined) observeNuvemshopResponse(lease, response.status, metadata.rateLimit)
   if (!successStatuses[attempt.method].includes(response.status)) {
+    const error = errorForStatus(response.status, attempt.context, metadata.rateLimit)
+    if (lease !== undefined) rememberNuvemshopAttemptFailure(lease, error)
     await discard(response, signal)
-    failureForStatus(response.status, attempt.context, response.headers)
+    throw error
   }
-  const rawBody = await readBounded(response, attempt.method, context, signal)
+  const rawBody = await readBounded(response, attempt.method, context, signal, lease)
   if (expectsJson(attempt.method, response.status)) {
     if (!isJsonContentType(response.headers.get('content-type'))) {
       throw new NuvemshopProtocolError(context)
@@ -555,20 +876,27 @@ async function readSuccess(
   } else if (rawBody.length !== 0) {
     throw new NuvemshopProtocolError(context)
   }
-  return { status: response.status, rawBody }
+  return Object.freeze({ status: response.status, rawBody, metadata })
 }
 
-function bindAttempt(caller: AbortSignal | undefined): {
+function bindAttempt(
+  caller: AbortSignal | undefined,
+  deadline?: number,
+): {
   signal: AbortSignal
+  expired: () => boolean
   dispose: () => void
 } {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), NUVEMSHOP_ATTEMPT_TIMEOUT_MS)
+  const startedAt = nuvemshopMonotonicNow()
+  const expiresAt = Math.min(startedAt + NUVEMSHOP_ATTEMPT_TIMEOUT_MS, deadline ?? Infinity)
+  const timer = setTimeout(() => controller.abort(), Math.max(0, expiresAt - startedAt))
   const onAbort = () => controller.abort()
   if (caller?.aborted) controller.abort()
   else caller?.addEventListener('abort', onAbort, { once: true })
   return {
     signal: controller.signal,
+    expired: () => controller.signal.aborted || nuvemshopMonotonicNow() >= expiresAt,
     dispose() {
       clearTimeout(timer)
       caller?.removeEventListener('abort', onAbort)
@@ -582,23 +910,23 @@ function bindAttempt(caller: AbortSignal | undefined): {
 export async function performNuvemshopAttempt(
   attempt: PreparedNuvemshopAttempt,
   config: { readonly storeId: string; readonly accessToken: string },
+  lease?: NuvemshopAttemptLease,
 ): Promise<NuvemshopRequestSuccess> {
-  const segments = readSegments(attempt.segments, attempt.context)
-  assertTransportSecret(config.accessToken)
-  const url = fixedUrl(config.storeId, segments, attempt.context)
-  if (attempt.signal?.aborted) throw new NuvemshopNetworkError(attempt.context)
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${config.accessToken}`,
-    'User-Agent': NUVEMSHOP_USER_AGENT,
-    Accept: 'application/json',
-  }
-  if (attempt.body !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8'
-
-  const attemptControl = bindAttempt(attempt.signal)
+  const execution = lease === undefined ? undefined : inspectNuvemshopLease(lease, attempt, config)
+  const attemptControl = bindAttempt(attempt.signal, execution?.deadline)
+  let errorCode: string | undefined
   try {
-    if (attemptControl.signal.aborted) throw new NuvemshopNetworkError(attempt.context)
-    const response = await fetch(url.toString(), {
+    const segments = readSegments(attempt.segments, attempt.context)
+    assertTransportSecret(config.accessToken)
+    const url = fixedUrl(config.storeId, segments, attempt.context, attempt.pagination)
+    if (attemptControl.expired()) throw new NuvemshopNetworkError(attempt.context)
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${config.accessToken}`,
+      'User-Agent': NUVEMSHOP_USER_AGENT,
+      Accept: 'application/json',
+    }
+    if (attempt.body !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8'
+    const init: RequestInit = {
       method: attempt.method,
       headers,
       body: attempt.body,
@@ -606,12 +934,35 @@ export async function performNuvemshopAttempt(
       cache: 'no-store',
       credentials: 'omit',
       signal: attemptControl.signal,
-    })
-    return await readSuccess(response, url, attempt, attemptControl.signal)
+    }
+    const target = url.toString()
+    let pendingResponse: Promise<Response>
+    if (lease === undefined) pendingResponse = fetch(target, init)
+    else {
+      claimNuvemshopAttempt(lease, attempt, config, init)
+      // All caller-controlled preparation is finished before the claim. There
+      // is no await or callback between the shared fence and this invocation.
+      try {
+        pendingResponse = fetch(target, init)
+      } finally {
+        wakeNuvemshopAdmission(lease)
+      }
+    }
+    const response = await pendingResponse
+    const result = await readSuccess(response, url, attempt, attemptControl.signal, lease)
+    // Synchronous decoding/validation can delay timer callbacks. Check only
+    // otherwise-successful work so classified HTTP/protocol errors stay primary.
+    if (attemptControl.expired()) throw new NuvemshopNetworkError(attempt.context)
+    return result
   } catch (error) {
-    if (isTransportFailure(error)) throw error
+    if (isTransportFailure(error)) {
+      errorCode = (error as NuvemshopNetworkError).code
+      throw error
+    }
+    errorCode = 'NUVEMSHOP_NETWORK_ERROR'
     throw new NuvemshopNetworkError(attempt.context)
   } finally {
     attemptControl.dispose()
+    if (lease !== undefined) settleNuvemshopLease(lease, errorCode)
   }
 }
