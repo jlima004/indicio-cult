@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as nuvemshopConfig from '@/lib/env/nuvemshop'
 import {
   NUVEMSHOP_API_ORIGIN,
   NUVEMSHOP_API_VERSION,
@@ -2155,14 +2156,16 @@ describe('NUV-04-R5 input accessor boundary', () => {
 
   it('accepts forwarding input and segments proxies with an exact ULID', async () => {
     const ulid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
-    const segments = new Proxy(['orders', ulid], { get: Reflect.get })
+    const segments = new Proxy(['orders', '123456', 'fulfillment-orders', ulid], {
+      get: Reflect.get,
+    })
     const input = new Proxy({ ...validInput(), segments }, { get: Reflect.get })
     const fetchMock = installFetch()
     const result = await capture(input)
     expect(result.error).toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(requestUrl(fetchMock)).toBe(
-      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/orders/${ulid}`,
+      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/orders/123456/fulfillment-orders/${ulid}`,
     )
   })
 
@@ -2381,4 +2384,196 @@ describe('NUV-04-R5 input accessor boundary', () => {
     expect(serialized(error).includes(marker)).toBe(false)
     expect('cause' in error).toBe(false)
   })
+})
+
+// R6 exercises the real client and config getter; only fetch and synthetic env are replaced.
+describe('NUV-04-R6 route identifier boundary', () => {
+  const ulid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+  const routeMarker = 'sensitive-route-marker'
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['Order ID shaped like a route literal', ['orders', 'not-a-ulid']],
+    ['collection literal in Order ID position', ['orders', 'products']],
+    ['unknown collection literal', ['unapproved-resource']],
+    ['unknown nested literal', ['products', '15', 'unapproved-resource']],
+    ['literal-only unapproved structure', ['products', 'orders']],
+    ['decimal ID at route root', ['15']],
+    ['ULID at route root', [ulid]],
+    ['ULID in decimal Order ID position', ['orders', ulid]],
+    ['ULID in decimal Product ID position', ['products', ulid]],
+    ['nested Product ID literal', ['products', '15', 'variants', 'not-a-decimal']],
+    ['nested Product parent ID literal', ['products', 'not-a-decimal', 'variants', '15']],
+    [
+      'Fulfillment ID shaped like a literal',
+      ['orders', '123456', 'fulfillment-orders', 'not-a-ulid'],
+    ],
+    [
+      'collection literal in Fulfillment ID position',
+      ['orders', '123456', 'fulfillment-orders', 'products'],
+    ],
+    [
+      'short Fulfillment ULID',
+      ['orders', '123456', 'fulfillment-orders', '01arz3ndektsv4rrffq69g5fa'],
+    ],
+    [
+      'forbidden Fulfillment ULID characters',
+      ['orders', '123456', 'fulfillment-orders', 'i'.repeat(26)],
+    ],
+    ['numeric Fulfillment ID', ['orders', '123456', 'fulfillment-orders', '123456']],
+    [
+      'invalid parent ID before Fulfillment collection',
+      ['orders', 'not-a-decimal', 'fulfillment-orders'],
+    ],
+    ['standalone Fulfillment resource', ['fulfillment-orders', ulid]],
+    ['invented underscore Fulfillment route', ['orders', '123456', 'fulfillment_orders', ulid]],
+    ['unapproved Fulfillment action', ['orders', '123456', 'fulfillment-orders', ulid, 'split']],
+    ['reversed nested route literals', ['orders', '123456', 'values', 'history']],
+    ['invented invoice detail path', ['metafields', 'orders', '123456']],
+    ['decimal leading zero', ['orders', '01']],
+    ['decimal zero', ['orders', '0']],
+    ['negative decimal', ['orders', '-15']],
+    ['fractional decimal', ['orders', '1.5']],
+    ['decimal exponent', ['orders', '1e3']],
+    ['decimal beyond existing 40-character ceiling', ['orders', '1'.repeat(41)]],
+    ['unsafe numeric Order ID', ['orders', Number.MAX_SAFE_INTEGER + 2]],
+    ['path traversal in Order ID', ['orders', '..']],
+    ['encoded traversal in Order ID', ['orders', '%2e%2e']],
+    ['absolute URL in Order ID', ['orders', 'https://evil.example/steal']],
+    ['arbitrary host in Order ID', ['orders', 'evil.example']],
+    ['extra segment after a detail', ['orders', '15', routeMarker]],
+    ['sensitive literal in decimal ID position', ['orders', routeMarker]],
+    [
+      'typed literal object cast into string segments',
+      ['orders', { kind: 'literal', value: 'products' }],
+    ],
+  ] as const)('rejects %s before configuration and fetch', async (_label, segments) => {
+    const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+    const fetchMock = installFetch()
+
+    const result = await capture({
+      method: 'GET',
+      segments: segments as unknown as readonly string[],
+      operation: 'lookup',
+      resourceKind: 'order',
+      correlationId: CORRELATION_ID,
+    })
+
+    expect.soft(result.error).toBeInstanceOf(NuvemshopValidationError)
+    expect.soft(configReads).not.toHaveBeenCalled()
+    expect.soft(fetchMock).not.toHaveBeenCalled()
+    if (result.error instanceof NuvemshopValidationError) {
+      expect(result.error.message).toBe('Nuvemshop input is invalid.')
+      expect(result.error.metadata).toEqual({
+        method: 'GET',
+        operation: 'lookup',
+        resourceKind: 'order',
+        correlationId: CORRELATION_ID,
+      })
+      expect(result.error.retryEligible).toBe(false)
+      expectRedacted(result.error)
+      expect(serialized(result.error)).not.toContain(routeMarker)
+      expect('cause' in result.error).toBe(false)
+    }
+  })
+
+  // Official 2025-03: product, product-variant, Order invoice and fulfillment-order resources.
+  it.each([
+    ['Product collection', ['products']],
+    ['Order collection', ['orders']],
+    ['Category collection', ['categories']],
+    ['Category detail', ['categories', '15']],
+    ['Store singleton', ['store']],
+    ['Webhook collection', ['webhooks']],
+    ['Webhook detail', ['webhooks', '15']],
+    ['nested Product variant collection', ['products', '15', 'variants']],
+    ['Product detail', ['products', '15']],
+    ['decimal above MAX_SAFE_INTEGER', ['products', ABOVE_MAX_SAFE]],
+    ['decimal above int64', ['orders', ABOVE_INT64]],
+    ['decimal at existing 40-character ceiling', ['orders', '1'.repeat(40)]],
+    ['nested Product variant', ['products', ABOVE_MAX_SAFE, 'variants', ABOVE_INT64]],
+    ['nested Fulfillment collection', ['orders', '123456', 'fulfillment-orders']],
+    ['nested Fulfillment ULID detail', ['orders', '123456', 'fulfillment-orders', ulid]],
+    [
+      'nested Fulfillment lowercase ULID',
+      ['orders', '123456', 'fulfillment-orders', ulid.toLowerCase()],
+    ],
+    ['consecutive Order invoice literals', ['metafields', 'orders']],
+  ] as const)('preserves exact %s route', async (_label, segments) => {
+    const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+    const fetchMock = installFetch()
+
+    const result = await capture({ method: 'GET', segments })
+
+    expect(result.error).toBeUndefined()
+    expect(result.value?.status).toBe(200)
+    expect(configReads).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requestUrl(fetchMock)).toBe(
+      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/${segments.join('/')}`,
+    )
+  })
+
+  it('accepts a valid identifier getter and forwarding nested route proxy', async () => {
+    const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+    const fetchMock = installFetch()
+    const segments = ['orders', '123456', 'fulfillment-orders', ulid]
+    let identifierReads = 0
+    Object.defineProperty(segments, '3', {
+      get() {
+        identifierReads += 1
+        return ulid
+      },
+    })
+    const route = new Proxy(segments, { get: Reflect.get })
+
+    const result = await capture({ method: 'GET', segments: route })
+
+    expect(result.error).toBeUndefined()
+    expect(identifierReads).toBe(1)
+    expect(configReads).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requestUrl(fetchMock)).toBe(
+      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/orders/123456/fulfillment-orders/${ulid}`,
+    )
+  })
+
+  it.each(['identifier getter', 'identifier proxy trap', 'revoked proxy'] as const)(
+    'rejects a hostile route %s before configuration and fetch',
+    async (surface) => {
+      const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+      const fetchMock = installFetch()
+      let segments: readonly string[] = ['orders', '15']
+      if (surface === 'identifier getter') {
+        Object.defineProperty(segments, '1', {
+          get() {
+            throw new Error(routeMarker)
+          },
+        })
+      } else if (surface === 'identifier proxy trap') {
+        segments = new Proxy(segments, {
+          get(target, key, receiver) {
+            if (key === '1') throw routeMarker
+            return Reflect.get(target, key, receiver)
+          },
+        })
+      } else {
+        const revocable = Proxy.revocable(segments, {})
+        revocable.revoke()
+        segments = revocable.proxy
+      }
+
+      const result = await capture({ method: 'GET', segments })
+
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(configReads).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
+      expectRedacted(result.error)
+      expect(serialized(result.error)).not.toContain(routeMarker)
+      expect('cause' in (result.error as Error)).toBe(false)
+    },
+  )
 })

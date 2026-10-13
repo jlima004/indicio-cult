@@ -35,8 +35,30 @@ const MAX_RESPONSE_CHARS = 1_048_576
 const MAX_STORE_ID_LENGTH = 256
 const MAX_TOKEN_LENGTH = 4_096
 const MAX_SEGMENTS = 8
-const RESOURCE_SEGMENT = /^[a-z][a-z0-9_-]{0,63}$/
 const CORRELATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+// Closed path grammar from the official 2025-03 resource docs. Methods remain
+// transport policy; new paths require documented roles and regression tests.
+// https://tiendanube.github.io/api-documentation/resources/{resource}
+const routeTemplates = [
+  ['products'],
+  ['products', ':decimal-id'],
+  ['products', ':decimal-id', 'variants'],
+  ['products', ':decimal-id', 'variants', ':decimal-id'],
+  ['categories'],
+  ['categories', ':decimal-id'],
+  ['orders'],
+  ['orders', ':decimal-id'],
+  ['orders', ':decimal-id', 'fulfillment-orders'],
+  ['orders', ':decimal-id', 'fulfillment-orders', ':ulid'],
+  ['store'],
+  ['webhooks'],
+  ['webhooks', ':decimal-id'],
+  // Order NF-e uses owner_id in a future query, never as another path segment.
+  ['metafields', 'orders'],
+] as const
+
+type RoutePart = (typeof routeTemplates)[number][number]
 
 const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 const operations = ['read', 'lookup'] as const
@@ -69,7 +91,7 @@ const transportFailures = [
 
 export type NuvemshopRequestInput = {
   readonly method: Method
-  /** Path segments under `/{version}/{store_id}`. Never an absolute URL. */
+  /** Supported path under `/{version}/{store_id}`; each template fixes ID domains. */
   readonly segments: readonly string[]
   readonly body?: unknown
   readonly signal?: AbortSignal
@@ -134,12 +156,10 @@ function readCorrelationId(value: unknown): string | undefined {
   return value
 }
 
-function readSegment(segment: unknown, context: NuvemshopErrorContext): string {
-  if (typeof segment !== 'string') failValidation(context)
-  if (RESOURCE_SEGMENT.test(segment)) return segment
-  if (readDecimalId(segment) === segment) return segment
-  if (readUlid(segment) === segment) return segment
-  failValidation(context)
+function matchesRoutePart(segment: string, part: RoutePart): boolean {
+  if (part === ':decimal-id') return readDecimalId(segment) === segment
+  if (part === ':ulid') return readUlid(segment) === segment
+  return segment === part
 }
 
 function readSegments(value: unknown, context: NuvemshopErrorContext): readonly string[] {
@@ -156,7 +176,20 @@ function readSegments(value: unknown, context: NuvemshopErrorContext): readonly 
   // Keep caller methods, species and proxies out of the prepared path.
   const segments: string[] = []
   for (let index = 0; index < length; index += 1) {
-    segments.push(readSegment(value[index], context))
+    const segment: unknown = value[index]
+    if (typeof segment !== 'string') failValidation(context)
+    segments.push(segment)
+  }
+  const supported = routeTemplates.some(
+    (template) =>
+      template.length === segments.length &&
+      template.every((part, index) => {
+        const segment = segments[index]
+        return segment !== undefined && matchesRoutePart(segment, part)
+      }),
+  )
+  if (!supported) {
+    failValidation(context)
   }
   return segments
 }
