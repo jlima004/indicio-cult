@@ -4,7 +4,7 @@ import type { NuvemshopDecimalId, OrderNumber } from '../types'
 import { failValidation } from './fail'
 
 const DECIMAL_ID = /^[1-9]\d*$/
-const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i
+const ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/i
 const CORRELATION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 const ZERO = BigInt(0)

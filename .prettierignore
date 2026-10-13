@@ -3,6 +3,7 @@ node_modules/
 .next/
 out/
 coverage/
+.vitest/
 package-lock.json
 next-env.d.ts
 

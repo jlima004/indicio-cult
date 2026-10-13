@@ -27,8 +27,15 @@ export const nuvemshopHmacSchema = z.object({
 const placeholder =
   /^(?:change[-_ ]?me|replace(?:[-_ ].*)?|placeholder(?:[-_ ].*)?|your[-_ ].*|(?:test|dummy|synthetic|example|ci)(?:[-_ ].*)?|(?:fake|sample)(?:-(?:token|secret))?|<.*>)$/i
 
+// Property access, not the ambient `process` binding. Boundary proofs typecheck
+// this module with `types: []`, where that binding is intentionally absent.
+function readProcessEnv(): Record<string, string | undefined> {
+  const runtime = globalThis as { process?: { env?: Record<string, string | undefined> } }
+  return runtime.process?.env ?? {}
+}
+
 function assertProductionSecret(key: string, value: string): void {
-  if (process.env.NODE_ENV === 'production' && placeholder.test(value.trim())) {
+  if (readProcessEnv().NODE_ENV === 'production' && placeholder.test(value.trim())) {
     throw new Error(`Variável de ambiente inválida: ${key}: placeholder proibido em produção`)
   }
 }
@@ -36,7 +43,7 @@ function assertProductionSecret(key: string, value: string): void {
 // Leitura e validação por operação. Importar este módulo não exige credenciais.
 // O transporte futuro deve obter esta configuração antes de qualquer request.
 export function getNuvemshopApiConfig() {
-  const config = parseEnv(nuvemshopApiSchema, process.env)
+  const config = parseEnv(nuvemshopApiSchema, readProcessEnv())
   assertProductionSecret('NUVEMSHOP_ACCESS_TOKEN', config.NUVEMSHOP_ACCESS_TOKEN)
   return {
     storeId: config.NUVEMSHOP_STORE_ID,
@@ -48,7 +55,7 @@ export function getNuvemshopApiConfig() {
 // Somente o app secret current; HR-03 ainda governa qualquer rotação futura.
 // Isto fornece material ao verifier futuro, sem implementar HMAC ou ACK.
 export function getNuvemshopHmacConfig() {
-  const config = parseEnv(nuvemshopHmacSchema, process.env)
+  const config = parseEnv(nuvemshopHmacSchema, readProcessEnv())
   assertProductionSecret('NUVEMSHOP_CLIENT_SECRET', config.NUVEMSHOP_CLIENT_SECRET)
   return { clientSecret: config.NUVEMSHOP_CLIENT_SECRET }
 }
