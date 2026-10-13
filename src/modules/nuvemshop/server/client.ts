@@ -5,11 +5,11 @@ import { getNuvemshopApiConfig } from '@/lib/env/nuvemshop'
 import { NuvemshopConfigurationError } from './errors'
 import {
   NUVEMSHOP_API_VERSION,
-  performNuvemshopAttempt,
   prepareNuvemshopAttempt,
   type NuvemshopRequestInput,
   type NuvemshopRequestSuccess,
 } from './request'
+import { executeNuvemshopRequest, nuvemshopMonotonicNow } from './rate-budget'
 
 export {
   NUVEMSHOP_API_ORIGIN,
@@ -30,16 +30,24 @@ function readTransportConfig(): { storeId: string; accessToken: string } {
   if (config.apiVersion !== NUVEMSHOP_API_VERSION) {
     throw new NuvemshopConfigurationError({ operation: 'configuration' })
   }
-  return { storeId: config.storeId, accessToken: config.accessToken }
+  return Object.freeze({ storeId: config.storeId, accessToken: config.accessToken })
 }
 
 /**
- * Authenticated single-attempt request. Resource modules own response schemas.
+ * Authenticated, process-budgeted request. Resource modules own response schemas.
  * The caller cannot supply a URL, host, version or store id.
  */
 export async function nuvemshopRequest(
   input: NuvemshopRequestInput,
 ): Promise<NuvemshopRequestSuccess> {
-  const attempt = prepareNuvemshopAttempt(input)
-  return performNuvemshopAttempt(attempt, readTransportConfig())
+  const enteredAt = nuvemshopMonotonicNow()
+  const prepared = prepareNuvemshopAttempt(input)
+  const attempt =
+    prepared.context.correlationId === undefined
+      ? Object.freeze({
+          ...prepared,
+          context: Object.freeze({ ...prepared.context, correlationId: crypto.randomUUID() }),
+        })
+      : prepared
+  return executeNuvemshopRequest(attempt, readTransportConfig(), enteredAt)
 }
