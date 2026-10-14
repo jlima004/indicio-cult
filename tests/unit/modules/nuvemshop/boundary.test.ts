@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
 import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -500,6 +501,70 @@ const configPath = path.join(projectRoot, 'tsconfig.json')
 const config = ts.readConfigFile(configPath, ts.sys.readFile)
 const compilerOptions = ts.parseJsonConfigFileContent(config.config, ts.sys, projectRoot).options
 
+type ProgramSnapshot = {
+  program: ts.Program
+  parserInputs: Map<string, string>
+}
+// Only the immediate predecessor in each lane is retained. Libraries omitted by
+// a noLib binding Program must not be borrowed from an older option epoch.
+let diagnosticPredecessor: ProgramSnapshot | undefined
+let bindingPredecessor: ProgramSnapshot | undefined
+
+function createProgramWithPredecessor(
+  roots: string[],
+  options: ts.CompilerOptions,
+  host: ts.CompilerHost,
+  previous: ProgramSnapshot | undefined,
+): ProgramSnapshot {
+  // Compare every option, including nested paths/lib/types. Incompatible epochs
+  // discard all predecessor ASTs; no private compiler option comparator is used.
+  const snapshot = structuredClone(options)
+  if (previous && !isDeepStrictEqual(snapshot, previous.program.getCompilerOptions()))
+    previous = undefined
+  const parserInputs = new Map<string, string>()
+  const original = host.getSourceFile
+  host.getSourceFile = (filename, language, onError, forceFresh) => {
+    const settings = typeof language === 'number' ? { languageVersion: language } : language
+    const input = JSON.stringify([
+      settings.languageVersion,
+      settings.impliedNodeFormat,
+      settings.jsDocParsingMode,
+      host.jsDocParsingMode,
+    ])
+    const text = host.readFile(filename)
+    if (text === undefined) return undefined
+    const candidate = previous?.program.getSourceFile(filename)
+    const source =
+      !forceFresh && candidate?.text === text && previous?.parserInputs.get(filename) === input
+        ? candidate
+        : original(filename, language, onError, forceFresh)
+    if (source) parserInputs.set(filename, input)
+    return source
+  }
+  try {
+    // Only compiler-created module-indicator callbacks use this reuse path.
+    // Exposed direct host calls retain their original parser/callback behavior.
+    // Resolution tables and diagnostics always belong to a fresh Program.
+    // oldProgram also caches library lookup paths with no public invalidation
+    // hook, so it must not be supplied even when source text/options match.
+    return { program: ts.createProgram(roots, snapshot, host), parserInputs }
+  } finally {
+    host.getSourceFile = original
+    // Drop the construction-only capture even if a compiler retains a callback.
+    previous = undefined
+  }
+}
+
+function createTestProgram(roots: string[], options: ts.CompilerOptions, host: ts.CompilerHost) {
+  diagnosticPredecessor = createProgramWithPredecessor(roots, options, host, diagnosticPredecessor)
+  return diagnosticPredecessor.program
+}
+
+function createBindingProgram(roots: string[], options: ts.CompilerOptions, host: ts.CompilerHost) {
+  bindingPredecessor = createProgramWithPredecessor(roots, options, host, bindingPredecessor)
+  return bindingPredecessor.program
+}
+
 function sourceEnvironment(sources: Sources, clients: Sources) {
   const files = new Map([
     ...[...clients].map(([name, source]) => [path.resolve(projectRoot, name), source] as const),
@@ -594,7 +659,7 @@ function sourceEnvironment(sources: Sources, clients: Sources) {
   // Missing ambient symbols stay unproven; no semantic privacy or custom resolver.
   let bindingProgram: ts.Program | undefined
   const program = () =>
-    (bindingProgram ??= ts.createProgram(
+    (bindingProgram ??= createBindingProgram(
       [...files.keys()],
       { ...compilerOptions, types: [], noLib: true },
       host,
@@ -1019,7 +1084,7 @@ describe('Nuvemshop server-only boundary', () => {
     ) {
       const clients = new Map([[filename, client], ...additions])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, filename)],
         {
           ...compilerOptions,
@@ -1210,7 +1275,7 @@ describe('Nuvemshop server-only boundary', () => {
       const result = fixture('export {};')
       result.sources.set(filename, text)
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, checkJs: true, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -1287,7 +1352,7 @@ describe('Nuvemshop server-only boundary', () => {
     ) {
       const clients = new Map([[filename, client], ...additions])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, filename)],
         {
           ...compilerOptions,
@@ -1581,7 +1646,7 @@ describe('Nuvemshop server-only boundary', () => {
           [filename, text],
         ])
         const environment = sourceEnvironment(sources, new Map())
-        const program = ts.createProgram(
+        const program = createTestProgram(
           [...environment.files.keys()],
           { ...compilerOptions, checkJs: true, incremental: false, skipLibCheck: false, types: [] },
           environment.host,
@@ -1684,7 +1749,7 @@ declare global { type BGlobal = BContract; } export {};`
       roots = [path.join(projectRoot, clientName)],
     ) {
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         roots,
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2109,7 +2174,7 @@ export {};`,
       ],
     ])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [path.join(projectRoot, name)],
       { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
       environment.host,
@@ -2158,7 +2223,7 @@ export {};`,
       ])
       const environment = sourceEnvironment(sources, clients)
       // Only the client is a root: wrapper inclusion must come from its reference.
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2194,7 +2259,7 @@ export {};`,
         "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';",
       )
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2244,7 +2309,7 @@ export {};`,
         "import 'server-only'; export type DirectContract = { id: string };",
       )
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2269,7 +2334,7 @@ export {};`,
       const result = fixture()
       result.clients.set(clientName, "'use client'; export const id = 'safe';")
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2293,7 +2358,7 @@ export {};`,
 'use client'; export {};`,
       )
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2345,7 +2410,7 @@ export type UnguardedContract = { id: string };`,
       sources.set('server-only.ts', "import 'server-only'; export {};")
       sources.set(filename, source)
       const environment = sourceEnvironment(sources, new Map())
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2378,7 +2443,7 @@ export {};`,
 ${adapter ? "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-contracts';" : 'export {};'} `,
       )
       const environment = sourceEnvironment(result.sources, result.clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [path.join(projectRoot, clientName)],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2436,7 +2501,7 @@ ${adapter ? "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-c
 import 'server-only'; export {};`,
       )
       const environment = sourceEnvironment(sources, new Map())
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2498,7 +2563,7 @@ import 'server-only'; export {};`,
     }
     sources.set('__fixture-SECRET-GREEN-04.ts', "import 'server-only'; void process['env'].SECRET;")
     const environment = sourceEnvironment(sources, new Map())
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -2556,7 +2621,7 @@ import 'server-only'; export {};`,
     const name = 'src/__fixture-local-types.ts'
     const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -2703,7 +2768,7 @@ import 'server-only'; export {};`,
       const filename = path.join(projectRoot, name)
       const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3095,7 +3160,7 @@ import 'server-only'; export {};`,
       const filename = path.join(projectRoot, name)
       const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3168,7 +3233,7 @@ import 'server-only'; export {};`,
       const filename = path.join(projectRoot, name)
       const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3263,7 +3328,7 @@ import 'server-only'; export {};`,
       const name = 'src/__fixture-module-client.ts'
       const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3322,7 +3387,7 @@ import 'server-only'; export {};`,
         ],
       ])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3358,7 +3423,7 @@ import 'server-only'; export {};`,
     const name = 'src/__fixture-module-client.ts'
     const clients = new Map([[name, "'use client';\nexport {};\n" + statement]])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3388,7 +3453,7 @@ import 'server-only'; export {};`,
       ],
     ])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3412,7 +3477,7 @@ import 'server-only'; export {};`,
     ])
     const sources = readSources()
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3455,7 +3520,7 @@ import 'server-only'; export {};`,
       ['src/__fixture-binding-safe.ts', 'export const loader = (x: string) => x;'],
     ])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3493,7 +3558,7 @@ import 'server-only'; export {};`,
       const name = `src/__fixture-capability-client.${ext}`
       const clients = new Map([[name, `'use client';\n${statement}`]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3544,7 +3609,7 @@ import 'server-only'; export {};`,
       ['src/__fixture-capability-safe.ts', 'export const loader = (value: string) => value;'],
     ])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3572,7 +3637,7 @@ import 'server-only'; export {};`,
       ],
     ])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3606,7 +3671,7 @@ import 'server-only'; export {};`,
     const filename = path.join(projectRoot, name)
     const clients = new Map([[name, `'use client';\nexports.observed = ${expression}.id;`]])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3662,7 +3727,7 @@ import 'server-only'; export {};`,
     const filename = path.join(projectRoot, name)
     const clients = new Map([[name, `'use client';\n${statement};`]])
     const environment = sourceEnvironment(sources, clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3685,7 +3750,7 @@ import 'server-only'; export {};`,
       ['src/__fixture-safe.ts', 'export const id = 1'],
     ])
     const environment = sourceEnvironment(readSources(), clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -3720,7 +3785,7 @@ import 'server-only'; export {};`,
       const source = `'use client';\nexports.observed = ${expression}.id;`
       const clients = new Map([[name, source]])
       const environment = sourceEnvironment(sources, clients)
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -3760,7 +3825,7 @@ import 'server-only'; export {};`,
       ['src/__fixture-safe.ts', 'export const id = 1'],
     ])
     const environment = sourceEnvironment(readSources(), clients)
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -4217,7 +4282,7 @@ export type OwnerFactory = <T extends boolean>() => Select<T, { owner: { contact
       const sources = readSources()
       sources.set(name, source)
       const environment = sourceEnvironment(sources, new Map())
-      const program = ts.createProgram(
+      const program = createTestProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false },
         environment.host,
@@ -4254,7 +4319,7 @@ export type OwnerFactory = <T extends boolean>() => Select<T, { owner: { contact
     sources.set(name, source)
     sources.set('server/__fixture-guard-bridge.ts', "import './index';")
     const environment = sourceEnvironment(sources, new Map())
-    const program = ts.createProgram(
+    const program = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -4271,7 +4336,7 @@ export type OwnerFactory = <T extends boolean>() => Select<T, { owner: { contact
       "import './index'; const require = (specifier: string) => specifier; require('./__missing'); export const ownerContract = true;",
     )
     const environment = sourceEnvironment(sources, new Map())
-    const diagnosticsProgram = ts.createProgram(
+    const diagnosticsProgram = createTestProgram(
       [...environment.files.keys()],
       { ...compilerOptions, incremental: false },
       environment.host,
@@ -4579,5 +4644,636 @@ export type OwnerFactory = <T extends boolean>() => Select<T, { owner: { contact
         path.join(projectRoot, 'src/__fixture-client.ts'),
       ),
     ).toBe(path.join(projectRoot, 'src/__fixture-virtual/types.ts'))
+  })
+})
+
+describe('CI-OPT-01 cache invalidation canaries', () => {
+  const adapterRejected = /client runtime\/type dependency reaches adapter/
+  const unresolved = /unresolved project-local dependency/
+  const clientName = 'src/__ciopt-client.ts'
+  const wrapperName = 'src/__ciopt-wrapper.ts'
+  const safe = 'export const observed = 1;'
+  const hostile = "export * from '@/modules/nuvemshop';"
+  const sources = () =>
+    new Map([
+      ['index.ts', "import 'server-only'; export * from './server';"],
+      ['server/index.ts', "import 'server-only'; export const guarded = true;"],
+    ])
+  const clients = () =>
+    new Map([
+      [clientName, "'use client'; import './__ciopt-wrapper';"],
+      [wrapperName, safe],
+    ])
+  const check = (adapter: Sources, overlay: Sources) => {
+    assertClientIsolation(sourceEnvironment(adapter, overlay))
+    assertBoundary(adapter, overlay)
+  }
+
+  it('CACHE-SOURCE replaces one same-path source and restores the safe result', () => {
+    const adapter = sources()
+    const overlay = clients()
+    expect(() => check(adapter, overlay)).not.toThrow()
+    overlay.set(wrapperName, hostile)
+    expect(() => check(adapter, overlay)).toThrow(adapterRejected)
+    overlay.set(wrapperName, safe)
+    expect(() => check(adapter, overlay)).not.toThrow()
+  })
+
+  it('CACHE-ADD-REMOVE keeps identical root text authoritative across membership changes', () => {
+    const adapter = sources()
+    const overlay = clients()
+    overlay.delete(wrapperName)
+    expect(() => check(adapter, overlay)).toThrow(unresolved)
+    overlay.set(wrapperName, safe)
+    expect(() => check(adapter, overlay)).not.toThrow()
+    overlay.delete(wrapperName)
+    expect(() => check(adapter, overlay)).toThrow(unresolved)
+    overlay.set(wrapperName, hostile)
+    expect(() => check(adapter, overlay)).toThrow(adapterRejected)
+    overlay.set(wrapperName, safe)
+    expect(() => check(adapter, overlay)).not.toThrow()
+  })
+
+  it('CACHE-SNAPSHOT gives old and new environments independent authoritative overlays', () => {
+    const adapter = sources()
+    const overlay = clients()
+    const original = sourceEnvironment(adapter, overlay)
+    expect(() => assertClientIsolation(original)).not.toThrow()
+    overlay.set(wrapperName, hostile)
+    const changed = sourceEnvironment(adapter, overlay)
+    expect(() => assertClientIsolation(changed)).toThrow(adapterRejected)
+    expect(() => assertClientIsolation(original)).not.toThrow()
+    overlay.set(wrapperName, safe)
+    expect(() => assertClientIsolation(sourceEnvironment(adapter, overlay))).not.toThrow()
+    expect(() => assertClientIsolation(changed)).toThrow(adapterRejected)
+  })
+
+  it('CACHE-MODULE-TOMBSTONE never restores removed physical adapter sources', () => {
+    const adapter = sources()
+    const serverPath = path.join(moduleRoot, 'server/index.ts')
+    expect(
+      sourceEnvironment(adapter, new Map()).host.getSourceFile(serverPath, ts.ScriptTarget.Latest),
+    ).toBeDefined()
+    const original = adapter.get('server/index.ts')!
+    adapter.delete('server/index.ts')
+    const removed = sourceEnvironment(adapter, new Map())
+    expect(removed.host.fileExists(serverPath)).toBe(false)
+    expect(removed.host.readFile(serverPath)).toBeUndefined()
+    expect(removed.host.getSourceFile(serverPath, ts.ScriptTarget.Latest)).toBeUndefined()
+    expect(() => assertBoundary(adapter)).toThrow(/required entrypoint server\/index.ts/)
+    adapter.set('server/index.ts', "import 'server-only'; import '../index';")
+    expect(() => assertBoundary(adapter)).toThrow(/server must not depend on root/)
+    adapter.set('server/index.ts', original)
+    expect(() => assertBoundary(adapter)).not.toThrow()
+  })
+
+  it('CACHE-BINDING invalidates checker ownership after local-to-ambient changes', () => {
+    const adapter = sources()
+    const overlay = clients()
+    const local = 'const require = (_name: string) => 1; void require; export {};'
+    overlay.set(wrapperName, local)
+    expect(() => check(adapter, overlay)).not.toThrow()
+    overlay.set(wrapperName, 'const load = require; void load; export {};')
+    expect(() => check(adapter, overlay)).toThrow(/unsupported require capability reference/)
+    overlay.set(wrapperName, local)
+    expect(() => check(adapter, overlay)).not.toThrow()
+  })
+
+  it('CACHE-ROOT-PATH changes and restores client root membership with a warm compiler lane', () => {
+    const adapter = sources()
+    const overlay = clients()
+    expect(() => check(adapter, overlay)).not.toThrow()
+    overlay.delete(clientName)
+    overlay.set('src/__ciopt-moved-client.ts', "'use client'; import './__ciopt-wrapper';")
+    overlay.set(wrapperName, hostile)
+    expect(() => check(adapter, overlay)).toThrow(adapterRejected)
+    overlay.delete('src/__ciopt-moved-client.ts')
+    overlay.set(clientName, "'use client'; import './__ciopt-wrapper';")
+    overlay.set(wrapperName, safe)
+    expect(() => check(adapter, overlay)).not.toThrow()
+  })
+
+  it('CACHE-PATHS resolves a changed alias target and restores the previous graph', () => {
+    const previous = compilerOptions.paths
+    try {
+      const adapter = sources()
+      adapter.set('contracts.ts', "import 'server-only'; export const observed = 1;")
+      const overlay = new Map([
+        [clientName, "'use client'; import '__ciopt/contracts';"],
+        ['src/__ciopt-safe/contracts.ts', safe],
+      ])
+      compilerOptions.paths = { ...previous, '__ciopt/*': ['./src/__ciopt-safe/*'] }
+      expect(() => check(adapter, overlay)).not.toThrow()
+      compilerOptions.paths = { ...previous, '__ciopt/*': ['./src/modules/nuvemshop/*'] }
+      expect(() => check(adapter, overlay)).toThrow(adapterRejected)
+      compilerOptions.paths = { ...previous, '__ciopt/*': ['./src/__ciopt-safe/*'] }
+      expect(() => check(adapter, overlay)).not.toThrow()
+    } finally {
+      compilerOptions.paths = previous
+    }
+  })
+
+  it('CACHE-PARSER respects language, module format, JSDoc mode and forced reparsing', () => {
+    const name = path.join(projectRoot, 'src/__ciopt-parser.js')
+    const overlay = new Map([
+      [
+        'src/__ciopt-parser.js',
+        "/** @typedef {import('@/modules/nuvemshop').guarded} Owner */\nexport {};",
+      ],
+    ])
+    const host = sourceEnvironment(sources(), overlay).host
+    const options: ts.CreateSourceFileOptions = {
+      languageVersion: ts.ScriptTarget.ES2022,
+      impliedNodeFormat: ts.ModuleKind.ESNext,
+      jsDocParsingMode: ts.JSDocParsingMode.ParseAll,
+    }
+    const first = host.getSourceFile(name, options)!
+    expect(first.languageVersion).toBe(ts.ScriptTarget.ES2022)
+    expect(first.impliedNodeFormat).toBe(ts.ModuleKind.ESNext)
+    expect(dependencies(first).some((edge) => edge.origin === 'jsdoc-type-import')).toBe(true)
+    const changed = host.getSourceFile(name, {
+      ...options,
+      languageVersion: ts.ScriptTarget.ES2020,
+      impliedNodeFormat: ts.ModuleKind.CommonJS,
+      jsDocParsingMode: ts.JSDocParsingMode.ParseNone,
+    })!
+    expect(changed.languageVersion).toBe(ts.ScriptTarget.ES2020)
+    expect(changed.impliedNodeFormat).toBe(ts.ModuleKind.CommonJS)
+    expect(dependencies(changed).some((edge) => edge.origin === 'jsdoc-type-import')).toBe(false)
+    const restored = host.getSourceFile(name, options)!
+    expect(restored.impliedNodeFormat).toBe(ts.ModuleKind.ESNext)
+    expect(dependencies(restored).some((edge) => edge.origin === 'jsdoc-type-import')).toBe(true)
+    const forced = host.getSourceFile(name, options, undefined, true)!
+    expect(forced).not.toBe(restored)
+    expect(forced.text).toBe(restored.text)
+  })
+
+  it('CACHE-CALLBACK honors distinct external module indicator parser callbacks', () => {
+    const name = path.join(projectRoot, 'src/__ciopt-indicator.ts')
+    const host = sourceEnvironment(
+      sources(),
+      new Map([['src/__ciopt-indicator.ts', 'const ordinary = 1;']]),
+    ).host
+    const firstIndicator = vi.fn((_source: ts.SourceFile) => {})
+    const secondIndicator = vi.fn((_source: ts.SourceFile) => {})
+    host.getSourceFile(name, {
+      languageVersion: ts.ScriptTarget.Latest,
+      setExternalModuleIndicator: firstIndicator,
+    })
+    expect(firstIndicator).toHaveBeenCalledTimes(1)
+    host.getSourceFile(name, {
+      languageVersion: ts.ScriptTarget.Latest,
+      setExternalModuleIndicator: secondIndicator,
+    })
+    expect(secondIndicator).toHaveBeenCalledTimes(1)
+    host.getSourceFile(
+      name,
+      { languageVersion: ts.ScriptTarget.Latest, setExternalModuleIndicator: firstIndicator },
+      undefined,
+      true,
+    )
+    expect(firstIndicator).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['.js', '.jsx', '.ts', '.tsx', '.mts', '.cts'])(
+    'CACHE-EXTENSION preserves identical-source compiler JSDoc policy for %s',
+    (extension) => {
+      const name = `src/__ciopt-extension${extension}`
+      const overlay = new Map([
+        [
+          name,
+          "'use client';\n/** @typedef {import('@/modules/nuvemshop').guarded} Owner */\nexport {};",
+        ],
+      ])
+      const environment = sourceEnvironment(sources(), overlay)
+      const source = environment.program().getSourceFile(path.join(projectRoot, name))!
+      const edges = dependencies(source, environment.program().getTypeChecker())
+      const compilerRecognizesJSDoc = extension === '.js' || extension === '.jsx'
+      expect(edges.some((edge) => edge.origin === 'jsdoc-type-import')).toBe(
+        compilerRecognizesJSDoc,
+      )
+      if (compilerRecognizesJSDoc) expect(() => check(sources(), overlay)).toThrow(adapterRejected)
+      else expect(() => check(sources(), overlay)).not.toThrow()
+    },
+  )
+
+  it('CACHE-PROGRAM-OPTIONS changes and restores parser and semantic options through real factory', () => {
+    const adapter = sources()
+    const name = 'src/__ciopt-options.ts'
+    const overlay = new Map([[name, 'export const observed: string = null;']])
+    const compile = (target: ts.ScriptTarget, strictNullChecks: boolean) => {
+      const environment = sourceEnvironment(adapter, overlay)
+      const options = {
+        ...compilerOptions,
+        noLib: true,
+        types: [],
+        incremental: false,
+        target,
+        strictNullChecks,
+      }
+      const actual = createTestProgram([...environment.files.keys()], options, environment.host)
+      const reference = ts.createProgram(
+        [...environment.files.keys()],
+        options,
+        sourceEnvironment(adapter, overlay).host,
+      )
+      const summarize = (program: ts.Program) =>
+        ts.getPreEmitDiagnostics(program).map((diagnostic) => ({
+          code: diagnostic.code,
+          file: diagnostic.file?.fileName,
+          start: diagnostic.start,
+          message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+        }))
+      expect(summarize(actual)).toEqual(summarize(reference))
+      expect(actual.getSourceFile(path.join(projectRoot, name))!.languageVersion).toBe(target)
+      expect(
+        ts
+          .getPreEmitDiagnostics(actual)
+          .some(
+            (diagnostic) =>
+              diagnostic.code === 2322 && diagnostic.file?.fileName.endsWith('__ciopt-options.ts'),
+          ),
+      ).toBe(strictNullChecks)
+      return actual
+    }
+    const original = compile(ts.ScriptTarget.ES2020, false)
+    const changed = compile(ts.ScriptTarget.ES2022, true)
+    expect(changed.getTypeChecker()).not.toBe(original.getTypeChecker())
+    const restored = compile(ts.ScriptTarget.ES2020, false)
+    expect(restored.getTypeChecker()).not.toBe(original.getTypeChecker())
+  })
+
+  it('CACHE-DIAGNOSTICS uses fresh checker and matches compiler across ambient changes', () => {
+    const adapter = sources()
+    const overlay = new Map([
+      ['src/__ciopt-global.ts', "'use client'; export const observed = __cioptGlobal;"],
+    ])
+    const options = { ...compilerOptions, noLib: true, types: [], incremental: false }
+    const diagnostics = (program: ts.Program) =>
+      ts.getPreEmitDiagnostics(program).map((diagnostic) => ({
+        code: diagnostic.code,
+        file: diagnostic.file?.fileName,
+        start: diagnostic.start,
+        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+      }))
+    const compile = () => {
+      const environment = sourceEnvironment(adapter, overlay)
+      const roots = [...environment.files.keys()]
+      const actual = createTestProgram(roots, options, environment.host)
+      const reference = ts.createProgram(roots, options, sourceEnvironment(adapter, overlay).host)
+      expect(diagnostics(actual)).toEqual(diagnostics(reference))
+      return actual
+    }
+    const missing = compile()
+    expect(
+      ts
+        .getPreEmitDiagnostics(missing)
+        .some(
+          (diagnostic) =>
+            diagnostic.code === 2304 && diagnostic.file?.fileName.endsWith('__ciopt-global.ts'),
+        ),
+    ).toBe(true)
+    overlay.set('src/__ciopt-ambient.d.ts', 'declare const __cioptGlobal: string;')
+    const declared = compile()
+    expect(declared.getTypeChecker()).not.toBe(missing.getTypeChecker())
+    expect(
+      ts
+        .getPreEmitDiagnostics(declared)
+        .some(
+          (diagnostic) =>
+            diagnostic.code === 2304 && diagnostic.file?.fileName.endsWith('__ciopt-global.ts'),
+        ),
+    ).toBe(false)
+    overlay.set('src/__ciopt-ambient.d.ts', 'declare const __cioptGlobal: number;')
+    const changed = compile()
+    expect(changed.getTypeChecker()).not.toBe(declared.getTypeChecker())
+    expect(changed.getSourceFile(path.join(projectRoot, 'src/__ciopt-ambient.d.ts'))!.text).toBe(
+      'declare const __cioptGlobal: number;',
+    )
+    overlay.delete('src/__ciopt-ambient.d.ts')
+    const restored = compile()
+    expect(diagnostics(restored)).toEqual(diagnostics(missing))
+  })
+})
+
+describe('CI-OPT-01 compiler equivalence', () => {
+  const name = 'src/__ciopt-oracle.ts'
+  const options: ts.CompilerOptions = {
+    ...compilerOptions,
+    incremental: false,
+    types: [],
+    lib: ['lib.es5.d.ts'],
+    jsx: ts.JsxEmit.Preserve,
+    skipLibCheck: false,
+  }
+  function diagnostics(program: ts.Program) {
+    const normalize = (diagnostic: ts.Diagnostic): unknown => ({
+      code: diagnostic.code,
+      category: diagnostic.category,
+      file: diagnostic.file?.fileName,
+      text: diagnostic.file?.text,
+      start: diagnostic.start,
+      length: diagnostic.length,
+      message: diagnostic.messageText,
+      source: diagnostic.source,
+      unnecessary: diagnostic.reportsUnnecessary,
+      deprecated: diagnostic.reportsDeprecated,
+      related: diagnostic.relatedInformation?.map(normalize),
+    })
+    return ts.getPreEmitDiagnostics(program).map(normalize)
+  }
+  function compile(overlay: Sources, effective = options) {
+    const environment = sourceEnvironment(new Map(), overlay)
+    // Library overlays are loaded by the installed compiler's lib resolver,
+    // rather than adding them as fixture roots.
+    const libraryRoot = path.dirname(ts.getDefaultLibFilePath(effective))
+    const roots = [...environment.files.keys()].filter(
+      (filename) => !filename.startsWith(`${libraryRoot}${path.sep}`),
+    )
+    const actual = createTestProgram(roots, effective, environment.host)
+    const reference = ts.createProgram(roots, effective, sourceEnvironment(new Map(), overlay).host)
+    expect(diagnostics(actual)).toEqual(diagnostics(reference))
+    expect(actual.getSourceFiles().map((source) => [source.fileName, source.text])).toEqual(
+      reference.getSourceFiles().map((source) => [source.fileName, source.text]),
+    )
+    expect(actual).not.toBe(reference)
+    expect(actual.getTypeChecker()).not.toBe(reference.getTypeChecker())
+    return actual
+  }
+  const codes = (program: ts.Program) =>
+    ts.getPreEmitDiagnostics(program).map((value) => value.code)
+
+  it('CACHE-PERFORMANCE reuses unchanged library parsing with fresh Programs and checkers', () => {
+    const overlay = new Map([[name, 'export const value = 1;']])
+    const first = compile(overlay)
+    const second = compile(overlay)
+    const library = path.join(path.dirname(ts.getDefaultLibFilePath(options)), 'lib.es5.d.ts')
+    expect(first.getSourceFile(library)).toBeDefined()
+    expect(second.getSourceFile(library)).toBe(first.getSourceFile(library))
+    expect(second).not.toBe(first)
+    expect(second.getTypeChecker()).not.toBe(first.getTypeChecker())
+  })
+
+  it('CACHE-SEMANTIC replaces source, diagnostic positions and related information then restores', () => {
+    const overlay = new Map([[name, 'export const value: string = "safe";']])
+    const safe = compile(overlay)
+    expect(codes(safe)).toEqual([])
+    overlay.set(name, 'export const value: string = 1;')
+    expect(codes(compile(overlay))).toContain(2322)
+    overlay.set(name, '// shifted location\nexport const value: string = true;')
+    expect(codes(compile(overlay))).toContain(2322)
+    overlay.set(name, 'export const value: string = "safe";')
+    expect(diagnostics(compile(overlay))).toEqual(diagnostics(safe))
+  })
+
+  it('CACHE-SEMANTIC-MEMBERSHIP refreshes unchanged importers after add, change, delete and restore', () => {
+    const overlay = new Map([
+      [name, "import { value } from './__ciopt-dependency.js'; export const text: string = value;"],
+    ])
+    expect(codes(compile(overlay))).toContain(2307)
+    overlay.set('src/__ciopt-dependency.ts', 'export const value = "safe";')
+    expect(codes(compile(overlay))).toEqual([])
+    overlay.set('src/__ciopt-dependency.ts', 'export const value = 1;')
+    expect(codes(compile(overlay))).toContain(2322)
+    overlay.delete('src/__ciopt-dependency.ts')
+    expect(codes(compile(overlay))).toContain(2307)
+    overlay.set('src/__ciopt-dependency.ts', 'export const value = "safe";')
+    expect(codes(compile(overlay))).toEqual([])
+  })
+
+  it('CACHE-SEMANTIC-ALIAS snapshots nested paths and renews unchanged importer resolution', () => {
+    const overlay = new Map([
+      [name, "import { value } from '__ciopt-value'; export const text: string = value;"],
+      ['src/__ciopt-string.ts', 'export const value = "safe";'],
+      ['src/__ciopt-number.ts', 'export const value = 1;'],
+    ])
+    const effective = { ...options, paths: { '__ciopt-value': ['./src/__ciopt-string.ts'] } }
+    const first = compile(overlay, effective)
+    expect(codes(first)).toEqual([])
+    effective.paths['__ciopt-value'][0] = './src/__ciopt-number.ts'
+    expect(codes(compile(overlay, effective))).toContain(2322)
+    effective.paths['__ciopt-value'][0] = './src/__ciopt-string.ts'
+    expect(codes(compile(overlay, effective))).toEqual([])
+  })
+
+  it('CACHE-SEMANTIC-GLOBAL invalidates unchanged clients for ambient type changes and deletion', () => {
+    const overlay = new Map([[name, 'export const text: string = __cioptAmbient;']])
+    expect(codes(compile(overlay))).toContain(2304)
+    overlay.set('src/__ciopt-ambient.d.ts', 'declare const __cioptAmbient: string;')
+    expect(codes(compile(overlay))).toEqual([])
+    overlay.set('src/__ciopt-ambient.d.ts', 'declare const __cioptAmbient: number;')
+    expect(codes(compile(overlay))).toContain(2322)
+    overlay.delete('src/__ciopt-ambient.d.ts')
+    expect(codes(compile(overlay))).toContain(2304)
+  })
+
+  it('CACHE-SEMANTIC-LIB refreshes real standard library augmentation under skipLibCheck false', () => {
+    const library = path.join(path.dirname(ts.getDefaultLibFilePath(options)), 'lib.es5.d.ts')
+    const original = ts.sys.readFile(library)!
+    const overlay = new Map([
+      [name, 'export const value: number = "text".__cioptMember;'],
+      [library, original + '\ninterface String { readonly __cioptMember: number; }'],
+    ])
+    expect(codes(compile(overlay))).toEqual([])
+    overlay.set(library, original + '\ninterface String { readonly __cioptMember: string; }')
+    expect(codes(compile(overlay))).toContain(2322)
+    overlay.set(library, original + '\ninterface String { readonly __cioptMember: number; }')
+    expect(codes(compile(overlay))).toEqual([])
+    overlay.set(library, original)
+    expect(codes(compile(overlay))).toContain(2339)
+  })
+
+  it('CACHE-SEMANTIC-LIB-ERROR preserves library diagnostics and removes them after restoration', () => {
+    const library = path.join(path.dirname(ts.getDefaultLibFilePath(options)), 'lib.es5.d.ts')
+    const original = ts.sys.readFile(library)!
+    const overlay = new Map([
+      [name, 'export const value = 1;'],
+      [library, original],
+    ])
+    expect(codes(compile(overlay))).toEqual([])
+    overlay.set(
+      library,
+      original +
+        '\ninterface String { __cioptConflict: number; }\ninterface String { __cioptConflict: string; }',
+    )
+    expect(codes(compile(overlay))).toContain(2717)
+    overlay.set(library, original)
+    expect(codes(compile(overlay))).toEqual([])
+  })
+
+  it.each([
+    [
+      'strictNullChecks',
+      'export const value: string = null;',
+      { strictNullChecks: false },
+      { strictNullChecks: true },
+    ],
+    [
+      'checkJs',
+      '/** @type {string} */ export const value = 1;',
+      { checkJs: false },
+      { checkJs: true },
+    ],
+    [
+      'allowUnreachableCode',
+      'export function value() { return 1; const unreachable = 2; }',
+      { allowUnreachableCode: true },
+      { allowUnreachableCode: false },
+    ],
+    [
+      'noFallthroughCasesInSwitch',
+      'export function value(n: number) { switch (n) { case 1: n++; case 2: return n; } }',
+      { noFallthroughCasesInSwitch: false },
+      { noFallthroughCasesInSwitch: true },
+    ],
+    [
+      'strictBindCallApply',
+      'export function value(n: string) { return n; } value.call(undefined, 1);',
+      { strictBindCallApply: false },
+      { strictBindCallApply: true },
+    ],
+  ] as const)(
+    'CACHE-SEMANTIC-OPTION preserves diagnostics across %s epochs',
+    (option, source, safe, unsafe) => {
+      const filename = option === 'checkJs' ? 'src/__ciopt-oracle.js' : name
+      const overlay = new Map([[filename, source]])
+      expect(codes(compile(overlay, { ...options, ...safe }))).toEqual([])
+      expect(codes(compile(overlay, { ...options, ...unsafe })).length).toBeGreaterThan(0)
+      expect(codes(compile(overlay, { ...options, ...safe }))).toEqual([])
+    },
+  )
+
+  it('CACHE-OPTION-EPOCH does not reuse orphaned library ASTs after full to noLib changes', () => {
+    const overlay = new Map([[name, 'export const value = 1;']])
+    const first = compile(overlay, { ...options, strict: false })
+    compile(overlay, { ...options, noLib: true, lib: undefined, strict: true })
+    const changed = compile(overlay, { ...options, strict: true })
+    const library = path.join(path.dirname(ts.getDefaultLibFilePath(options)), 'lib.es5.d.ts')
+    expect(changed.getSourceFile(library)).not.toBe(first.getSourceFile(library))
+    compile(overlay, { ...options, strict: false })
+  })
+})
+
+describe('CI-OPT-01 library resolution', () => {
+  it('CACHE-LIB-LOOKUP adds and deletes a virtual standard library replacement with fixed roots', () => {
+    const options: ts.CompilerOptions = {
+      ...compilerOptions,
+      incremental: false,
+      types: [],
+      lib: ['lib.es5.d.ts'],
+      jsx: ts.JsxEmit.Preserve,
+      skipLibCheck: false,
+      skipDefaultLibCheck: false,
+    }
+    const name = 'src/__ciopt-library-lookup.ts'
+    const roots = [path.join(projectRoot, name)]
+    const installedLibrary = path.join(
+      path.dirname(ts.getDefaultLibFilePath(options)),
+      'lib.es5.d.ts',
+    )
+    const packageRoot = path.join(projectRoot, 'node_modules/@typescript/lib-es5')
+    const packageJson = path.join(packageRoot, 'package.json')
+    const replacementLibrary = path.join(packageRoot, 'index.d.ts')
+    expect(ts.sys.fileExists(packageJson)).toBe(false)
+    const original = ts.sys.readFile(installedLibrary)
+    expect(original).toBeDefined()
+    const overlay = new Map([
+      [name, 'export const value: number = "safe".__cioptLibraryReplacement_26c95;'],
+    ])
+    const plain = () => ts.createProgram(roots, options, sourceEnvironment(new Map(), overlay).host)
+    const candidate = () =>
+      createTestProgram(roots, options, sourceEnvironment(new Map(), overlay).host)
+    const diagnostics = (program: ts.Program) => {
+      const normalize = (diagnostic: ts.Diagnostic): unknown => ({
+        code: diagnostic.code,
+        category: diagnostic.category,
+        file: diagnostic.file?.fileName,
+        text: diagnostic.file?.text,
+        start: diagnostic.start,
+        length: diagnostic.length,
+        message: diagnostic.messageText,
+        source: diagnostic.source,
+        unnecessary: diagnostic.reportsUnnecessary,
+        deprecated: diagnostic.reportsDeprecated,
+        related: diagnostic.relatedInformation?.map(normalize),
+      })
+      return ts.getPreEmitDiagnostics(program).map(normalize)
+    }
+    // Establish actual baseline compiler/library lookup before warming candidate.
+    const firstReference = plain()
+    expect(firstReference.getSourceFile(installedLibrary)).toBeDefined()
+    expect(ts.getPreEmitDiagnostics(firstReference).map((diagnostic) => diagnostic.code)).toContain(
+      2339,
+    )
+    const first = candidate()
+    expect(diagnostics(first)).toEqual(diagnostics(firstReference))
+
+    overlay.set(
+      packageJson,
+      JSON.stringify({
+        name: '@typescript/lib-es5',
+        version: '0.0.0-ci-opt-synthetic',
+        types: 'index.d.ts',
+      }),
+    )
+    overlay.set(
+      replacementLibrary,
+      original! + '\ninterface String { readonly __cioptLibraryReplacement_26c95: number; }\n',
+    )
+    const addedReference = plain()
+    // Both preconditions must pass; otherwise this is fixture/setup failure.
+    expect(addedReference.getSourceFile(replacementLibrary)).toBeDefined()
+    expect(ts.getPreEmitDiagnostics(addedReference)).toEqual([])
+    const added = candidate()
+    expect(diagnostics(added)).toEqual(diagnostics(addedReference))
+    expect(added.getSourceFile(replacementLibrary)).toBeDefined()
+    expect(added.getSourceFile(installedLibrary)).toBeUndefined()
+    expect(added.getTypeChecker()).not.toBe(first.getTypeChecker())
+
+    // Package metadata can redirect lookup without changing roots or options.
+    const redirectedLibrary = path.join(packageRoot, 'redirected.d.ts')
+    overlay.set(
+      packageJson,
+      JSON.stringify({
+        name: '@typescript/lib-es5',
+        version: '0.0.0-ci-opt-synthetic',
+        types: 'redirected.d.ts',
+      }),
+    )
+    overlay.set(
+      redirectedLibrary,
+      original! + '\ninterface String { readonly __cioptLibraryReplacement_26c95: string; }\n',
+    )
+    const redirectedReference = plain()
+    expect(redirectedReference.getSourceFile(redirectedLibrary)).toBeDefined()
+    expect(
+      ts.getPreEmitDiagnostics(redirectedReference).map((diagnostic) => diagnostic.code),
+    ).toEqual([2322])
+    const redirected = candidate()
+    expect(diagnostics(redirected)).toEqual(diagnostics(redirectedReference))
+    expect(redirected.getSourceFile(redirectedLibrary)).toBeDefined()
+    expect(redirected.getSourceFile(replacementLibrary)).toBeUndefined()
+    overlay.set(
+      packageJson,
+      JSON.stringify({
+        name: '@typescript/lib-es5',
+        version: '0.0.0-ci-opt-synthetic',
+        types: 'index.d.ts',
+      }),
+    )
+    expect(diagnostics(candidate())).toEqual(diagnostics(plain()))
+    expect(ts.getPreEmitDiagnostics(candidate())).toEqual([])
+
+    overlay.delete(packageJson)
+    overlay.delete(replacementLibrary)
+    overlay.delete(redirectedLibrary)
+    const restoredReference = plain()
+    expect(restoredReference.getSourceFile(installedLibrary)).toBeDefined()
+    expect(restoredReference.getSourceFile(replacementLibrary)).toBeUndefined()
+    const restored = candidate()
+    expect(diagnostics(restored)).toEqual(diagnostics(restoredReference))
+    expect(diagnostics(restored)).toEqual(diagnostics(firstReference))
+    expect(restored.getSourceFile(replacementLibrary)).toBeUndefined()
+    expect(restored.getSourceFile(installedLibrary)).toBeDefined()
   })
 })
