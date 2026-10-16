@@ -1,5 +1,8 @@
 import 'server-only'
 
+export { getProduct, getVariant, listProducts } from './products'
+export type { GetProductInput, GetVariantInput, ListProductsInput } from './products'
+
 export {
   parseAddressProjection,
   parseCallerDecimalId,
