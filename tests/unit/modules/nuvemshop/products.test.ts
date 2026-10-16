@@ -164,6 +164,15 @@ function jsonResponse(body: string, status = 200, headers: Record<string, string
   })
 }
 
+function productListBody(count: number): string {
+  return JSON.stringify(
+    Array.from(
+      { length: count },
+      (_, index) => JSON.parse(productRaw({ id: index + 1 })) as unknown,
+    ),
+  )
+}
+
 beforeEach(async () => {
   vi.resetModules()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] })
@@ -759,5 +768,401 @@ describe('NUV-08 getVariant', () => {
     )
     expect(result.error).toBeInstanceOf(NuvemshopValidationError)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('NUV-08-R1 adversarial input and pagination', () => {
+  const PRODUCT_NAME_MARKER = 'Peça sintética'
+
+  function expectValidationNoFetch(
+    result: { value?: unknown; error?: unknown },
+    fetchMock: ReturnType<typeof vi.fn>,
+    options: { message?: string; noLeak?: string } = {},
+  ) {
+    expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+    expect(fetchMock).not.toHaveBeenCalled()
+    if (options.message !== undefined) {
+      expect((result.error as Error).message).toBe(options.message)
+    }
+    if (options.noLeak !== undefined) {
+      expect(serialized(result.error)).not.toContain(options.noLeak)
+    }
+  }
+
+  describe('hostile input containment', () => {
+    it('contains a nested proxy trap without leaking nested exception text', async () => {
+      const fetchMock = installFetch()
+      const nested = new Proxy(
+        {},
+        {
+          getPrototypeOf() {
+            throw new Error('secret-nested-proxy')
+          },
+        },
+      )
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            throw nested
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(result.error).toBeInstanceOf(Error)
+      expect(() => (result.error as Error).message).not.toThrow()
+      expect(() => (result.error as Error).stack).not.toThrow()
+      expect(serialized(result.error)).not.toContain('secret-nested-proxy')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect((result.error as Error).message).toBe('Nuvemshop input is invalid.')
+    })
+
+    it('rejects a forged NuvemshopValidationError thrown from a trap', async () => {
+      const fetchMock = installFetch()
+      let forgedThrown: unknown
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            const forged = Object.create(NuvemshopValidationError.prototype) as Error
+            Object.defineProperty(forged, 'message', {
+              value: 'caller-controlled-forged-message',
+              enumerable: true,
+            })
+            forgedThrown = forged
+            throw forged
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(result.error).not.toBe(forgedThrown)
+      expect(serialized(result.error)).not.toContain('caller-controlled-forged-message')
+      expect((result.error as Error).message).toBe('Nuvemshop input is invalid.')
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('contains getPrototypeOf trap leakage (secret-get-prototype)', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          getPrototypeOf() {
+            throw new Error('secret-get-prototype')
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-get-prototype',
+      })
+    })
+
+    it('contains ownKeys trap leakage (secret-own-keys-focused)', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            throw new Error('secret-own-keys')
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-own-keys',
+      })
+    })
+
+    it('contains getOwnPropertyDescriptor trap leakage (secret-descriptor)', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          getOwnPropertyDescriptor() {
+            throw new Error('secret-descriptor')
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-descriptor',
+      })
+    })
+
+    it('rejects ownKeys that advertises a forbidden url key', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            return ['page', 'perPage', 'url']
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock)
+    })
+
+    it('rejects ownKeys that advertises a symbol key', async () => {
+      const fetchMock = installFetch()
+      const sym = Symbol('hostile')
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            return ['page', 'perPage', sym]
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock)
+    })
+
+    it('rejects a hostile accessor on page without requiring the getter to run', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { perPage: 30 },
+        {
+          getOwnPropertyDescriptor(_target, prop) {
+            if (prop === 'page') {
+              return {
+                enumerable: true,
+                configurable: true,
+                get() {
+                  throw new Error('secret-getter')
+                },
+              }
+            }
+            return undefined
+          },
+          ownKeys() {
+            return ['page', 'perPage']
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock)
+      expect(serialized(result.error)).not.toContain('secret-getter')
+    })
+
+    it('rejects a revoked listProducts input proxy before fetch', async () => {
+      const fetchMock = installFetch()
+      const { proxy, revoke } = Proxy.revocable({ page: 1, perPage: 30 }, {})
+      revoke()
+      const result = await capture(() => listProducts(proxy as Parameters<typeof listProducts>[0]))
+      expectValidationNoFetch(result, fetchMock)
+    })
+
+    it('does not leak message accessor errors from a thrown plain object', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { page: 1, perPage: 30 },
+        {
+          ownKeys() {
+            throw {
+              get message() {
+                throw new Error('secret-error-accessor')
+              },
+            }
+          },
+        },
+      )
+      const result = await capture(() =>
+        listProducts(hostile as Parameters<typeof listProducts>[0]),
+      )
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-error-accessor',
+      })
+    })
+
+    it('contains getProduct hostile ownKeys trap (secret-get-product)', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { productId: '1234' },
+        {
+          ownKeys() {
+            throw new Error('secret-get-product')
+          },
+        },
+      )
+      const result = await capture(() => getProduct(hostile as Parameters<typeof getProduct>[0]))
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-get-product',
+      })
+    })
+
+    it('contains getVariant hostile ownKeys trap (secret-get-variant)', async () => {
+      const fetchMock = installFetch()
+      const hostile = new Proxy(
+        { productId: '1234', variantId: '101' },
+        {
+          ownKeys() {
+            throw new Error('secret-get-variant')
+          },
+        },
+      )
+      const result = await capture(() => getVariant(hostile as Parameters<typeof getVariant>[0]))
+      expectValidationNoFetch(result, fetchMock, {
+        noLeak: 'secret-get-variant',
+      })
+    })
+  })
+
+  describe('required pagination fields', () => {
+    it.each([
+      ['page undefined', { page: undefined, perPage: 30 }],
+      ['perPage undefined', { page: 1, perPage: undefined }],
+      ['both undefined', { page: undefined, perPage: undefined }],
+      ['missing page', { perPage: 30 }],
+      ['missing perPage', { page: 1 }],
+      ['page null', { page: null, perPage: 30 }],
+      ['perPage null', { page: 1, perPage: null }],
+      ['page zero', { page: 0, perPage: 30 }],
+      ['page negative', { page: -1, perPage: 30 }],
+      ['page fractional', { page: 1.5, perPage: 30 }],
+      ['perPage above 200', { page: 1, perPage: 201 }],
+      ['unsafe integer page', { page: Number.MAX_SAFE_INTEGER + 1, perPage: 30 }],
+    ] as const)('rejects %s before fetch', async (_label, input) => {
+      const fetchMock = installFetch()
+      const result = await capture(() => listProducts(input as Parameters<typeof listProducts>[0]))
+      expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('accepts canonical page and perPage with a single list fetch', async () => {
+      const fetchMock = installFetch(async () => jsonResponse('[]'))
+      const result = await capture(() => listProducts({ page: 1, perPage: 30 }))
+      expect(result.error).toBeUndefined()
+      expect(result.value?.perPage).toBe(30)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(productsListUrl(1, 30))
+    })
+
+    it('allows omitting optional signal and correlationId', async () => {
+      const fetchMock = installFetch(async () => jsonResponse('[]'))
+      const result = await capture(() => listProducts({ page: 1, perPage: 20 }))
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(productsListUrl(1, 20))
+    })
+
+    it('allows explicit undefined optional fields without requiring callers to pass them', async () => {
+      const fetchMock = installFetch(async () => jsonResponse('[]'))
+      const result = await capture(() =>
+        listProducts({
+          page: 1,
+          perPage: 20,
+          signal: undefined,
+          correlationId: undefined,
+        } as Parameters<typeof listProducts>[0]),
+      )
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(requestUrl(fetchMock)).toBe(productsListUrl(1, 20))
+    })
+  })
+
+  describe('page size vs received count', () => {
+    it.each([
+      [1, 0, 'success'] as const,
+      [1, 1, 'success'] as const,
+      [1, 2, 'protocol'] as const,
+      [20, 0, 'success'] as const,
+      [20, 7, 'success'] as const,
+      [20, 20, 'success'] as const,
+      [20, 21, 'protocol'] as const,
+      [30, 31, 'protocol'] as const,
+      [200, 200, 'success'] as const,
+      [200, 201, 'protocol'] as const,
+    ])('perPage=%i with %i received items is %s', async (perPage, received, outcome) => {
+      const fetchMock = installFetch(async () => jsonResponse(productListBody(received)))
+      const result = await capture(() => listProducts({ page: 1, perPage }))
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      if (outcome === 'success') {
+        expect(result.error).toBeUndefined()
+        expect(result.value?.perPage).toBe(perPage)
+        expect(result.value?.items).toHaveLength(received)
+      } else {
+        expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+        expect(result.value).toBeUndefined()
+        expectRedacted(result.error)
+        expect(serialized(result.error)).not.toContain(PRODUCT_NAME_MARKER)
+      }
+    })
+
+    it('projects next and previous on an intermediate page with a full page body', async () => {
+      const link = `<${productsListUrl(3, 20)}>; rel="next", <${productsListUrl(1, 20)}>; rel="prev"`
+      const fetchMock = installFetch(async () => jsonResponse(productListBody(20), 200, { link }))
+      const result = await capture(() => listProducts({ page: 2, perPage: 20 }))
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.value).toMatchObject({
+        page: 2,
+        perPage: 20,
+        nextPage: 3,
+        previousPage: 1,
+      })
+      expect(result.value?.items).toHaveLength(20)
+    })
+
+    it('keeps nextPage on an empty intermediate page when Link declares next', async () => {
+      const fetchMock = installFetch(async () =>
+        jsonResponse('[]', 200, { link: `<${productsListUrl(3, 20)}>; rel="next"` }),
+      )
+      const result = await capture(() => listProducts({ page: 2, perPage: 20 }))
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.value?.items).toHaveLength(0)
+      expect(result.value?.nextPage).toBe(3)
+    })
+
+    it('uses x-total-count when present alongside a short page body', async () => {
+      const fetchMock = installFetch(async () =>
+        jsonResponse(productListBody(7), 200, { 'x-total-count': '40' }),
+      )
+      const result = await capture(() => listProducts({ page: 1, perPage: 20 }))
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.value?.totalCount).toBe(40)
+      expect(result.value?.items).toHaveLength(7)
+    })
+
+    it('omits totalCount when x-total-count is absent', async () => {
+      const fetchMock = installFetch(async () => jsonResponse(productListBody(7)))
+      const result = await capture(() => listProducts({ page: 1, perPage: 20 }))
+      expect(result.error).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.value).not.toHaveProperty('totalCount')
+      expect(result.value?.items).toHaveLength(7)
+    })
+
+    it('treats oversized body vs requested perPage as protocol error even with x-total-count', async () => {
+      const fetchMock = installFetch(async () =>
+        jsonResponse(productListBody(21), 200, { 'x-total-count': '21' }),
+      )
+      const result = await capture(() => listProducts({ page: 1, perPage: 20 }))
+      expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
+      expect(result.value).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expectRedacted(result.error)
+    })
   })
 })

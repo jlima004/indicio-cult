@@ -1,7 +1,6 @@
 import 'server-only'
 
 import { nuvemshopRequest } from './client'
-import { NuvemshopValidationError } from './errors'
 import { createNuvemshopPage, type Page } from './pagination'
 import { failProtocol, failValidation } from './schemas/fail'
 import { parseCallerDecimalId } from './schemas/ids'
@@ -38,8 +37,8 @@ function readInput(
 ): Record<string, unknown> {
   try {
     return snapshotInput(value, allowed, required, resourceKind)
-  } catch (error) {
-    if (error instanceof NuvemshopValidationError) throw error
+  } catch {
+    // Any thrown value is caller-controlled. Do not read it.
     failValidation(resourceKind)
   }
 }
@@ -67,6 +66,7 @@ function snapshotInput(
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (descriptor === undefined || !('value' in descriptor)) failValidation(resourceKind)
+    if (required.includes(key) && descriptor.value === undefined) failValidation(resourceKind)
     snapshot[key] = descriptor.value
   }
   return snapshot
@@ -99,7 +99,9 @@ export async function listProducts(input: ListProductsInput): Promise<Page<Produ
     query: { page: record.page as number, perPage: record.perPage as number },
     ...requestOptions(record),
   })
-  return createNuvemshopPage(parseProductList(response.rawBody), response.metadata)
+  const page = createNuvemshopPage(parseProductList(response.rawBody), response.metadata)
+  if (page.items.length > page.perPage) failProtocol('product')
+  return page
 }
 
 export async function getProduct(input: GetProductInput): Promise<Product> {
