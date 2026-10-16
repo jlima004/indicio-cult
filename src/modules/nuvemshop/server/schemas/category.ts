@@ -15,7 +15,8 @@ function readCategory(record: Record<string, unknown>): Category {
   const handle = readLocalized(record.handle, false)
   const visibility = record.visibility
   if (!Object.hasOwn(record, 'parent')) failProtocol('category')
-  const parentId = record.parent === null ? null : readDecimalId(record.parent)
+  const rawParent = record.parent
+  const parentId = rawParent === null || rawParent === 0 ? null : readDecimalId(rawParent)
   if (
     id === undefined ||
     name === undefined ||

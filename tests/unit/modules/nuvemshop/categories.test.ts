@@ -4,13 +4,15 @@
  *
  * Fixtures are synthetic, derived from documented Nuvemshop field names (see fixtures/schemas.ts);
  * no live store was queried.
+ * NUV-09-R1 zero sentinel: https://nuvemshop.dev/en-US/api/resources/2025-03/category
+ * (consulted 2026-10-16; documented compatibility, not observed store behavior).
  *
  * Harness notes against the integrated NUV-04/05/06/07 contracts:
  * - each test reloads the server module so the process-local rate budget starts cold;
  * - a page-1 response cannot carry rel="prev" (NUV-06);
  * - GET 5xx and attempt timeouts use the existing two-attempt budget (NUV-05);
  * - abort before admission performs no fetch;
- * - parent 0 is a protocol error, not a synthetic root;
+ * - numeric parent 0 is a documented root sentinel; string zero remains invalid;
  * - handle absence stays null and is never synthesized from name.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -251,6 +253,25 @@ describe('NUV-09 listCategories', () => {
     expect(result.value?.items[0]?.id).toBe('1')
     expect(result.value?.items[1]?.name).toEqual({ pt: 'B' })
     expect(result.value?.items[1]?.parentId).toBe('1')
+  })
+
+  it('accepts null, numeric zero, and positive parents in one list page', async () => {
+    const body = JSON.stringify([
+      JSON.parse(categoryRaw({ id: 1, parent: null })),
+      JSON.parse(categoryRaw({ id: 2, parent: 0 })),
+      JSON.parse(categoryRaw({ id: 3, parent: 4567 })),
+    ])
+    const fetchMock = installFetch(async () => jsonResponse(body))
+
+    const result = await capture(() => listCategories({ page: 1, perPage: 30 }))
+
+    expect(result.error).toBeUndefined()
+    expect(result.value?.items.map(({ id, parentId }) => ({ id, parentId }))).toEqual([
+      { id: '1', parentId: null },
+      { id: '2', parentId: null },
+      { id: '3', parentId: '4567' },
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('requests page 1 with canonical pagination query params on the pinned origin and version', async () => {
@@ -560,6 +581,38 @@ describe('NUV-09 getCategory', () => {
     expect(result.value?.parentId).toBeNull()
   })
 
+  it('normalizes numeric zero parent on detail without adding public fields or fetching again', async () => {
+    const fetchMock = installFetch(async () =>
+      jsonResponse(
+        categoryRaw({
+          name: { pt: 'Categoria sintética' },
+          handle: { pt: 'categoria-sintetica' },
+          parent: 0,
+        }),
+      ),
+    )
+
+    const result = await capture(() => getCategory({ categoryId: '4567' }))
+
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({
+      id: '4567',
+      name: { pt: 'Categoria sintética' },
+      handle: { pt: 'categoria-sintetica' },
+      parentId: null,
+      visibility: 'visible',
+    })
+    expect(Object.keys(result.value ?? {})).toEqual([
+      'id',
+      'name',
+      'handle',
+      'parentId',
+      'visibility',
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requestUrl(fetchMock)).toBe(categoryDetailUrl('4567'))
+  })
+
   it('maps a positive parent id to the exact decimal string', async () => {
     installFetch(async () => jsonResponse(categoryRaw({ parent: 99 })))
     const result = await capture(() => getCategory({ categoryId: '4567' }))
@@ -576,8 +629,8 @@ describe('NUV-09 getCategory', () => {
     expect(result.value).toBeUndefined()
   })
 
-  it('rejects parent 0 as a protocol error and does not coerce it to null', async () => {
-    installFetch(async () => jsonResponse(categoryRaw({ parent: 0 })))
+  it('rejects string parent zero as a protocol error and does not coerce it to null', async () => {
+    installFetch(async () => jsonResponse(categoryRaw({ parent: '0' })))
     const result = await capture(() => getCategory({ categoryId: '4567' }))
     expect(result.error).toBeInstanceOf(NuvemshopProtocolError)
     expect(result.value).toBeUndefined()
@@ -586,8 +639,12 @@ describe('NUV-09 getCategory', () => {
 
   it.each([
     ['string', 'abc'],
+    ['zero-padded string', '00'],
     ['negative', -1],
     ['boolean', true],
+    ['false', false],
+    ['empty string', ''],
+    ['array', []],
     ['object', { id: 1 }],
     ['fractional', 1.5],
   ])('rejects malformed parent (%s) as a protocol error', async (_label, parent) => {

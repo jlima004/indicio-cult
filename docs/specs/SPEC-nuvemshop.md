@@ -424,6 +424,14 @@ Contrato mínimo fechado: ID estável, nome localizado, handle quando presente, 
 
 Texto curatorial, capa, ordem, status e referências de séries pertencem ao backoffice/`content` conforme PRD/Capability Map. Category é taxonomy/vínculo do provider. Description, Google taxonomy, subcategories, custom fields e timestamps não integram o mínimo sem consumer comprovado. Não há metadata vaga nem nova open decision de curadoria.
 
+#### NUV-09-R1 — proposta de reconciliação: PENDING_HUMAN_ADJUDICATION
+
+Proposta vinculada à [PR #44](https://github.com/jlima004/indicio-cult/pull/44), motivada pelo [finding P1](https://github.com/jlima004/indicio-cult/pull/44#discussion_r4299974191). Na consulta de 2026-10-16, a [documentação atual da API 2025-03](https://nuvemshop.dev/en-US/api/resources/2025-03/category) descreve `parent: 0` como ausência de pai, mostra esse valor na resposta PUT de remoção e o explica em nota. Os exemplos GET atuais e a [referência histórica](https://tiendanube.github.io/api-documentation/resources/category) usam `null`. São fatos documentados; nenhuma loja real foi consultada e o exemplo PUT não comprova GET retornando zero.
+
+Reconciliação proposta exclusivamente para a entrada `Category.parent`: `null` ou zero numérico admitido pelo decoder lossless normalizam para `parentId: null`; ID positivo válido conserva todos os dígitos. A comparação estrita com zero inclui o token inteiro `-0`; strings `"0"`/`"00"`, formas fracionárias/exponenciais, negativos não zero, ausência e demais entradas inválidas continuam rejeitados. Zero é sentinela, não ID válido: `Category.parentId: NuvemshopDecimalId | null`, o parser compartilhado de IDs e os IDs de Category/Product/Variant/Order permanecem inalterados.
+
+A correção técnica candidata é compatibilidade defensiva com o sentinela documentado. A decisão anterior, explicitamente testada no HEAD `5c00956545ca7a10f115be0c4b5549083ceeb57f`, rejeitava `parent: 0`; somente a ratificação humana desta proposta poderá registrá-la como superada. Esta emenda não é contrato normativo aprovado nem nova reaprovação da SPEC de 2026-10-01. Estado: **PENDING_HUMAN_ADJUDICATION / BLOCKED_SPEC_HUMAN_ADJUDICATION**; merge e deploy continuam sem autorização.
+
 ### Customers
 
 Capability opcional, indisponível na configuração core. `getCustomer` só fica

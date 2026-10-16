@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { NuvemshopProtocolError, NuvemshopValidationError } from '@/modules/nuvemshop/server/errors'
 import { readDecimalId, readOrderNumber, readUlid } from '@/modules/nuvemshop/server/schemas/ids'
+import { parseCategoryList } from '@/modules/nuvemshop/server/schemas/category'
 import {
   readExactUnsignedInteger,
   reviveLosslessInteger,
@@ -352,6 +353,91 @@ describe('NUV-07 category', () => {
     expect(parseCategory(JSON.stringify(withoutHandle)).handle).toBeNull()
     expect(JSON.stringify(parseCategory(categoryRaw()))).not.toContain('texto curatorial')
     expect(JSON.stringify(parseCategory(categoryRaw()))).not.toContain('Apparel')
+  })
+
+  it('normalizes numeric zero parent to the public root representation', () => {
+    const category = parseCategory(categoryRaw({ parent: 0 }))
+    expect(category).toEqual({
+      id: '4567',
+      name: { pt: 'Série sintética', es: 'Serie' },
+      handle: { pt: 'serie-sintetica' },
+      parentId: null,
+      visibility: 'visible',
+    })
+  })
+
+  it('normalizes a mixed root and child category list', () => {
+    const raw = JSON.stringify([
+      JSON.parse(categoryRaw({ id: 1, parent: null })),
+      JSON.parse(categoryRaw({ id: 2, parent: 0 })),
+      JSON.parse(categoryRaw({ id: 3, parent: 4567 })),
+    ])
+
+    expect(parseCategoryList(raw).map(({ id, parentId }) => ({ id, parentId }))).toEqual([
+      { id: '1', parentId: null },
+      { id: '2', parentId: null },
+      { id: '3', parentId: '4567' },
+    ])
+  })
+
+  it('treats canonical negative zero as numeric zero without coercing boxed tokens', () => {
+    const raw = categoryRaw().replace('"parent":null', '"parent":-0')
+    expect(parseCategory(raw).parentId).toBeNull()
+    expect(parseCategoryList(`[${raw}]`)[0]?.parentId).toBeNull()
+  })
+
+  it.each([
+    ['small positive integer', '1'],
+    ['category id integer', '4567'],
+    ['first integer above MAX_SAFE_INTEGER', '9007199254740992'],
+    ['odd integer above MAX_SAFE_INTEGER', HUGE_ID],
+    ['integer above int64', ABOVE_INT64_ID],
+    ['40-digit maximum', '9'.repeat(40)],
+  ])('preserves exact category parent %s', (_label, digits) => {
+    const raw = categoryRaw().replace('"parent":null', `"parent":${digits}`)
+    expect(parseCategory(raw).parentId).toBe(digits)
+    expect(parseCategory(categoryRaw({ parent: digits })).parentId).toBe(digits)
+    expect(parseCategoryList(`[${raw}]`)[0]?.parentId).toBe(digits)
+  })
+
+  it.each([
+    ['zero string', '"0"'],
+    ['zero-padded string', '"00"'],
+    ['negative integer', '-1'],
+    ['boolean false', 'false'],
+    ['boolean true', 'true'],
+    ['empty string', '""'],
+    ['array', '[]'],
+    ['object', '{}'],
+    ['non-zero fraction', '1.5'],
+    ['rounded unsafe fraction', '9007199254740993.0000000000000001'],
+    ['fractional zero token', '0.0'],
+    ['negative fractional zero token', '-0.0'],
+    ['exponent zero token', '0e0'],
+    ['negative exponent zero token', '-0e0'],
+    ['underflow token', '1e-999'],
+    ['41-digit integer', '9'.repeat(41)],
+    ['41-digit string', `"${'9'.repeat(41)}"`],
+  ])('rejects invalid category parent %s', (_label, token) => {
+    const raw = categoryRaw().replace('"parent":null', `"parent":${token}`)
+    expectProtocol(() => parseCategory(raw))
+    expectProtocol(() => parseCategoryList(`[${categoryRaw()},${raw}]`))
+  })
+
+  it('rejects a category with a missing parent field', () => {
+    const raw = JSON.parse(categoryRaw()) as Record<string, unknown>
+    delete raw.parent
+    expectProtocol(() => parseCategory(JSON.stringify(raw)))
+    expectProtocol(() => parseCategoryList(`[${JSON.stringify(raw)}]`))
+  })
+
+  it('keeps category ids positive when parent zero is normalized', () => {
+    expectProtocol(() => parseCategory(categoryRaw({ id: 0, parent: 0 })))
+    expect(readDecimalId(0)).toBeUndefined()
+  })
+
+  it('does not accept a boxed zero without lexical source as an identifier', () => {
+    expect(readDecimalId(reviveLosslessInteger('parent', 0, undefined))).toBeUndefined()
   })
 })
 
