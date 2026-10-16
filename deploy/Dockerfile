@@ -27,7 +27,7 @@ RUN test -n "$APP_VERSION" && npm run build
 # Prepare the complete Alpine userspace with the official zlib security fix.
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS runtime-rootfs
 
-RUN apk add --no-cache libstdc++ zlib=1.3.2-r1 \
+RUN apk add --no-cache libstdc++ 'zlib>=1.3.2-r1' \
     && addgroup -g 1000 node \
     && adduser -u 1000 -G node -s /bin/sh -D node
 
