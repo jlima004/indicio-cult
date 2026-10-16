@@ -1,10 +1,10 @@
-FROM node:22-alpine AS deps
+FROM node:22-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-alpine AS build
+FROM node:22-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -24,13 +24,27 @@ ARG APP_VERSION
 # embeds it in the public release and Sentry release during this build.
 RUN test -n "$APP_VERSION" && npm run build
 
-FROM node:22-alpine AS runner
+# Prepare the complete Alpine userspace with the official zlib security fix.
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS runtime-rootfs
+
+RUN apk add --no-cache libstdc++ zlib=1.3.2-r1 \
+    && addgroup -g 1000 node \
+    && adduser -u 1000 -G node -s /bin/sh -D node
+
+# Copy only the prepared filesystem; its old zlib layer is not inherited.
+FROM scratch AS runner
+COPY --from=runtime-rootfs / /
+
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+COPY --from=build /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
-    PORT=3000
+    PORT=3000 \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 ARG APP_VERSION
 ENV APP_VERSION=${APP_VERSION}
