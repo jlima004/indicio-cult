@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { nuvemshopRequest } from './client'
+import { NuvemshopValidationError } from './errors'
 import { createNuvemshopPage, type Page } from './pagination'
 import { failProtocol, failValidation } from './schemas/fail'
 import { parseCallerDecimalId } from './schemas/ids'
@@ -30,6 +31,20 @@ export type GetVariantInput = {
 }
 
 function readInput(
+  value: unknown,
+  allowed: readonly string[],
+  required: readonly string[],
+  resourceKind: ResourceKind,
+): Record<string, unknown> {
+  try {
+    return snapshotInput(value, allowed, required, resourceKind)
+  } catch (error) {
+    if (error instanceof NuvemshopValidationError) throw error
+    failValidation(resourceKind)
+  }
+}
+
+function snapshotInput(
   value: unknown,
   allowed: readonly string[],
   required: readonly string[],

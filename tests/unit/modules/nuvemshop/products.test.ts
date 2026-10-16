@@ -432,6 +432,22 @@ describe('NUV-08 listProducts', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('contains a hostile input proxy without leaking its exception', async () => {
+    const fetchMock = installFetch()
+    const hostile = new Proxy(
+      { page: 1, perPage: 30 },
+      {
+        ownKeys() {
+          throw new Error('secret-proxy-trap')
+        },
+      },
+    )
+    const result = await capture(() => listProducts(hostile as Parameters<typeof listProducts>[0]))
+    expect(result.error).toBeInstanceOf(NuvemshopValidationError)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(serialized(result.error)).not.toContain('secret-proxy-trap')
+  })
+
   it('rejects an oversized declared body via the transport cap', async () => {
     installFetch(
       async () =>
