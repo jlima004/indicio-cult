@@ -31,6 +31,9 @@ function fixture(
       method: 'GET',
       segments,
       pagination: { page, perPage },
+      ...(segments.length === 1 && segments[0] === 'categories'
+        ? { projection: 'category-minimum-v1' as const }
+        : {}),
     },
     rateLimit: { limit: absent, remaining: absent, resetMs: absent },
     pagination: {
@@ -52,6 +55,9 @@ function target(
     storeId: STORE,
     segments,
     pagination: { page, perPage },
+    ...(segments.length === 1 && segments[0] === 'categories'
+      ? { projection: 'category-minimum-v1' as const }
+      : {}),
   }
 }
 function rejectMetadata(value: unknown) {

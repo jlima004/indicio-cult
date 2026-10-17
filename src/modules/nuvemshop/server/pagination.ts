@@ -4,6 +4,7 @@ import { NuvemshopProtocolError } from './errors'
 import {
   NUVEMSHOP_API_ORIGIN,
   NUVEMSHOP_API_VERSION,
+  nuvemshopListProjection,
   prepareNuvemshopAttempt,
   type NuvemshopPagePosition,
   type NuvemshopResponseMetadata,
@@ -120,14 +121,11 @@ function scalar(value: unknown, min = 0): number | undefined {
 
 function navigation(metadata: unknown): NuvemshopPageNavigation {
   const snapshot = record(metadata, ['request', 'rateLimit', 'pagination'])
-  const request = record(snapshot.request, [
-    'origin',
-    'apiVersion',
-    'storeId',
-    'method',
-    'segments',
-    'pagination',
-  ])
+  const request = record(
+    snapshot.request,
+    ['origin', 'apiVersion', 'storeId', 'method', 'segments', 'pagination'],
+    ['projection'],
+  )
   if (
     request.origin !== NUVEMSHOP_API_ORIGIN ||
     request.apiVersion !== NUVEMSHOP_API_VERSION ||
@@ -148,6 +146,12 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
     segments: segments(request.segments),
     query: current,
   })
+  const projection = nuvemshopListProjection(prepared.method, prepared.segments)
+  if (
+    Object.hasOwn(request, 'projection') !== (projection !== undefined) ||
+    request.projection !== projection
+  )
+    failProtocol()
   const rate = record(snapshot.rateLimit, ['limit', 'remaining', 'resetMs'])
   // Validate the declared envelope only; invalid/absent quota stays NUV-05-owned.
   scalar(rate.limit, 1)
@@ -165,14 +169,11 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
   const seen = new Set<string>()
   if (links.kind === 'valid') {
     for (const value of array(links.value, 4, 1)) {
-      const target = record(value, [
-        'relation',
-        'origin',
-        'apiVersion',
-        'storeId',
-        'segments',
-        'pagination',
-      ])
+      const target = record(
+        value,
+        ['relation', 'origin', 'apiVersion', 'storeId', 'segments', 'pagination'],
+        ['projection'],
+      )
       const route = segments(target.segments)
       const page = position(target.pagination)
       if (
@@ -182,6 +183,8 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
         route.length !== prepared.segments.length ||
         route.some((part, index) => part !== prepared.segments[index]) ||
         page.perPage !== current.perPage ||
+        Object.hasOwn(target, 'projection') !== (projection !== undefined) ||
+        target.projection !== projection ||
         typeof target.relation !== 'string' ||
         seen.has(target.relation)
       ) {

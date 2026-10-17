@@ -1396,7 +1396,7 @@ describe('frozen query and generation preparation contract', () => {
     const fake = installFetch()
     const result = await done(start(read({ segments, query: {} })), 0)
     expect(fake.mock.calls[0]?.[0]).toBe(
-      `https://api.nuvemshop.com.br/2025-03/${STORE}/${segments.join('/')}?page=1&per_page=30`,
+      `https://api.nuvemshop.com.br/2025-03/${STORE}/${segments.join('/')}?page=1&per_page=30${segments.length === 1 && segments[0] === 'categories' ? '&fields=id,name,handle,parent,visibility' : ''}`,
     )
     expect(metadata(result).request.pagination).toEqual({ page: 1, perPage: 30 })
   })

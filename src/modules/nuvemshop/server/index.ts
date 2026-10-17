@@ -1,5 +1,7 @@
 import 'server-only'
 
+export { getCategory, listCategories } from './categories'
+export type { GetCategoryInput, ListCategoriesInput } from './categories'
 export { getProduct, getVariant, listProducts } from './products'
 export type { GetProductInput, GetVariantInput, ListProductsInput } from './products'
 
