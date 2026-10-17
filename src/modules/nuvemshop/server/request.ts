@@ -44,6 +44,10 @@ const MAX_RESPONSE_CHARS = 1_048_576
 const MAX_STORE_ID_LENGTH = 256
 const MAX_TOKEN_LENGTH = 4_096
 const MAX_SEGMENTS = 8
+// Category owns this closed minimum; callers cannot select fields or a mode.
+// https://nuvemshop.dev/en-US/api/resources/2025-03/category
+const CATEGORY_LIST_FIELDS = 'id,name,handle,parent,visibility'
+const ENCODED_CATEGORY_LIST_FIELDS = CATEGORY_LIST_FIELDS.replaceAll(',', '%2C')
 const CORRELATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 // Closed path grammar from the official 2025-03 resource docs. Methods remain
@@ -180,6 +184,7 @@ export interface NuvemshopRateLimitMetadata {
 }
 
 export type NuvemshopLinkRelation = 'next' | 'prev' | 'first' | 'last'
+export type NuvemshopListProjection = 'category-minimum-v1'
 export interface NuvemshopLinkTarget {
   readonly relation: NuvemshopLinkRelation
   readonly origin: 'https://api.nuvemshop.com.br'
@@ -187,6 +192,7 @@ export interface NuvemshopLinkTarget {
   readonly storeId: string
   readonly segments: NuvemshopRoute
   readonly pagination: NuvemshopPagePosition
+  readonly projection?: NuvemshopListProjection
 }
 export interface NuvemshopPaginationHeaders {
   readonly totalCount: NuvemshopHeaderField<number>
@@ -199,6 +205,7 @@ export interface NuvemshopRequestIdentity {
   readonly method: NuvemshopMethod
   readonly segments: NuvemshopRoute
   readonly pagination: NuvemshopPagePosition | null
+  readonly projection?: NuvemshopListProjection
 }
 export interface NuvemshopResponseMetadata {
   readonly request: NuvemshopRequestIdentity
@@ -292,6 +299,16 @@ function isPageCollection(method: Method, segments: NuvemshopRoute): boolean {
       ['products', 'categories', 'orders', 'webhooks'].includes(segments[0])) ||
       (segments.length === 3 && segments[0] === 'products' && segments[2] === 'variants'))
   )
+}
+
+/** Pure route policy: already part of NUV-05's coalescing identity. */
+export function nuvemshopListProjection(
+  method: Method,
+  segments: readonly string[],
+): NuvemshopListProjection | undefined {
+  return method === 'GET' && segments.length === 1 && segments[0] === 'categories'
+    ? 'category-minimum-v1'
+    : undefined
 }
 
 function readPagination(
@@ -444,8 +461,11 @@ function fixedUrl(
     failValidation(context)
   }
   const pathname = `/${NUVEMSHOP_API_VERSION}/${storeId}/${path}`
-  const search =
-    pagination === null ? '' : `?page=${pagination.page}&per_page=${pagination.perPage}`
+  const query =
+    pagination === null ? [] : [`page=${pagination.page}`, `per_page=${pagination.perPage}`]
+  if (nuvemshopListProjection(context.method, segments) !== undefined)
+    query.push(`fields=${CATEGORY_LIST_FIELDS}`)
+  const search = query.length === 0 ? '' : `?${query.join('&')}`
   url.search = search
   if (
     url.protocol !== 'https:' ||
@@ -518,13 +538,40 @@ function publicRateMetadata(
   }
 }
 
+/** Split relation entries outside URI targets, which can contain field commas. */
+function linkEntries(value: string): string[] | undefined {
+  const entries: string[] = []
+  let start = 0
+  let insideTarget = false
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '<') {
+      if (insideTarget) return undefined
+      insideTarget = true
+    } else if (char === '>') {
+      if (!insideTarget) return undefined
+      insideTarget = false
+    } else if (char === ',' && !insideTarget) {
+      entries.push(value.slice(start, index))
+      if (entries.length >= 4) return undefined
+      start = index + 1
+    }
+  }
+  if (insideTarget) return undefined
+  entries.push(value.slice(start))
+  return entries
+}
+
 /** Lexical projection only. NUV-06 owns request/link navigation equality. */
-function parseLinks(value: string | null): NuvemshopHeaderField<readonly NuvemshopLinkTarget[]> {
+function parseLinks(
+  value: string | null,
+  projection: NuvemshopListProjection | undefined,
+): NuvemshopHeaderField<readonly NuvemshopLinkTarget[]> {
   if (value === null) return absent()
   if (value.length > 8192 || /[\u0000-\u0008\u000A-\u001F\u007F-\uFFFF]/.test(value))
     return invalid()
-  const entries = value.split(',')
-  if (entries.length < 1 || entries.length > 4) return invalid()
+  const entries = linkEntries(value)
+  if (entries === undefined) return invalid()
   const targets: NuvemshopLinkTarget[] = []
   const seen = new Set<string>()
   try {
@@ -539,7 +586,7 @@ function parseLinks(value: string | null): NuvemshopHeaderField<readonly Nuvemsh
         uri.length > 1536 ||
         seen.has(relation) ||
         !uri.startsWith(`${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/`) ||
-        /[%\\#]/.test(uri)
+        /[\\#]/.test(uri)
       )
         return invalid()
       seen.add(relation)
@@ -548,6 +595,7 @@ function parseLinks(value: string | null): NuvemshopHeaderField<readonly Nuvemsh
       const url = new URL(uri)
       const rawPath = parts[0]!.slice(NUVEMSHOP_API_ORIGIN.length)
       if (
+        rawPath.includes('%') ||
         url.origin !== NUVEMSHOP_API_ORIGIN ||
         url.pathname !== rawPath ||
         url.username !== '' ||
@@ -567,12 +615,24 @@ function parseLinks(value: string | null): NuvemshopHeaderField<readonly Nuvemsh
         return invalid()
       const segments = readSegments(path.slice(3), {})
       const fields = parts[1]!.split('&')
-      if (fields.length !== 2) return invalid()
+      if (fields.length !== (projection === undefined ? 2 : 3)) return invalid()
       let page: number | undefined
       let perPage: number | undefined
+      let hasProjection = false
       for (const field of fields) {
         const pair = field.split('=')
         if (pair.length !== 2) return invalid()
+        if (pair[0] === 'fields') {
+          // Admit two exact whole-value spellings, never general percent decoding.
+          if (
+            projection === undefined ||
+            hasProjection ||
+            (pair[1] !== CATEGORY_LIST_FIELDS && pair[1] !== ENCODED_CATEGORY_LIST_FIELDS)
+          )
+            return invalid()
+          hasProjection = true
+          continue
+        }
         const number = headerCount(pair[1]!)
         if (number === undefined || number < 1) return invalid()
         if (pair[0] === 'page' && page === undefined) page = number
@@ -580,6 +640,11 @@ function parseLinks(value: string | null): NuvemshopHeaderField<readonly Nuvemsh
         else return invalid()
       }
       if (page === undefined || perPage === undefined) return invalid()
+      if (
+        projection !== undefined &&
+        (!hasProjection || nuvemshopListProjection('GET', segments) !== projection)
+      )
+        return invalid()
       targets.push(
         Object.freeze({
           relation,
@@ -588,6 +653,7 @@ function parseLinks(value: string | null): NuvemshopHeaderField<readonly Nuvemsh
           storeId,
           segments,
           pagination: Object.freeze({ page, perPage }),
+          ...(projection === undefined ? {} : { projection }),
         }),
       )
     }
@@ -602,6 +668,7 @@ function responseMetadata(
   expected: URL,
   attempt: PreparedNuvemshopAttempt,
 ): NuvemshopResponseMetadata {
+  const projection = nuvemshopListProjection(attempt.method, attempt.segments)
   return Object.freeze({
     request: Object.freeze({
       origin: NUVEMSHOP_API_ORIGIN,
@@ -610,11 +677,12 @@ function responseMetadata(
       method: attempt.method,
       segments: Object.freeze([...attempt.segments]) as NuvemshopRoute,
       pagination: attempt.pagination === null ? null : Object.freeze({ ...attempt.pagination }),
+      ...(projection === undefined ? {} : { projection }),
     }),
     rateLimit: parseRateLimit(headers),
     pagination: Object.freeze({
       totalCount: scalarHeader(headers.get('x-total-count')),
-      links: parseLinks(headers.get('link')),
+      links: parseLinks(headers.get('link'), projection),
     }),
   })
 }

@@ -66,7 +66,7 @@ let NuvemshopRateLimitError: typeof import('@/modules/nuvemshop/server/errors').
 let NuvemshopValidationError: typeof import('@/modules/nuvemshop/server/errors').NuvemshopValidationError
 
 function categoriesListUrl(page = 1, perPage = 30): string {
-  return `${OFFICIAL_CATEGORIES}?page=${page}&per_page=${perPage}`
+  return `${OFFICIAL_CATEGORIES}?page=${page}&per_page=${perPage}&fields=id,name,handle,parent,visibility`
 }
 
 function categoryDetailUrl(categoryId: string): string {

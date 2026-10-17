@@ -2560,7 +2560,7 @@ describe('NUV-04-R6 route identifier boundary', () => {
     expect(configReads).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(requestUrl(fetchMock)).toBe(
-      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/${segments.join('/')}`,
+      `${NUVEMSHOP_API_ORIGIN}/${NUVEMSHOP_API_VERSION}/${STORE_ID}/${segments.join('/')}${segments.length === 1 && segments[0] === 'categories' ? '?fields=id,name,handle,parent,visibility' : ''}`,
     )
   })
 

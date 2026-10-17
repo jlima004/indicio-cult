@@ -432,6 +432,8 @@ Reconciliação proposta exclusivamente para a entrada `Category.parent`: `null`
 
 A correção técnica candidata é compatibilidade defensiva com o sentinela documentado. A decisão anterior, explicitamente testada no HEAD `5c00956545ca7a10f115be0c4b5549083ceeb57f`, rejeitava `parent: 0`; somente a ratificação humana desta proposta poderá registrá-la como superada. Esta emenda não é contrato normativo aprovado nem nova reaprovação da SPEC de 2026-10-01. Estado: **PENDING_HUMAN_ADJUDICATION / BLOCKED_SPEC_HUMAN_ADJUDICATION**; merge e deploy continuam sem autorização.
 
+Continuação técnica delimitada do [P2 de projeção](https://github.com/jlima004/indicio-cult/pull/44#discussion_r4300351339), autorizada pelo owner em 2026-10-16: todo GET da coleção Category solicita internamente `fields=id,name,handle,parent,visibility`, inclusive sem query de paginação; detalhe, HEAD e demais recursos não recebem o filtro. A seleção é fixa por método/rota, sem novo input do consumer e sem alteração do budget/retry. A documentação oficial admite `fields` separado por vírgulas; preservar esse filtro nos Links e aceitar somente seu valor exato literal ou com todas as vírgulas como `%2C` são políticas fechadas do adapter, não comportamento comprovado em loja. Request/Link projetam apenas um discriminante interno validado pelo pager, nunca URL externa nem novos campos públicos. Filtro ausente/alterado e identidade divergente falham fechados; os tetos de 1 MiB e demais limites permanecem, inclusive se o provider ignorar o filtro ou os próprios campos necessários excederem o teto. A autorização técnica deste P2 não ratifica a reconciliação de `parent` acima nem autoriza release.
+
 ### Customers
 
 Capability opcional, indisponível na configuração core. `getCustomer` só fica
