@@ -6,15 +6,13 @@
 
 - [PR técnica NUV-11 #46](https://github.com/jlima004/indicio-cult/pull/46), branch `codex/nuv-11-orders-resume`, HEAD publicado `6656ea2144a8bedc05bf2fe6df817c0b784416c4` (R2).
 - **Condição observada:** `LOCAL_PASS / REMEDIATION_PUBLISHED`, 2.581/2.581 testes locais, build local PASS; [CI #39440938689](https://github.com/jlima004/indicio-cult/actions/runs/39440938689) **SUCCESS após reexecução do job**, incluindo build Docker, E2E e scanners; [Codex Code Review do mesmo HEAD](https://github.com/jlima004/indicio-cult/pull/46#issuecomment-6293539958) **COMPLETED sem novos findings**; três threads P2 históricas respondidas e resolvidas.
-- **Fronteira:** `TECHNICAL_PASS / READY_FOR_HUMAN_MERGE_REVIEW` **não** é `MERGED`, `DEPLOYED`, `ADAPTER_OPERATIONAL`, `IMPLEMENTATION_COMPLETE` nem aprovação do consumo por `orders`/identidade. Na fotografia, a PR #46 está aberta; merge e deploy exigem decisões/gates humanos próprios. Após qualquer merge, provar CI/deploy/health/version do SHA efetivamente liberado, conforme governança de release.
+- **Fronteira:** `TECHNICAL_PASS / READY_FOR_HUMAN_MERGE_REVIEW` **não** é `MERGED`, `DEPLOYED`, `ADAPTER_OPERATIONAL`, `IMPLEMENTATION_COMPLETE` nem aprovação do consumo por `orders`/identidade. No snapshot inicial, anterior ao merge, a PR #46 estava aberta; merge e deploy exigiam decisões/gates humanos próprios. Após qualquer merge, provar CI/deploy/health/version do SHA efetivamente liberado, conforme governança de release.
 
 ## Quadro de pendências que permanecem após eventual merge
 
-| Referência | Situação em 2026-10-20 | Dono da decisão / seguimento | Condição de encerramento |
-| --- | --- | --- | --- |
-| **CI-FONT-01** — `next/font/google` + Turbopack em Docker | **OPEN / acompanhamento independente**; um Docker build falhou, reexecução do mesmo HEAD passou | Manutenção frontend/build/CI (atribuição operacional a confirmar) | Causa/mitigação sustentadas por evidência própria, ou decisão de monitoramento explicitamente registrada; aprovação de eventual mudança em PR separada |
-| **NUV-HR-02** — capacidade real e scopes da app | **OPEN / BLOCKS_REAL_PROVIDER_USE** | Owner da app, decisão humana | Evidência das capabilities/scopes efetivos, modalidade/distribuição, versão 2025-03 e fluxo autorizado de instalação/OAuth/ensaio; resolução explícita do gate |
-| **NUV-11-LEGACY-B** — contrato fiscal legado | **UNVERIFIED / DEFERRED_PROVIDER_EVIDENCE_REQUIRED** | Product/integrador Nuvemshop, engenharia e privacidade | Evidência confiável de formato e reconciliação legados + nova adjudicação, contrato, testes, revisão e aprovações próprios |
+- **CI-FONT-01 — `next/font/google` e Turbopack no Docker:** `OPEN / acompanhamento independente`. Um build Docker falhou e a repetição do mesmo HEAD passou. Responsável operacional: manutenção frontend/build/CI, atribuição a confirmar. Encerramento depende de evidência de causa/mitigação ou decisão explícita de monitoramento; mudança eventual em PR separada.
+- **NUV-HR-02 — capabilities, scopes e acesso real:** `OPEN / BLOCKS_REAL_PROVIDER_USE`. Responsável: owner da app e decisão humana. Encerramento exige prova de capabilities/scopes efetivos, modalidade/distribuição, versão `2025-03`, fluxo de instalação/OAuth autorizado e adjudicação explícita.
+- **NUV-11-LEGACY-B — contrato fiscal legado:** `UNVERIFIED / DEFERRED_PROVIDER_EVIDENCE_REQUIRED`. Responsáveis: product/integrador Nuvemshop, engenharia e privacidade. Encerramento exige evidência confiável do formato/reconciliação legados e nova adjudicação com contrato, testes e revisão próprios.
 
 Nenhum dos itens é automaticamente fechado pelo merge da NUV-11. A pendência de fontes **não reabre os P2 técnicos de Order**, nem invalida retrospectivamente a aprovação da reexecução CI; uma recorrência futura exige nova análise do run/HEAD afetado.
 
@@ -50,6 +48,16 @@ Nenhum dos itens é automaticamente fechado pelo merge da NUV-11. A pendência d
 - Gatilhos de reabertura: documentação oficial específica, resposta verificável do suporte ou ensaio read-only **expressamente autorizado depois de HR-02**, com evidência anonimizada e aprovação humana.
 - A prova posterior deve cobrir nomes/namespace/key/value, ownership, cardinalidade, pareamento, coexistência/precedência com `nfe/list`, paginação, limites, completude e privacidade. Sem parse especulativo ou enumeração cega de metafields.
 - **NUV-23** conserva a obrigação de demonstrar integração e a semântica de `incomplete`; **NUV-25 e consumers** devem comprovar disclosure/ausência falsa e fluxos autorizados. Esses gates não são encerrados pela PR #46.
+
+## Atualização pós-merge e deploy — 2026-10-20
+
+**Evidência posterior ao snapshot inicial, sem retroeditar os gates históricos.**
+
+- A [PR #46](https://github.com/jlima004/indicio-cult/pull/46) foi **MERGED** em `main` em 2026-10-20, commit `fc83b8f63b62468ade21d6fef0aa08590cbfc7e4`. O candidate técnico anteriormente revisado foi `6656ea2144a8bedc05bf2fe6df817c0b784416c4`.
+- O owner forneceu log do deploy Coolify do mesmo merge commit: `npm run build` no Docker PASS (8/8 páginas); nova imagem e contêiner iniciados; healthcheck do contêiner `healthy`; rolling update concluído, contêiner anterior removido. Isso é evidência de deploy deste SHA, não de uso autenticado real da API Nuvemshop.
+- Health de produção informado pelo owner em [`/api/health`](https://indiciocult.com.br/api/health): `{"status":"ok","version":"fc83b8f63b62468ade21d6fef0aa08590cbfc7e4","supabase":"ok"}`. A versão coincide com o commit selecionado pelo Coolify. Não implica prova de smoke Nuvemshop autenticado ou de consumer `orders`.
+- **NUV-11: `TECHNICAL_COMPLETE / MERGED / DEPLOYED`**, sem declarar `ADAPTER_OPERATIONAL` ou `IMPLEMENTATION_COMPLETE` para a integração completa.
+- **Permanecem OPEN / DEFERRED:** `CI-FONT-01` ([issue #47](https://github.com/jlima004/indicio-cult/issues/47)), `NUV-HR-02` e a compatibilidade fiscal legada `DEFERRED_PROVIDER_EVIDENCE_REQUIRED`. Nenhuma é encerrada por esse deploy.
 
 ## Regras de fechamento e atualização
 
