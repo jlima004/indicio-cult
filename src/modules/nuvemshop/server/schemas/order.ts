@@ -4,6 +4,7 @@ import type {
   AddressProjection,
   BoundedCollection,
   Consulted,
+  CanonicalDateTime,
   FulfillmentOrder,
   InvoiceReference,
   LineItem,
@@ -133,15 +134,36 @@ function readOptionalStatus(value: unknown): string | null | undefined {
   return readShipmentStatus(value)
 }
 
+function additionalTimes(
+  record: Record<string, unknown>,
+  fields: readonly (readonly [string, string])[],
+): Record<string, CanonicalDateTime | null> | undefined {
+  const times: Record<string, CanonicalDateTime | null> = {}
+  for (const [rawKey, key] of fields) {
+    if (!Object.hasOwn(record, rawKey)) continue
+    const time = record[rawKey] === null ? null : readDateTime(record[rawKey])
+    if (time === undefined) return undefined
+    times[key] = time
+  }
+  return times
+}
+
 function readTransition(value: unknown): StatusTransition | undefined {
   if (!isRecord(value)) return undefined
+  const id =
+    value.id === undefined || value.id === null
+      ? undefined
+      : (readUlid(value.id) ?? readDecimalId(value.id))
+  if (value.id !== undefined && value.id !== null && id === undefined) return undefined
   const fromStatus = readOptionalStatus(value.from_status)
   const toStatus = readOptionalStatus(value.to_status)
   const happenedAt = readDateTime(value.happened_at)
   if (fromStatus === undefined || toStatus === undefined || happenedAt === undefined) {
     return undefined
   }
-  return { fromStatus, toStatus, happenedAt }
+  const times = additionalTimes(value, [['created_at', 'createdAt']])
+  if (times === undefined) return undefined
+  return { ...(id === undefined ? {} : { id }), fromStatus, toStatus, happenedAt, ...times }
 }
 
 function readTrackingEvent(value: unknown): TrackingEvent | undefined {
@@ -153,7 +175,13 @@ function readTrackingEvent(value: unknown): TrackingEvent | undefined {
   if (id === undefined || status === null || status === undefined || happenedAt === undefined) {
     return undefined
   }
-  return { id, status, happenedAt }
+  const times = additionalTimes(value, [
+    ['created_at', 'createdAt'],
+    ['updated_at', 'updatedAt'],
+    ['estimated_delivery_at', 'estimatedDeliveryAt'],
+  ])
+  if (times === undefined) return undefined
+  return { id, status, happenedAt, ...times }
 }
 
 function readFulfillment(
@@ -226,6 +254,8 @@ function fulfillmentCollection(
   record: Record<string, unknown>,
   requested: OrderParseOptions['fulfillmentCompleteness'],
 ): BoundedCollection<FulfillmentOrder> {
+  if (Object.hasOwn(record, 'fulfillment_orders') && Object.hasOwn(record, 'fulfillments'))
+    failProtocol('order')
   const key = Object.hasOwn(record, 'fulfillment_orders')
     ? 'fulfillment_orders'
     : Object.hasOwn(record, 'fulfillments')
@@ -283,10 +313,10 @@ function invoiceCollection(options: OrderParseOptions): BoundedCollection<Invoic
     if (value !== undefined && value !== null) failProtocol('order')
     return { completeness: 'not_consulted' }
   }
-  const resolved = completeness ?? 'confirmed'
   if (value === undefined) failProtocol('order')
-  if (value === null) return { completeness: resolved, items: [] }
-  return { completeness: resolved, items: parseInvoiceListValue(value) }
+  // A modern-only read cannot establish completeness while the legacy format is deferred.
+  if (value === null) return { completeness: 'incomplete', items: [] }
+  return { completeness: 'incomplete', items: parseInvoiceListValue(value) }
 }
 
 const MAX_QUANTITY_DIGITS = '9007199254740991'
@@ -401,8 +431,7 @@ function readPayment(record: Record<string, unknown>): PaymentSummary | undefine
   return { status, gateway, gatewayName, method, cardBrand, installments, paidAt }
 }
 
-export function parseOrder(raw: string, options: OrderParseOptions = {}): Order {
-  const record = decodeObject(raw)
+function readOrder(record: Record<string, unknown>, options: OrderParseOptions): Order {
   const id = readDecimalId(record.id)
   const number = readOrderNumber(record.number)
   const createdAt = readDateTime(record.created_at)
@@ -456,4 +485,156 @@ export function parseOrder(raw: string, options: OrderParseOptions = {}): Order 
         : { provenance: 'order_legacy_provisional', address: provisional },
     invoices: invoiceCollection(options),
   }
+}
+
+export function parseOrder(raw: string, options: OrderParseOptions = {}): Order {
+  return readOrder(decodeObject(raw), options)
+}
+
+export function parseOrderList(raw: string): readonly Order[] {
+  const values = decodeLosslessJson(raw)
+  if (!Array.isArray(values) || values.length > 200) failProtocol('order')
+  return values.map((value) => {
+    if (!isRecord(value)) failProtocol('order')
+    return readOrder(value, {})
+  })
+}
+
+/** Tracking fields have independent presence, even in a consulted object. */
+function preserveTracking(
+  record: Record<string, unknown>,
+  current: FulfillmentOrder,
+  previous?: FulfillmentOrder,
+): FulfillmentOrder {
+  if (
+    previous === undefined ||
+    previous.id !== current.id ||
+    previous.tracking.completeness !== 'confirmed' ||
+    previous.tracking.value === null ||
+    !isRecord(record.tracking_info) ||
+    current.tracking.completeness !== 'confirmed' ||
+    current.tracking.value === null
+  )
+    return current
+  return {
+    ...current,
+    tracking: {
+      completeness: 'confirmed',
+      value: {
+        code: Object.hasOwn(record.tracking_info, 'code')
+          ? current.tracking.value.code
+          : previous.tracking.value.code,
+        url: Object.hasOwn(record.tracking_info, 'url')
+          ? current.tracking.value.url
+          : previous.tracking.value.url,
+      },
+    },
+  }
+}
+
+/** Retain fields omitted by a later projection of the same shipment, with explicit null authoritative. */
+function preserveDestination(
+  record: Record<string, unknown>,
+  current: FulfillmentOrder,
+  previous?: FulfillmentOrder,
+): FulfillmentOrder {
+  if (
+    previous === undefined ||
+    previous.id !== current.id ||
+    previous.destination.completeness !== 'confirmed' ||
+    previous.destination.value === null
+  )
+    return current
+  const old = previous.destination.value.address
+  if (Object.hasOwn(record, 'destination') && record.destination === null) {
+    const recipient = record.recipient
+    const nameConsulted =
+      Object.hasOwn(record, 'recipient') &&
+      (recipient === null || (isRecord(recipient) && Object.hasOwn(recipient, 'name')))
+    if (nameConsulted || old.recipientName === null) return current
+    return {
+      ...current,
+      destination: {
+        completeness: 'confirmed',
+        value: {
+          provenance: 'fulfillment',
+          address: emptyMinimizedAddress(old.recipientName),
+        },
+      },
+    }
+  }
+  const fresh =
+    current.destination.completeness === 'confirmed' && current.destination.value !== null
+      ? current.destination.value.address
+      : emptyMinimizedAddress()
+  const destination = isRecord(record.destination) ? record.destination : {}
+  const address = { ...old }
+  const fields = ['street', 'number', 'floor', 'locality', 'city', 'zipcode'] as const
+  for (const key of fields) if (Object.hasOwn(destination, key)) address[key] = fresh[key]
+  if (Object.hasOwn(record, 'recipient')) {
+    const recipient = record.recipient
+    if (recipient === null || (isRecord(recipient) && Object.hasOwn(recipient, 'name')))
+      address.recipientName = fresh.recipientName
+  }
+  for (const region of ['province', 'country'] as const) {
+    if (!Object.hasOwn(destination, region)) continue
+    const source = destination[region]
+    const nameKey = region === 'province' ? 'provinceName' : 'countryName'
+    const codeKey = region === 'province' ? 'provinceCode' : 'countryCode'
+    if (source === null || !isRecord(source) || Object.hasOwn(source, 'name'))
+      address[nameKey] = fresh[nameKey]
+    if (source === null || !isRecord(source) || Object.hasOwn(source, 'code'))
+      address[codeKey] = fresh[codeKey]
+  }
+  return {
+    ...current,
+    destination: { completeness: 'confirmed', value: { provenance: 'fulfillment', address } },
+  }
+}
+
+export function parseFulfillmentOrder(
+  raw: string,
+  completeness: 'confirmed' | 'incomplete' = 'confirmed',
+  previous?: FulfillmentOrder,
+): FulfillmentOrder {
+  const record = decodeObject(raw)
+  const value = readFulfillment(record, completeness)
+  if (value === undefined) failProtocol('order')
+  return preserveDestination(record, preserveTracking(record, value, previous), previous)
+}
+
+export function parseFulfillmentOrderList(
+  raw: string,
+  completeness: 'confirmed' | 'incomplete' = 'confirmed',
+  previous: readonly FulfillmentOrder[] = [],
+): readonly FulfillmentOrder[] {
+  const values = decodeLosslessJson(raw)
+  if (!Array.isArray(values) || values.length > 100) failProtocol('order')
+  return values.map((value) => {
+    const parsed = readFulfillment(value, completeness)
+    if (parsed === undefined) failProtocol('order')
+    return isRecord(value)
+      ? preserveDestination(
+          value,
+          preserveTracking(
+            value,
+            parsed,
+            previous.find((item) => item.id === parsed.id),
+          ),
+          previous.find((item) => item.id === parsed.id),
+        )
+      : parsed
+  })
+}
+
+/** Selected fields=value rows; presence with a malformed/null value is a protocol failure. */
+export function parseOrderMetafieldValues(raw: string): readonly string[] {
+  const values = decodeLosslessJson(raw)
+  if (!Array.isArray(values) || values.length > 200) failProtocol('order')
+  return values.map((value) => {
+    if (!isRecord(value) || !Object.hasOwn(value, 'value') || typeof value.value !== 'string')
+      failProtocol('order')
+    parseInvoiceListValue(value.value)
+    return value.value
+  })
 }

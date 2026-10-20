@@ -840,10 +840,18 @@ describe('NUV-07-R1 nullable history and fulfillment completeness', () => {
     )
     expect(nullable.trackingEvents).toEqual({
       completeness: 'confirmed',
-      items: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happenedAt: null }],
+      items: [
+        {
+          id: TRACKING_EVENT_ID,
+          status: 'dispatched',
+          happenedAt: null,
+          createdAt: { raw: UPDATED_AT, offset: '+0000', instant: '2022-11-15T19:37:08.000Z' },
+          updatedAt: { raw: UPDATED_AT, offset: '+0000', instant: '2022-11-15T19:37:08.000Z' },
+        },
+      ],
     })
     const encoded = JSON.stringify(nullable.trackingEvents)
-    expect(encoded).not.toContain(UPDATED_AT)
+    expect(encoded).toContain(UPDATED_AT)
     expect(encoded).not.toContain(CREATED_AT)
     const shiftedEvent = onlyShipment(
       parseConfirmed({
@@ -1164,7 +1172,7 @@ describe('NUV-07 invoice references', () => {
     const unread = parseOrder(orderRaw())
     expect(unread.invoices).toEqual({ completeness: 'not_consulted' })
     const empty = parseOrder(orderRaw(), { invoiceCompleteness: 'confirmed', invoiceValue: null })
-    expect(empty.invoices).toEqual({ completeness: 'confirmed', items: [] })
+    expect(empty.invoices).toEqual({ completeness: 'incomplete', items: [] })
     const parsed = parseInvoiceListValue(list)
     expect(parsed).toEqual([
       { key: INVOICE_KEY, link: INVOICE_LINK, fulfillmentOrderId: FULFILLMENT_B },
@@ -1187,7 +1195,7 @@ describe('NUV-07 invoice references', () => {
         invoiceValue: list,
       },
     )
-    if (order.invoices.completeness !== 'confirmed') throw new Error('invoices')
+    if (order.invoices.completeness !== 'incomplete') throw new Error('invoices')
     expect(order.invoices.items[0]?.fulfillmentOrderId).toBe(FULFILLMENT_B)
     expect(order.invoices.items[0]?.fulfillmentOrderId).not.toBe(FULFILLMENT_A)
     expect(order.invoices.items[0]?.link).toBe(INVOICE_LINK)
@@ -1213,6 +1221,49 @@ describe('NUV-07 invoice references', () => {
       parseOrder(orderRaw(), { invoiceCompleteness: 'confirmed', invoiceValue: '{' }),
     )
   })
+})
+
+describe('NUV-11 LEGACY-B modern-only fiscal completeness', () => {
+  const references = [
+    { key: INVOICE_KEY, link: INVOICE_LINK, fulfillment_order_id: FULFILLMENT_B },
+    { key: `${INVOICE_KEY.slice(0, -1)}2`, link: 'https://files.example.test/synthetic/nfe/2' },
+  ]
+  const projected = [
+    { key: INVOICE_KEY, link: INVOICE_LINK, fulfillmentOrderId: FULFILLMENT_B },
+    {
+      key: `${INVOICE_KEY.slice(0, -1)}2`,
+      link: 'https://files.example.test/synthetic/nfe/2',
+      fulfillmentOrderId: null,
+    },
+  ]
+
+  for (const count of [0, 1, 2]) {
+    it.each([undefined, 'incomplete', 'confirmed'] as const)(
+      `keeps ${count} modern references incomplete with caller hint %s`,
+      (invoiceCompleteness) => {
+        const order = parseOrder(orderRaw(), {
+          ...(invoiceCompleteness === undefined ? {} : { invoiceCompleteness }),
+          invoiceValue: JSON.stringify(references.slice(0, count)),
+        })
+        expect(order.invoices).toEqual({
+          completeness: 'incomplete',
+          items: projected.slice(0, count),
+        })
+      },
+    )
+  }
+
+  it.each([undefined, 'confirmed'] as const)(
+    'keeps a consulted missing modern metafield incomplete with caller hint %s',
+    (invoiceCompleteness) => {
+      expect(
+        parseOrder(orderRaw(), {
+          ...(invoiceCompleteness === undefined ? {} : { invoiceCompleteness }),
+          invoiceValue: null,
+        }).invoices,
+      ).toEqual({ completeness: 'incomplete', items: [] })
+    },
+  )
 })
 
 describe('NUV-07 privacy and server-only schemas', () => {
@@ -2397,8 +2448,8 @@ describe('NUV-04-R7 canonical ULID validation', () => {
       invoiceCompleteness: 'confirmed',
       invoiceValue: invoiceList(id),
     }).invoices
-    expect(result.completeness).toBe('confirmed')
-    if (result.completeness !== 'confirmed') throw new Error('confirmed invoice list expected')
+    expect(result.completeness).toBe('incomplete')
+    if (result.completeness !== 'incomplete') throw new Error('incomplete invoice list expected')
     expect(result.items).toEqual(list)
   })
 

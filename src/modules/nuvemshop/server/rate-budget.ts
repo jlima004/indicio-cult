@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { filterQuery } from './order-query'
+
 import {
   NuvemshopAccountSuspendedError,
   NuvemshopAuthenticationError,
@@ -618,6 +620,7 @@ export function executeNuvemshopRequest(
     attempt.method,
     attempt.segments,
     attempt.pagination,
+    filterQuery(attempt.filter),
     attempt.context.operation,
     attempt.context.resourceKind ?? null,
     attempt.readGeneration,
