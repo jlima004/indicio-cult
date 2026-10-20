@@ -8,6 +8,7 @@ import { NUVEMSHOP_API_ORIGIN, NUVEMSHOP_API_VERSION } from '@/modules/nuvemshop
 import type { Order } from '@/modules/nuvemshop/server/types'
 
 import {
+  ABOVE_INT64_ID,
   CREATED_AT,
   FULFILLMENT_A,
   FULFILLMENT_B,
@@ -1556,6 +1557,377 @@ describe('NUV-11 C/D: bounded Fulfillment Order reads', () => {
     expect(result.error).toBeInstanceOf(errors.NuvemshopNetworkError)
     expect(result.value).toBeUndefined()
     expect(mock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('NUV-11-R2 optional transition ids', () => {
+  const INT64_LESS_ONE = '9223372036854775807'
+  const GET = { orderId: ORDER_ID, includeInvoices: false }
+
+  function transition(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      ...overrides,
+    }
+  }
+
+  function fetchAggregateAndList(
+    aggregateFulfillment: Record<string, unknown>,
+    listItems: unknown[],
+  ) {
+    return installFetch(async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith(`/orders/${ORDER_ID}`)) {
+        return json(orderRaw({ fulfillment_orders: [aggregateFulfillment] }))
+      }
+      if (url.pathname.endsWith(`/orders/${ORDER_ID}/fulfillment-orders`)) {
+        return json(JSON.stringify(listItems), 200, { 'x-total-count': String(listItems.length) })
+      }
+      return json('{}', 404)
+    })
+  }
+
+  function consultedFulfillment(result: { value?: Order }) {
+    const fulfillments = result.value?.fulfillments
+    if (fulfillments === undefined || fulfillments.completeness === 'not_consulted') {
+      expect(fulfillments).toMatchObject({ completeness: 'confirmed' })
+      throw new Error('expected consulted fulfillments')
+    }
+    const item = fulfillments.items[0]
+    expect(item).toBeDefined()
+    if (item === undefined) throw new Error('expected a fulfillment')
+    return item
+  }
+
+  function statusRows(result: { value?: Order }) {
+    const history = consultedFulfillment(result).statusHistory
+    if (history.completeness === 'not_consulted') {
+      expect(history).toMatchObject({ completeness: 'confirmed' })
+      throw new Error('expected consulted status history')
+    }
+    return history.items
+  }
+
+  function trackingRows(result: { value?: Order }) {
+    const events = consultedFulfillment(result).trackingEvents
+    if (events.completeness === 'not_consulted') {
+      expect(events).toMatchObject({ completeness: 'confirmed' })
+      throw new Error('expected consulted tracking events')
+    }
+    return events.items
+  }
+
+  it('R2-01 preserves aggregate transition id when scoped list omits id', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    const item = statusRows(result)[0]
+    expect(item).toMatchObject({
+      id: ABOVE_INT64_ID,
+      fromStatus: 'UNPACKED',
+      toStatus: 'PACKED',
+      happenedAt: { raw: CREATED_AT },
+    })
+  })
+
+  it('R2-02 preserves list transition id when detail read omits id', async () => {
+    const aggregateTransition = transition({ id: ABOVE_INT64_ID })
+    const listTransition = transition({ id: ABOVE_INT64_ID })
+    const summary = {
+      id: FULFILLMENT_A,
+      status: 'UNPACKED',
+      tracking_info: { code: null, url: null },
+      destination: null,
+      status_history: [listTransition],
+    }
+    const detail = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    installFetch(async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith(`/orders/${ORDER_ID}`)) {
+        return json(
+          orderRaw({
+            fulfillment_orders: [fulfillment({ status_history: [aggregateTransition] })],
+          }),
+        )
+      }
+      if (url.pathname.endsWith(`/fulfillment-orders/${FULFILLMENT_A}`)) {
+        return json(JSON.stringify(detail))
+      }
+      return json(JSON.stringify([summary]), 200, { 'x-total-count': '1' })
+    })
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    expect(statusRows(result)[0]?.id).toBe(ABOVE_INT64_ID)
+  })
+
+  it('R2-03 preserves list-supplied transition id when aggregate omits id', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    expect(statusRows(result)[0]?.id).toBe(ABOVE_INT64_ID)
+  })
+
+  it('R2-04 preserves matching transition id on aggregate and list', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    expect(statusRows(result)[0]?.id).toBe(ABOVE_INT64_ID)
+  })
+
+  it('R2-05 rejects conflicting transition ids across aggregate and list', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: INT64_LESS_ONE })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-06 keeps omitted transition id absent when both projections omit id', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    const item = statusRows(result)[0]
+    expect(item?.id).toBeUndefined()
+    expect(item).toMatchObject({
+      fromStatus: 'UNPACKED',
+      toStatus: 'PACKED',
+      happenedAt: { raw: CREATED_AT },
+    })
+  })
+
+  it('R2-07 rejects ambiguous ids when aggregate supplies ids and list omits them', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID }), transition({ id: INT64_LESS_ONE })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition(), transition()],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-07b rejects ambiguous ids when list supplies ids and aggregate omits them', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition(), transition()],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID }), transition({ id: INT64_LESS_ONE })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-08 preserves both large string transition ids when list omits them', async () => {
+    const aggregate = fulfillment({
+      status_history: [
+        transition({ id: ABOVE_INT64_ID, happened_at: CREATED_AT }),
+        transition({
+          id: INT64_LESS_ONE,
+          from_status: 'PACKED',
+          to_status: 'DISPATCHED',
+          happened_at: UPDATED_AT,
+        }),
+      ],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [
+        transition({ happened_at: CREATED_AT }),
+        transition({
+          from_status: 'PACKED',
+          to_status: 'DISPATCHED',
+          happened_at: UPDATED_AT,
+        }),
+      ],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    const items = statusRows(result)
+    const first = items.find((row) => row.happenedAt.raw === CREATED_AT)
+    const second = items.find((row) => row.happenedAt.raw === UPDATED_AT)
+    expect(first?.id).toBe(ABOVE_INT64_ID)
+    expect(second?.id).toBe(INT64_LESS_ONE)
+  })
+
+  it('R2-09 rejects aggregate transition when scoped list returns empty status_history', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({ status_history: [], tracking_events: [] })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-10 rejects malformed transition id on aggregate without leaking secrets', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: '12.5' })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [
+      fulfillment({ status_history: [transition()], tracking_events: [] }),
+    ])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+    expectSafe(result.error)
+  })
+
+  it('R2-11 preserves transition id and created_at when list omits both optional fields', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID, created_at: OFFSET_CREATED_AT })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition()],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    const item = statusRows(result)[0]
+    expect(item?.id).toBe(ABOVE_INT64_ID)
+    expect(item?.createdAt).toMatchObject({ raw: OFFSET_CREATED_AT, offset: '-03:00' })
+  })
+
+  it('R2-12 rejects conflicting created_at for the same transition id', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID, created_at: OFFSET_CREATED_AT })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID, created_at: UPDATED_AT })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-13 rejects conflicting happened_at for the same transition id', async () => {
+    const aggregate = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID, happened_at: CREATED_AT })],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [transition({ id: ABOVE_INT64_ID, happened_at: UPDATED_AT })],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('R2-14 retains tracking event id and created_at when scoped list omits created_at', async () => {
+    const event = {
+      id: TRACKING_EVENT_ID,
+      status: 'dispatched',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ status_history: [], tracking_events: [event] })
+    const scoped = fulfillment({
+      status_history: [],
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: CREATED_AT }],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    expect(trackingRows(result)[0]).toMatchObject({
+      id: TRACKING_EVENT_ID,
+      createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' },
+    })
+  })
+
+  it('R2-15 confirms empty consulted status_history and tracking_events as complete', async () => {
+    const aggregate = fulfillment({ status_history: [], tracking_events: [] })
+    const scoped = fulfillment({ status_history: [], tracking_events: [] })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      completeness: 'confirmed',
+      items: [
+        {
+          statusHistory: { completeness: 'confirmed', items: [] },
+        },
+      ],
+    })
+  })
+
+  it('R2-wildcard rejects stamping id when list rows differ only by from_status', async () => {
+    const aggregate = fulfillment({
+      status_history: [
+        {
+          id: ABOVE_INT64_ID,
+          from_status: null,
+          to_status: 'PACKED',
+          happened_at: CREATED_AT,
+        },
+      ],
+      tracking_events: [],
+    })
+    const scoped = fulfillment({
+      status_history: [
+        { from_status: 'UNPACKED', to_status: 'PACKED', happened_at: CREATED_AT },
+        { from_status: 'PACKED', to_status: 'PACKED', happened_at: CREATED_AT },
+      ],
+      tracking_events: [],
+    })
+    fetchAggregateAndList(aggregate, [scoped])
+    const result = await capture(() => getOrder(GET))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
   })
 })
 

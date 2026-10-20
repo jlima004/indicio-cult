@@ -18,6 +18,7 @@ import type {
   FulfillmentOrder,
   InvoiceReference,
   Order,
+  StatusTransition,
 } from './types'
 
 // Per Order: at most four 25-record fulfillment pages, 25 detail reads and
@@ -141,6 +142,60 @@ function reconcileTime(
   failProtocol('order')
 }
 
+function transitionAttributesMatch(known: StatusTransition, candidate: StatusTransition): boolean {
+  return (
+    (known.fromStatus === null || known.fromStatus === candidate.fromStatus) &&
+    (known.toStatus === null || known.toStatus === candidate.toStatus) &&
+    known.happenedAt.raw === candidate.happenedAt.raw
+  )
+}
+
+function transitionIdsCompatible(known: StatusTransition, candidate: StatusTransition): boolean {
+  return known.id === undefined || candidate.id === undefined || known.id === candidate.id
+}
+
+function reconcileTransition(
+  known: StatusTransition,
+  candidate: StatusTransition,
+): StatusTransition {
+  const createdAt = reconcileTime(known.createdAt, candidate.createdAt)
+  if (known.id !== undefined && candidate.id !== undefined && known.id !== candidate.id) {
+    failProtocol('order')
+  }
+  const id = known.id === undefined ? candidate.id : known.id
+  return {
+    ...candidate,
+    ...(id === undefined ? {} : { id }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+  }
+}
+
+function retainedStatusHistory(
+  previous: BoundedCollection<StatusTransition>,
+  current: BoundedCollection<StatusTransition>,
+): BoundedCollection<StatusTransition> {
+  if (current.completeness === 'not_consulted') return previous
+  if (previous.completeness === 'not_consulted') return current
+  const compatible = (known: StatusTransition, candidate: StatusTransition) =>
+    transitionAttributesMatch(known, candidate) && transitionIdsCompatible(known, candidate)
+  for (const known of previous.items) {
+    for (const candidate of current.items) {
+      if (!compatible(known, candidate)) continue
+      if ((known.id === undefined) === (candidate.id === undefined)) continue
+      let knownMatches = 0
+      for (const item of current.items) {
+        if (compatible(known, item)) knownMatches += 1
+      }
+      let candidateMatches = 0
+      for (const item of previous.items) {
+        if (compatible(item, candidate)) candidateMatches += 1
+      }
+      if (knownMatches !== 1 || candidateMatches !== 1) failProtocol('order')
+    }
+  }
+  return retainedHistory(previous, current, compatible, reconcileTransition)
+}
+
 function mergeFulfillment(
   previous: FulfillmentOrder | undefined,
   current: FulfillmentOrder,
@@ -155,19 +210,7 @@ function mergeFulfillment(
       current.destination.completeness === 'not_consulted'
         ? previous.destination
         : current.destination,
-    statusHistory: retainedHistory(
-      previous.statusHistory,
-      current.statusHistory,
-      (known, candidate) =>
-        (known.id === undefined || known.id === candidate.id) &&
-        (known.fromStatus === null || known.fromStatus === candidate.fromStatus) &&
-        (known.toStatus === null || known.toStatus === candidate.toStatus) &&
-        known.happenedAt.raw === candidate.happenedAt.raw,
-      (known, candidate) => {
-        const createdAt = reconcileTime(known.createdAt, candidate.createdAt)
-        return createdAt === undefined ? candidate : { ...candidate, createdAt }
-      },
-    ),
+    statusHistory: retainedStatusHistory(previous.statusHistory, current.statusHistory),
     trackingEvents: retainedHistory(
       previous.trackingEvents,
       current.trackingEvents,
