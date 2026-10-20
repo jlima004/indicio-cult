@@ -105,3 +105,9 @@ SHA do commit/árvore publicada, número/URL da PR e observações de CI do HEAD
 ## 8. Resultado documental e próxima decisão
 
 **DOCUMENTAL_READY_FOR_HUMAN_ADJUDICATION** quanto ao conteúdo proposto e aos gates locais documentados, condicionado à comprovação de publicação Draft no recibo externo/corpo da PR. Este estado não ratifica a proposta ou conclui a NUV-12 técnica. A decisão humana necessária é avaliar/aprovar a emenda normativa; sua implementação parcial aguarda também o merge humano da emenda. Os resultados de CI observados após o push serão apresentados separadamente.
+
+## 9. Registro posterior — ratificação da opção 2
+
+Data: 2026-10-20, posterior ao merge da PR #49. As seções 1–8 permanecem o snapshot histórico **PROPOSED / PENDING HUMAN APPROVAL** e não foram reescritas.
+
+O responsável humano pelo projeto ratificou, nesta data, a opção 2 para execução técnica limitada. A ratificação não é aceite de testes, conclusão da NUV-12, T03-GENERAL, nem autorização de merge ou deploy. A evidência dessa execução está em [NUV-12-PARTIAL-evidence.md](./NUV-12-PARTIAL-evidence.md).
