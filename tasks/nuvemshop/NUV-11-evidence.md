@@ -361,3 +361,8 @@ PASS independente. P0=0, P1=0, P2=0. Probes próprios cobriram GET fiscal sem fi
 | `tests/unit/modules/nuvemshop/request.test.ts`     | `9ffa984414d70d655a8a676d5352ee84c2f0fd9f8c492cfa50bae919e6491e83` |
 
 O SHA do commit que introduz esta seção é registrado no recibo imediatamente posterior, para não reescrever este commit. CI remoto e Codex Review do novo HEAD ficam pendentes até observação após o push. Threads do Codex não são marcadas resolvidas por este recibo.
+
+### Recibo do commit
+
+- Commit de remediação: `27ae1a6e1172d60ad4225af7797c8c69f49419a5`, mensagem `fix(nuvemshop): remediate NUV-11 order review findings`.
+- Os sete hashes técnicos acima pertencem a esse commit. Este recibo não altera código nem testes.
