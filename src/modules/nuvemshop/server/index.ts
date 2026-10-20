@@ -2,7 +2,7 @@ import 'server-only'
 
 export { getCategory, listCategories } from './categories'
 export type { GetCategoryInput, ListCategoriesInput } from './categories'
-export { getOrder, listOrders } from './orders'
+export { findOrderByNumber, getOrder, listOrders } from './orders'
 export type { GetOrderInput, ListOrdersInput } from './orders'
 export { getProduct, getVariant, listProducts } from './products'
 export type { GetProductInput, GetVariantInput, ListProductsInput } from './products'

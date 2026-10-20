@@ -1,9 +1,10 @@
 import 'server-only'
 
 import { nuvemshopRequest } from './client'
-import { createNuvemshopPage, type Page } from './pagination'
+import { NuvemshopLookupIncompleteError } from './errors'
+import { createNuvemshopPage, readNuvemshopLookupNavigation, type Page } from './pagination'
 import { failProtocol, failValidation } from './schemas/fail'
-import { parseCallerDecimalId } from './schemas/ids'
+import { parseCallerDecimalId, readOrderNumber } from './schemas/ids'
 import {
   parseFulfillmentOrder,
   parseFulfillmentOrderList,
@@ -400,4 +401,46 @@ export async function listOrders(input: ListOrdersInput): Promise<Page<Order>> {
   const page = createNuvemshopPage(parseOrderList(response.rawBody), response.metadata)
   if (page.items.length > page.perPage) failProtocol('order')
   return page
+}
+
+export async function findOrderByNumber(input: {
+  readonly number: unknown
+  readonly signal?: AbortSignal
+  readonly correlationId?: string
+}): Promise<Order | null> {
+  const record = readInput(input, ['number', 'signal', 'correlationId'], ['number'])
+  const number = readOrderNumber(record.number)
+  if (number === undefined) failValidation('order')
+  const response = await nuvemshopRequest({
+    method: 'GET',
+    segments: ['orders'],
+    operation: 'lookup',
+    resourceKind: 'order',
+    query: { page: 1, perPage: 200, q: number },
+    ...requestOptions(record),
+  })
+  const items = parseOrderList(response.rawBody)
+  const lookedUp = readNuvemshopLookupNavigation(response.metadata)
+  const page = lookedUp.navigation
+  const lastPage = lookedUp.lastPage
+  if (items.length > page.perPage) failProtocol('order')
+  const ids = new Set(items.map((item) => item.id))
+  const covered =
+    page.page === 1 &&
+    page.perPage >= 1 &&
+    page.perPage <= 200 &&
+    page.totalCount !== undefined &&
+    page.totalCount === items.length &&
+    ids.size === items.length &&
+    items.length <= page.perPage &&
+    page.nextPage === undefined &&
+    page.previousPage === undefined &&
+    (lastPage === undefined || lastPage === 1)
+  if (!covered) {
+    throw new NuvemshopLookupIncompleteError({ operation: 'lookup', resourceKind: 'order' })
+  }
+  const matches = items.filter((item) => item.number === number)
+  if (matches.length === 1) return matches[0]!
+  if (matches.length === 0) return null
+  throw new NuvemshopLookupIncompleteError({ operation: 'lookup', resourceKind: 'order' })
 }
