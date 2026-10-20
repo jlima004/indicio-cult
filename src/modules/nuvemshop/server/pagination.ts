@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { NuvemshopProtocolError } from './errors'
-import { readFilterIdentity, sameFilter } from './order-query'
+import { isFiscalCollection, readFilterIdentity, sameFilter } from './order-query'
 import {
   NUVEMSHOP_API_ORIGIN,
   NUVEMSHOP_API_VERSION,
@@ -140,16 +140,23 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
     failProtocol()
   }
   const current = position(request.pagination)
+  const route = segments(request.segments)
   const filter = Object.hasOwn(request, 'filter')
-    ? readFilterIdentity(request.filter, segments(request.segments))
+    ? readFilterIdentity(request.filter, route)
     : undefined
+  if (isFiscalCollection(route) && (filter === undefined || filter.kind !== 'order-nfe')) {
+    failProtocol()
+  }
   if (filter !== undefined && request.method !== 'GET') failProtocol()
   // Reuse the transport's canonical route/ID and collection admission policy.
   // The fresh explicit query prevents default inference; preparation does no I/O.
   const prepared = prepareNuvemshopAttempt({
     method: request.method,
-    segments: segments(request.segments),
-    query: current,
+    segments: route,
+    query:
+      filter?.kind === 'order-nfe'
+        ? { page: current.page, perPage: current.perPage, orderId: filter.orderId }
+        : current,
   })
   const projection = nuvemshopListProjection(prepared.method, prepared.segments)
   if (

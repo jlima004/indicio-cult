@@ -278,3 +278,86 @@ O **Final reviewed candidate** técnico é vinculado ao SHA `9c37b64e3f888df9d60
 **NUV-11: LOCAL_PASS / READY_FOR_HUMAN_REVIEW quanto ao aceite técnico local.** A PR somente é promovida de Draft para Ready após o suplemento documental final E e push normal do recibo no mesmo fingerprint. CONTRACT PASS, PRESERVATION PASS, RED/GREEN PASS, CHECK PASS, BUILD PASS e parecer técnico adversarial PASS. Não há P0/P1/P2 material aberto. A decisão técnica não antecipa estados de GitHub: CI do HEAD publicado permanece pendente de conclusão observada; Codex será solicitado pelo gatilho único da promoção. O corpo da PR e o recibo externo registram os resultados posteriores realmente observados.
 
 Nenhum merge/deploy autorizado nesta execução. Mesmo com gates positivos, **HUMAN MERGE REQUIRED**. Não se declara completude fiscal global, HR-02 CLOSED, NUV-23/25 COMPLETE ou integração operacional comprovada.
+
+## NUV-11-R1 — Codex Review Remediation
+
+Data: 2026-10-20 (America/Sao_Paulo).
+Estado local: **LOCAL_PASS / REMEDIATION_PUBLISHED** somente depois do push deste commit. Esta seção não antecipa CI nem Code Review do novo HEAD.
+
+### Baseline
+
+- Checkout técnico: `/home/jlima/.codex/worktrees/nuv-11-orders-resume/indicioCult`, branch `codex/nuv-11-orders-resume`.
+- HEAD inicial, igual a `origin/codex/nuv-11-orders-resume` e ao head da PR #46 antes da R1: `b1ef66224fbad7174af4e39046c68d75512893e4`.
+- Base: `origin/main` `966b31b70a96b4051312d8356c05b3e7ebf5239a`.
+- `git status --porcelain=v1` antes da primeira edição: vazio. Não havia alteração local posterior à publicação para snapshot.
+- Checkout original `/home/jlima/Projetos/indicioCult` permanece em `main` `a11ff4f0a453f33d60f922f41cc600c546a67b5f`, com sujeira pré-existente não relacionada. Não foi lido para copiar patch, nem alterado, commitado ou limpo.
+- SPEC, PLAN, TODO e `NUV-11-LEGACY-B.md` não foram modificados. `invoices.completeness` continua `incomplete`.
+
+### Achados
+
+| ID    | Thread                                                                  | Causa-raiz independente                                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P2-01 | https://github.com/jlima004/indicio-cult/pull/46#discussion_r4324906600 | `readOrderFilter` devolvia `undefined` com query ausente ou sem `q`/`orderId` antes de exigir GET. `prepareNuvemshopAttempt` então buscava `GET /metafields/orders` sem `owner_id`, `namespace`, `key` ou `fields`. `pagination.ts` repreparava a mesma rota só com `{ page, perPage }`, então tornar o filtro obrigatório sem reanexar o `orderId` já validado quebraria a página 2. |
+| P2-02 | https://github.com/jlima004/indicio-cult/pull/46#discussion_r4324906623 | `retainedTime` falhava quando o timestamp opcional anterior existia e a projeção nova omitia o campo (`current === undefined`). `retainedHistory` ainda devolvia a coleção nova, então afrouxar só o matcher perderia o valor. `null` explícito era tratado como curinga.                                                                                                             |
+
+### Subagents
+
+| Papel         | Agente                                 | Modelo selecionado e aceito pelo runtime | Resultado                                                                                                                                                                                                                                    |
+| ------------- | -------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A — contratos | `818ae722-7163-46b4-8900-8e79488fd0e5` | Grok 4.6 High Fast                       | Os dois P2 são reproduzíveis. Paginação precisa reanexar `orderId`. Retenção tem de ser separada do matching. `null` explícito contra timestamp conhecido falha fechado.                                                                     |
+| B — RED       | `6b06670c-cb98-4255-a7cc-57664354fe9e` | Composer 2.5 Fast                        | 17 falhas reais / 577 controles verdes no conjunto de quatro arquivos (594 testes), antes de qualquer correção de `src/`.                                                                                                                    |
+| C — GREEN     | `4f9c82f3-ae4e-49c6-9d97-99d572fcb4b8` | Grok 4.6 High Fast                       | Diff mínimo em `order-query.ts`, `pagination.ts` e `orders.ts`. Não editou os testes RED.                                                                                                                                                    |
+| D — revisão   | `28fde612-3f66-4360-b992-5b3bb2f2579f` | Grok 4.6 High Fast                       | Parecer independente PASS. 15/15 probes próprios. P0=0, P1=0, P2=0. P3 não bloqueante: curinga legado de `happenedAt` nulo no tracking, retorno fiscal morto e rejeição de chave extra em `readPagination`. O arquivo de probe foi removido. |
+
+O orquestrador aplicou Prettier apenas nos três testes que o `format:check` rejeitou. Não houve merge nem deploy.
+
+### RED
+
+Comando, antes da correção: `npm run test -- tests/unit/modules/nuvemshop/order-query.test.ts tests/unit/modules/nuvemshop/orders.test.ts tests/unit/modules/nuvemshop/pagination.test.ts tests/unit/modules/nuvemshop/request.test.ts`.
+
+Falhas materiais:
+
+- GET fiscal sem query, com `{}`, só com página, ou com `orderId: undefined`: a promise resolvia e `fetch` era chamado.
+- O mesmo GET no cliente de `request.test.ts` lia configuração e fazia fetch.
+- POST/HEAD fiscais sem query não eram `ValidationError` antes do fetch.
+- Metadado fiscal sem `filter` era aceito pelo pager (`nextPage: 2`).
+- Quatro omissões de timestamp opcional, omissão conjunta e `happenedAt` preservado junto de `createdAt`: `NuvemshopProtocolError`.
+- `null` conhecido seguido de timestamp posterior: sucesso indevido.
+- `null` conhecido omitido depois: sucesso sem reter `createdAt: null`.
+
+Controles que já passavam: filtro NF-e exato, página 2 com Link íntegro, Links mutados, orders sem `q`, paginação de fulfillment, coalescing do mesmo `orderId` e separação de `orderId`s diferentes, snapshot vazio como `ProtocolError`, timestamps idênticos e contraditórios.
+
+### GREEN
+
+- Filtro fiscal obrigatório antes de qualquer `return undefined`, só para `['metafields','orders']`.
+- Pager rejeita metadado fiscal sem identidade `order-nfe` e revalida `{ page, perPage, orderId }` já conhecido. `orders-q` não devolve o texto de `q`.
+- Identidade de evento não usa timestamps opcionais. `reconcileTime` retém omissão, distingue `null` de ausência e falha em conflito, inclusive `null` contra datetime. Evento desaparecido continua `ProtocolError`. `happenedAt` canônico não é reescrito.
+
+GREEN do mesmo conjunto de quatro arquivos: 594/594. `retry.test.ts` + `schemas.test.ts`: 645/645.
+
+### Gates
+
+| Gate               | Resultado                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run check`    | PASS, exit 0. Prettier limpo. `tsc` limpo. ESLint 0 erros; 2 warnings pré-existentes em `boundary.test.ts`, fora do diff.                                                                                                                                                                                                                                                            |
+| Vitest integral    | 34 arquivos, 2564/2564 PASS. O HEAD `b1ef662` tinha 2537. O acréscimo são os casos R1; o único caso removido era o GET fiscal sem filtro que a suíte tratava como rota válida, substituído por rejeição.                                                                                                                                                                             |
+| `npm run build`    | A primeira execução sem `.env` falhou ao coletar `/robots.txt` por `NEXT_PUBLIC_*` ausentes neste worktree. Nova execução só com valores públicos sintéticos (`http://localhost:3000`, `https://example.supabase.co`, chave publishable sintética): exit 0, 8/8 páginas. O hook do Sentry registrou 401 ao atualizar o release `dev` e não falhou o build. Nenhum segredo foi usado. |
+| `git diff --check` | Limpo.                                                                                                                                                                                                                                                                                                                                                                               |
+
+### Revisão adversarial
+
+PASS independente. P0=0, P1=0, P2=0. Probes próprios cobriram GET fiscal sem filtro, chave `owner_id` hostil, Link íntegro e `owner_id` alterado, metadado sem identidade, página 2 reemitida com o filtro fechado, retenção dos três timestamps de tracking, conflito de `raw`, `null` retido quando omitido, `null` seguido de datetime e desaparecimento de evento.
+
+### Hashes finais dos arquivos técnicos
+
+| Arquivo                                            | SHA-256                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/modules/nuvemshop/server/order-query.ts`      | `51665a6b358f24b9f74076a7b7d64f68d3387c07557f6bfed44176b3ffd264ff` |
+| `src/modules/nuvemshop/server/orders.ts`           | `ee67f2714b55c4a051c11324199a09a75b4cbad95bb829331c5871c94b943e0a` |
+| `src/modules/nuvemshop/server/pagination.ts`       | `54867cd129bdff3ea95f9c3b30dc3cefe8137921e39e9369121fb9270848f9d3` |
+| `tests/unit/modules/nuvemshop/order-query.test.ts` | `92cf331d15e84ef92af5149e2de57812f4cfcecc00f843f0bbfb26459df86d8b` |
+| `tests/unit/modules/nuvemshop/orders.test.ts`      | `6b5b5fb5ad1d18449df6e4e97f17e81353301d4cc78c136ed1f79ad8b748f5fe` |
+| `tests/unit/modules/nuvemshop/pagination.test.ts`  | `51a9be5a528e10bf3242970a3047e096fd052d181161ee6675bf8cd88117cc31` |
+| `tests/unit/modules/nuvemshop/request.test.ts`     | `9ffa984414d70d655a8a676d5352ee84c2f0fd9f8c492cfa50bae919e6491e83` |
+
+O SHA do commit que introduz esta seção é registrado no recibo imediatamente posterior, para não reescrever este commit. CI remoto e Codex Review do novo HEAD ficam pendentes até observação após o push. Threads do Codex não são marcadas resolvidas por este recibo.

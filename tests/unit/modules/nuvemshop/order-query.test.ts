@@ -27,6 +27,10 @@ async function read(segments: readonly string[], query: Record<string, unknown>)
   const { nuvemshopRequest } = await import('@/modules/nuvemshop/server/client')
   return nuvemshopRequest({ method: 'GET', segments, query } as NuvemshopRequestInput)
 }
+async function request(input: NuvemshopRequestInput) {
+  const { nuvemshopRequest } = await import('@/modules/nuvemshop/server/client')
+  return nuvemshopRequest(input)
+}
 function stub(link?: string) {
   const fetch = vi.fn().mockResolvedValue(
     new Response('[]', {
@@ -45,6 +49,11 @@ describe('NUV-11 closed order query transport', () => {
     expect(String(fetch.mock.calls[0]![0])).toBe(
       `${BASE}/orders?page=1&per_page=2&q=synthetic%2Breader%40example.invalid`,
     )
+  })
+  it('admits bounded orders collection pagination without a discovery query', async () => {
+    const fetch = stub()
+    await read(['orders'], { page: 1, perPage: 2 })
+    expect(String(fetch.mock.calls[0]![0])).toBe(`${BASE}/orders?page=1&per_page=2`)
   })
   it('constructs the fixed NF-e filter with an exact owner id', async () => {
     const fetch = stub()
@@ -107,6 +116,35 @@ describe('NUV-11 closed order query transport', () => {
     await read(['orders'], { page: 1, perPage: 2, q: 'same@example.invalid' })
     expect(fetch).toHaveBeenCalledTimes(2)
   })
+  it('coalesces an identical fiscal orderId only while its read is in flight', async () => {
+    const fetch = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new Response('[]', { headers: { 'content-type': 'application/json' } })),
+      )
+    vi.stubGlobal('fetch', fetch)
+    await Promise.all([
+      read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: ID }),
+      read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: ID }),
+    ])
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: ID })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+  it('keeps different fiscal orderIds out of the same in-flight read', async () => {
+    const otherId = '900719925474099312346'
+    const fetch = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new Response('[]', { headers: { 'content-type': 'application/json' } })),
+      )
+    vi.stubGlobal('fetch', fetch)
+    await Promise.all([
+      read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: ID }),
+      read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: otherId }),
+    ])
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
   it('rejects a changed search in Link without fetching it', async () => {
     const fetch = stub(`<${BASE}/orders?page=2&per_page=2&q=other%40example.invalid>; rel="next"`)
     const result = await read(['orders'], { page: 1, perPage: 2, q: 'reader@example.invalid' })
@@ -117,6 +155,13 @@ describe('NUV-11 closed order query transport', () => {
   it('rejects a Link that drops the search filter', async () => {
     const fetch = stub(`<${BASE}/orders?page=2&per_page=2>; rel="next"`)
     const result = await read(['orders'], { page: 1, perPage: 2, q: 'reader@example.invalid' })
+    const { createNuvemshopPage } = await import('@/modules/nuvemshop/server/pagination')
+    expect(() => createNuvemshopPage([], result.metadata)).toThrow('Nuvemshop')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it('rejects a Link that drops the fiscal filter', async () => {
+    const fetch = stub(`<${BASE}/metafields/orders?page=2&per_page=1>; rel="next"`)
+    const result = await read(['metafields', 'orders'], { page: 1, perPage: 1, orderId: ID })
     const { createNuvemshopPage } = await import('@/modules/nuvemshop/server/pagination')
     expect(() => createNuvemshopPage([], result.metadata)).toThrow('Nuvemshop')
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -160,5 +205,52 @@ describe('NUV-11 closed order query transport', () => {
     const { createNuvemshopPage } = await import('@/modules/nuvemshop/server/pagination')
     expect(() => createNuvemshopPage([], result.metadata)).toThrow('Nuvemshop')
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['no query property', {}],
+    ['empty query object', { query: {} }],
+    ['pagination only', { query: { page: 1, perPage: 1 } }],
+    ['explicit undefined orderId', { query: { page: 1, perPage: 1, orderId: undefined } }],
+  ] as const)('rejects fiscal collection GET with %s before fetch', async (_label, input) => {
+    const fetch = stub()
+    await expect(
+      request({
+        method: 'GET',
+        segments: ['metafields', 'orders'],
+        ...input,
+      } as NuvemshopRequestInput),
+    ).rejects.toMatchObject({ name: 'NuvemshopValidationError' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['POST without query', 'POST' as const, undefined],
+    ['POST with pagination query', 'POST' as const, { page: 1, perPage: 1, orderId: ID }],
+    ['HEAD without query', 'HEAD' as const, undefined],
+    ['HEAD with pagination query', 'HEAD' as const, { page: 1, perPage: 1, orderId: ID }],
+  ] as const)('rejects non-GET fiscal collection attempt: %s', async (_label, method, query) => {
+    const fetch = stub()
+    await expect(
+      request({
+        method,
+        segments: ['metafields', 'orders'],
+        ...(query === undefined ? {} : { query }),
+      }),
+    ).rejects.toMatchObject({ name: 'NuvemshopValidationError' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['leading-zero decimal', '01'],
+    ['zero decimal', '0'],
+    ['fractional decimal', '1.5'],
+    ['exponent decimal', '1e3'],
+  ])('rejects unsafe fiscal owner_id %s before fetch', async (_label, orderId) => {
+    const fetch = stub()
+    await expect(
+      read(['metafields', 'orders'], { page: 1, perPage: 1, orderId }),
+    ).rejects.toMatchObject({ name: 'NuvemshopValidationError' })
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

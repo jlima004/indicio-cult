@@ -2527,6 +2527,23 @@ describe('NUV-04-R6 route identifier boundary', () => {
     }
   })
 
+  it('rejects fiscal collection GET without a closed filter before configuration and fetch', async () => {
+    const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
+    const fetchMock = installFetch()
+
+    const result = await capture({ method: 'GET', segments: ['metafields', 'orders'] })
+
+    expect.soft(result.error).toBeInstanceOf(NuvemshopValidationError)
+    expect.soft(configReads).not.toHaveBeenCalled()
+    expect.soft(fetchMock).not.toHaveBeenCalled()
+    if (result.error instanceof NuvemshopValidationError) {
+      expect(result.error.message).toBe('Nuvemshop input is invalid.')
+      expect(result.error.retryEligible).toBe(false)
+      expectRedacted(result.error)
+      expect('cause' in result.error).toBe(false)
+    }
+  })
+
   // Official 2025-03: product, product-variant, Order invoice and fulfillment-order resources.
   it.each([
     ['Product collection', ['products']],
@@ -2548,7 +2565,6 @@ describe('NUV-04-R6 route identifier boundary', () => {
       'nested Fulfillment lowercase ULID',
       ['orders', '123456', 'fulfillment-orders', ulid.toLowerCase()],
     ],
-    ['consecutive Order invoice literals', ['metafields', 'orders']],
   ] as const)('preserves exact %s route', async (_label, segments) => {
     const configReads = vi.spyOn(nuvemshopConfig, 'getNuvemshopApiConfig')
     const fetchMock = installFetch()

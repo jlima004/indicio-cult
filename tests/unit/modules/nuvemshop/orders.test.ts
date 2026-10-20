@@ -1174,20 +1174,7 @@ describe('NUV-11 C/D: bounded Fulfillment Order reads', () => {
         return json(JSON.stringify([fulfillment()]), 200, { 'x-total-count': '1' })
       })
       const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
-      if (result.error !== undefined) {
-        expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
-        return
-      }
-      expect(result.value?.fulfillments).toMatchObject({
-        items: [
-          {
-            id: FULFILLMENT_A,
-            ...(kind === 'history'
-              ? { statusHistory: { items: [{ toStatus: 'PACKED' }] } }
-              : { trackingEvents: { items: [{ id: TRACKING_EVENT_ID }] } }),
-          },
-        ],
-      })
+      expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
     },
   )
 
@@ -1217,10 +1204,7 @@ describe('NUV-11 C/D: bounded Fulfillment Order reads', () => {
           : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
       )
       const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
-      if (result.error !== undefined) {
-        expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
-        return
-      }
+      expect(result.error).toBeUndefined()
       expect(result.value?.fulfillments).toMatchObject({
         items: [
           {
@@ -1232,6 +1216,275 @@ describe('NUV-11 C/D: bounded Fulfillment Order reads', () => {
       })
     },
   )
+
+  it('retains all optional tracking timestamps when a scoped row omits them together', async () => {
+    const event = {
+      id: TRACKING_EVENT_ID,
+      status: 'dispatched',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+      updated_at: UPDATED_AT,
+      estimated_delivery_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ tracking_events: [event] })
+    const scoped = fulfillment({
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: CREATED_AT }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      items: [
+        {
+          trackingEvents: {
+            items: [
+              {
+                createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' },
+                updatedAt: { raw: UPDATED_AT, offset: '+0000' },
+                estimatedDeliveryAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' },
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
+
+  it('retains optional timestamps when a detail read omits them after a scoped summary supplied them', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const event = {
+      id: TRACKING_EVENT_ID,
+      status: 'dispatched',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+      updated_at: UPDATED_AT,
+    }
+    const summary = {
+      id: FULFILLMENT_A,
+      status: 'UNPACKED',
+      tracking_info: { code: null, url: null },
+      destination: null,
+      status_history: [{ from_status: 'UNPACKED', to_status: 'PACKED', happened_at: CREATED_AT }],
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: CREATED_AT }],
+    }
+    const detail = fulfillment({
+      status: 'UNPACKED',
+      status_history: [{ from_status: 'UNPACKED', to_status: 'PACKED', happened_at: CREATED_AT }],
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: CREATED_AT }],
+    })
+    installFetch(async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith(`/orders/${ORDER_ID}`)) {
+        return json(
+          orderRaw({
+            fulfillment_orders: [
+              fulfillment({
+                status_history: [transition],
+                tracking_events: [event],
+              }),
+            ],
+          }),
+        )
+      }
+      if (url.pathname.endsWith(`/fulfillment-orders/${FULFILLMENT_A}`)) {
+        return json(JSON.stringify(detail))
+      }
+      return json(JSON.stringify([summary]), 200, { 'x-total-count': '1' })
+    })
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      items: [
+        {
+          statusHistory: {
+            items: [{ createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' } }],
+          },
+          trackingEvents: {
+            items: [
+              {
+                createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' },
+                updatedAt: { raw: UPDATED_AT, offset: '+0000' },
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
+
+  it('keeps identical optional timestamps when both projections supply the same value', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ status_history: [transition] })
+    const scoped = fulfillment({ status_history: [transition] })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      items: [
+        {
+          statusHistory: {
+            items: [{ createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' } }],
+          },
+        },
+      ],
+    })
+  })
+
+  it('rejects contradictory optional timestamps across projections', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ status_history: [transition] })
+    const scoped = fulfillment({
+      status_history: [{ ...transition, created_at: UPDATED_AT }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('rejects explicit null after a known history timestamp', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ status_history: [transition] })
+    const scoped = fulfillment({
+      status_history: [{ ...transition, created_at: null }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('rejects a later timestamp after an explicit null history field', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: null,
+    }
+    const aggregate = fulfillment({ status_history: [transition] })
+    const scoped = fulfillment({
+      status_history: [{ ...transition, created_at: OFFSET_CREATED_AT }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('retains explicit null when a later scoped row omits the timestamp field', async () => {
+    const transition = {
+      from_status: 'UNPACKED',
+      to_status: 'PACKED',
+      happened_at: CREATED_AT,
+      created_at: null,
+    }
+    const aggregate = fulfillment({ status_history: [transition] })
+    const scoped = fulfillment({
+      status_history: [{ from_status: 'UNPACKED', to_status: 'PACKED', happened_at: CREATED_AT }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      items: [
+        {
+          statusHistory: {
+            items: [{ createdAt: null }],
+          },
+        },
+      ],
+    })
+  })
+
+  it('rejects a scoped snapshot that replaces a known tracking event id', async () => {
+    const event = { id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: null }
+    const aggregate = fulfillment({ tracking_events: [event] })
+    const scoped = fulfillment({
+      tracking_events: [{ id: FULFILLMENT_B, status: 'dispatched', happened_at: null }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeInstanceOf(errors.NuvemshopProtocolError)
+  })
+
+  it('does not rewrite happenedAt when retaining an omitted createdAt', async () => {
+    const event = {
+      id: TRACKING_EVENT_ID,
+      status: 'dispatched',
+      happened_at: CREATED_AT,
+      created_at: OFFSET_CREATED_AT,
+    }
+    const aggregate = fulfillment({ tracking_events: [event] })
+    const scoped = fulfillment({
+      tracking_events: [{ id: TRACKING_EVENT_ID, status: 'dispatched', happened_at: CREATED_AT }],
+    })
+    installFetch(async (input) =>
+      String(input).endsWith(`/orders/${ORDER_ID}`)
+        ? json(orderRaw({ fulfillment_orders: [aggregate] }))
+        : json(JSON.stringify([scoped]), 200, { 'x-total-count': '1' }),
+    )
+    const result = await capture(() => getOrder({ orderId: ORDER_ID, includeInvoices: false }))
+    expect(result.error).toBeUndefined()
+    expect(result.value?.fulfillments).toMatchObject({
+      items: [
+        {
+          trackingEvents: {
+            items: [
+              {
+                happenedAt: { raw: CREATED_AT, offset: '+0000' },
+                createdAt: { raw: OFFSET_CREATED_AT, offset: '-03:00' },
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
 
   it('rejects a detail response with a swapped fulfillment id', async () => {
     installFetch(async (input) => {

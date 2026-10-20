@@ -37,6 +37,15 @@ export function readOrderFilter(
   method: string,
   segments: readonly string[],
 ): OrderReadFilter | undefined {
+  if (isFiscalCollection(segments)) {
+    if (method !== 'GET') invalid()
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid()
+    const q = data(value, 'q')
+    const orderId = data(value, 'orderId')
+    if (q !== undefined) invalid()
+    if (typeof orderId !== 'string' || readDecimalId(orderId) !== orderId) invalid()
+    return Object.freeze({ kind: 'order-nfe', orderId })
+  }
   if (value === undefined) return undefined
   if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid()
   const q = data(value, 'q')

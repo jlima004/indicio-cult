@@ -101,18 +101,26 @@ function retainedHistory<T>(
   previous: BoundedCollection<T>,
   current: BoundedCollection<T>,
   matches: (previous: T, current: T) => boolean,
+  reconcile: (previous: T, current: T) => T,
 ): BoundedCollection<T> {
   if (current.completeness === 'not_consulted') return previous
   if (previous.completeness === 'not_consulted') return current
-  const remaining = [...current.items]
+  const used = new Set<number>()
+  const reconciled = new Map<number, T>()
   for (const item of previous.items) {
-    const index = remaining.findIndex((candidate) => matches(item, candidate))
+    const index = current.items.findIndex(
+      (candidate, candidateIndex) => !used.has(candidateIndex) && matches(item, candidate),
+    )
     // Neither an undocumented replacement rule nor an invented union can
     // justify silently discarding a previously supplied historical record.
     if (index === -1) failProtocol('order')
-    remaining.splice(index, 1)
+    used.add(index)
+    reconciled.set(index, reconcile(item, current.items[index]!))
   }
-  return current
+  return {
+    completeness: current.completeness,
+    items: current.items.map((item, index) => reconciled.get(index) ?? item),
+  }
 }
 
 function retainedTime(
@@ -120,6 +128,17 @@ function retainedTime(
   current: CanonicalDateTime | null | undefined,
 ): boolean {
   return previous === undefined || previous === null || previous.raw === current?.raw
+}
+
+function reconcileTime(
+  previous: CanonicalDateTime | null | undefined,
+  current: CanonicalDateTime | null | undefined,
+): CanonicalDateTime | null | undefined {
+  if (previous === undefined) return current
+  if (current === undefined) return previous
+  if (previous === null && current === null) return null
+  if (previous !== null && current !== null && previous.raw === current.raw) return current
+  failProtocol('order')
 }
 
 function mergeFulfillment(
@@ -143,8 +162,11 @@ function mergeFulfillment(
         (known.id === undefined || known.id === candidate.id) &&
         (known.fromStatus === null || known.fromStatus === candidate.fromStatus) &&
         (known.toStatus === null || known.toStatus === candidate.toStatus) &&
-        known.happenedAt.raw === candidate.happenedAt.raw &&
-        retainedTime(known.createdAt, candidate.createdAt),
+        known.happenedAt.raw === candidate.happenedAt.raw,
+      (known, candidate) => {
+        const createdAt = reconcileTime(known.createdAt, candidate.createdAt)
+        return createdAt === undefined ? candidate : { ...candidate, createdAt }
+      },
     ),
     trackingEvents: retainedHistory(
       previous.trackingEvents,
@@ -152,10 +174,21 @@ function mergeFulfillment(
       (known, candidate) =>
         known.id === candidate.id &&
         known.status === candidate.status &&
-        retainedTime(known.happenedAt, candidate.happenedAt) &&
-        retainedTime(known.createdAt, candidate.createdAt) &&
-        retainedTime(known.updatedAt, candidate.updatedAt) &&
-        retainedTime(known.estimatedDeliveryAt, candidate.estimatedDeliveryAt),
+        retainedTime(known.happenedAt, candidate.happenedAt),
+      (known, candidate) => {
+        const createdAt = reconcileTime(known.createdAt, candidate.createdAt)
+        const updatedAt = reconcileTime(known.updatedAt, candidate.updatedAt)
+        const estimatedDeliveryAt = reconcileTime(
+          known.estimatedDeliveryAt,
+          candidate.estimatedDeliveryAt,
+        )
+        return {
+          ...candidate,
+          ...(createdAt === undefined ? {} : { createdAt }),
+          ...(updatedAt === undefined ? {} : { updatedAt }),
+          ...(estimatedDeliveryAt === undefined ? {} : { estimatedDeliveryAt }),
+        }
+      },
     ),
   }
 }
