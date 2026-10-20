@@ -474,6 +474,18 @@ aproximação. Se o volume real não permitir busca completa nesse orçamento,
 durável indexada por número antes de disponibilizar `/rastreio`; não se faz
 varredura implícita de todos os pedidos.
 
+#### NUV-12-COVERAGE-PARTIAL — proposta de escopo parcial
+
+**PROPOSED / PENDING HUMAN APPROVAL — 2026-10-20.** A opção 2, entrega parcial fail-closed, foi selecionada para esta proposta; não foi ratificada. O [registro de decisão](../../tasks/nuvemshop/NUV-12-COVERAGE-PARTIAL.md) contém o contraexemplo, a matriz futura T01–T16 e os limites. O contrato geral acima, inclusive cobertura multi-page e ausência comprovada, permanece obrigatório e pendente. Esta proposta não o substitui enquanto não houver aprovação humana explícita e merge da emenda normativa; ambos antecedem qualquer implementação parcial.
+
+**Texto proposto, com eficácia somente após esses dois gates:** `findOrderByNumber` permanece server-only e consulta exclusivamente `q` do número decimal canônico validado. Uma única resposta válida da página 1 poderá justificar conclusão se o corpo inteiro for validado, todos os candidatos forem comparados por `Order.number` exato, os IDs forem únicos e a metadata válida demonstrar `totalCount = items.length = quantidade de IDs únicos <= perPage`, com `1 <= perPage <= 200`. Nenhuma navegação presente pode contradizer cobertura inteira nessa página: `next`, `last>1` mesmo sem `next`, ou posição incompatível impedem conclusão; relações inválidas preservam erro de protocolo. Ausência de `next` isoladamente não prova cobertura. Isso é critério restrito do projeto sob a semântica normal de uma resposta, sem exigir snapshot absoluto ou linearizabilidade nova do provedor.
+
+Sob esse critério conjunto, exatamente um ID com número exato permitirá retornar o Order; zero matches permitirá `null`, inclusive corpo vazio com total zero válido e coerente. Dois IDs distintos com o mesmo número exato gerarão `NuvemshopLookupIncompleteError`. Sem demonstração suficiente na primeira resposta, inclusive metadata ausente, total válido maior que itens, truncamento ou necessidade de múltiplas respostas, a versão parcial lançará esse erro, sem primeiro match, `null`, scans ou reconsultas para consolidar cobertura. Metadata presente malformada, corpo/Order ou Link inválidos preservam `ProtocolError`; validação, autenticação, rate limit, rede e cancelamento preservam suas classificações. A validação estrutural precede o juízo de incompletude; o registro detalha a taxonomia.
+
+Uma resposta de coleção usada como prova não proíbe as até duas tentativas transitórias do mesmo GET lógico já previstas por NUV-05; não agrega respostas bem-sucedidas de páginas, HEAD separado ou scans repetidos. Budget, pacing, timeout, redaction e privacidade permanecem intactos. A implementação futura terá de demonstrar acesso e validação de toda navegação relevante: `Page` atual não oferece certificado de completude e descarta `last`. Eventual necessidade de alteração shared exige avaliação de impacto, escopo, RED e revisão próprios; esta emenda documental não autoriza redesign nem um certificado fictício.
+
+A obrigação positiva geral T03 multi-page e NUV-12 completa continuam pendentes. Sua reabertura exige garantia oficial verificável que exclua o contraexemplo ou índice durável com contrato próprio, cobertura e reconciliação comprovadas; nenhum índice é implementado aqui. Mesmo um futuro subset tecnicamente aceito não satisfaz as arestas de NUV-12 para NUV-22/23, nem os gates transitivos de NUV-24/25. Não autoriza consumer `orders`, API real ou `/rastreio`, nem fecha HR-02, legado fiscal ou CI-FONT-01.
+
 Para `/conta/pedidos`, `ListOrdersInput` deve aceitar `q` com o e-mail
 verificado obtido de `identity` no servidor, nunca de filtro arbitrário do
 browser, e paginação explícita. A [API Order](https://tiendanube.github.io/api-documentation/resources/order)
@@ -489,6 +501,8 @@ Se a busca filtrada não puder ser concluída ou sua cobertura de
 indexada por e-mail, com cobertura e reconciliação comprovadas antes de
 disponibilizar `/conta/pedidos`. O adapter não requer `read_customers` para
 esse fluxo e não registra o e-mail usado em `q`.
+
+**Limite da proposta NUV-12-COVERAGE-PARTIAL:** o subset por número não certifica cobertura de `contact_email`, não reduz NUV-13 nem suas obrigações de identidade, filtro exato e projeção/índice do consumer.
 
 `Order` contém ID e número distintos, data canônica de criação de `Order.created_at`, estado, itens/referências de variante com thumbnail opcional do snapshot quando fornecida, valores e resumo de pagamento necessário ao PRD (`payment_status`, provider/método, bandeira/parcelas e `paid_at` quando fornecidos, respeitando ausência/null legítimos sem raw payment_details). Fulfillment é **zero ou muitos records/summaries**, cada remessa com estado, tracking próprio opcional e histórico/eventos mínimos suficientes à timeline do PRD. `tracking_info` pode ser null; code/url nullable não invalidam Order. Não escolher primeira remessa nem usar shipping_* legado como coleção completa.
 
@@ -812,6 +826,8 @@ de chamadas reais.
 
 ### Unitários
 
+A matriz futura T01–T16 do [registro NUV-12-COVERAGE-PARTIAL](../../tasks/nuvemshop/NUV-12-COVERAGE-PARTIAL.md) está **PROPOSED / PENDING HUMAN APPROVAL**, sem RED/GREEN nesta etapa. Seus casos parciais positivos/negativos não substituem o T03 positivo multi-page geral, que permanece pendente; não remover, dispensar ou marcar aprovado esse requisito.
+
 - construção de URL versionada, headers, `User-Agent` e `AbortSignal`;
 - ausência de `Authorization`/segredos em logs e erros;
 - paginação, `Link`, `x-total-count` e limite de `per_page`;
@@ -904,6 +920,8 @@ NUV-24 é evidência/coordenação humana, não implementação. Exige core comp
 
 Os imports da tabela são exclusivos do código de servidor dos consumers; não autorizam dependência runtime ou de tipos de Client Components sobre o adapter. DTOs para suas UIs permanecem deferred e consumer-owned, conforme a seção 8. O consumer `orders` deve preservar e provar o tratamento de modern-only `invoices.completeness='incomplete'`, inclusive vazio, sem divulgar ausência fiscal completa; a exceção NUV-11-LEGACY não satisfaz sua evidência para NUV-25.
 
+**Handoff NUV-12-COVERAGE-PARTIAL — PROPOSED / PENDING HUMAN APPROVAL:** a superfície oferecida na tabela não significa implementação disponível ou cobertura geral demonstrada. O subset futuro não habilita `orders`/`identity` nem `/rastreio`; vínculo, posse, authorization/disclosure, DTOs e cobertura/índice próprios permanecem obrigações do consumer.
+
 Todos os métodos são server-only, têm input/output tipados, paginação
 normalizada, erro discriminável e validação de resposta externa. A superfície
 é evoluída aditivamente; remover/renomear campos requer nova revisão da spec.
@@ -984,6 +1002,8 @@ normalizada, erro discriminável e validação de resposta externa. A superfíci
     modern-only fiscal `incomplete` inclusive vazio, `not_consulted` e
     `ProtocolError` para malformado conforme NUV-11-LEGACY.
 18. CI existente prova scans de segredos/bundle sem alteração de workflow; insuficiência exige BLOCKED_SPEC_SCOPE_EXPANSION. Smoke humano separado, auth real, subscriptions e privacy URLs verificadas, cleanup temporário/inventário final e rollback distinto antecedem marco operacional, sem execução na PR.
+
+**Critérios 3, 4 e 17 — NUV-12-COVERAGE-PARTIAL / PROPOSED / PENDING HUMAN APPROVAL:** a matriz parcial futura permite avaliar somente o subset após aprovação humana e merge da emenda. Não satisfaz a busca geral do critério 3, não certifica paginação mutável no critério 4 nem fecha a cobertura integral de testes do critério 17. T03 geral, NUV-12 completa e a evidência integrada/consumer para NUV-23/24/25 continuam pendentes; demais critérios, inclusive fiscais e privacidade, permanecem intactos.
 
 ## 22. Riscos
 
