@@ -2,7 +2,7 @@
 
 ## Status
 
-**HUMAN RATIFIED — LIMITATION_AND_PRESENCE_ONLY_DIRECTION (2026-10-20).** A versão inicialmente publicada nesta PR tinha estado `Proposto / PENDING HUMAN ADJUDICATION`. Esta ratificação posterior aceita somente o diagnóstico da limitação e a direção arquitetural *presence-only*; os gates de implementação, DAG e release permanecem separados.
+**HUMAN RATIFIED — LIMITATION_AND_PRESENCE_ONLY_DIRECTION (2026-10-20).** A versão inicialmente publicada nesta PR tinha estado `Proposto / PENDING HUMAN ADJUDICATION`. Esta ratificação posterior aceita somente o diagnóstico da limitação e a direção arquitetural _presence-only_; os gates de implementação, DAG e release permanecem separados.
 
 Esta decisão não altera a SPEC, o PLAN nem o TODO, e não conclui a NUV-12. A busca parcial já mergeada na PR #50 permanece o comportamento vigente do adapter. Nenhuma migration, índice, worker, webhook, consumer, merge ou deploy é autorizado pela ratificação.
 
@@ -52,7 +52,7 @@ Não há, nessas páginas, `GET` pelo número comercial, parâmetro cujo domíni
 
 ## Direção arquitetural ratificada — sem autorização de implementação
 
-O responsável humano ratificou o diagnóstico de limitação e a direção *presence-only*. Os itens abaixo estabelecem limites dessa direção; não aprovam um mecanismo técnico específico, esquema persistente ou alteração normativa do DAG:
+O responsável humano ratificou o diagnóstico de limitação e a direção _presence-only_. Os itens abaixo estabelecem limites dessa direção; não aprovam um mecanismo técnico específico, esquema persistente ou alteração normativa do DAG:
 
 1. A rota direta pela API não implementa a NUV-12 integral. `findOrderByNumber` permanece o subset fail-closed da PR #50: um GET lógico com `page=1`, `per_page=200` e `q` canônico. `Order` ou `null` saem só quando `page=1`, `totalCount = items.length = IDs únicos`, `items.length <= perPage`, `nextPage` ausente, `previousPage` ausente e `last` ausente ou `1`, depois da comparação exata de `Order.number`. Qualquer outra observação lança `NuvemshopLookupIncompleteError`. Esse `null` é política do subset para uma resposta, não ausência geral e não garantia do provedor.
 2. Uma projeção durável, se for construída no futuro, é owned pelo domínio `orders`, não pelo adapter. Ela pode registrar presença somente depois de `getOrder` cujo `Order.number` canônico seja a chave. `q` não é chave.
@@ -98,12 +98,12 @@ Estados operacionais possíveis no futuro, nenhum implementado: `not_started`, `
 ## Ownership
 
 | Peça                                                  | Owner na direção ratificada | Não é owner            |
-| ----------------------------------------------------- | ------------------------- | ---------------------- |
-| `findOrderByNumber` parcial                           | Adapter Nuvemshop         | Consumer               |
-| Índice por número, cobertura, reconciliação, retenção | `orders`                  | Adapter; ledger NUV-16 |
-| Ledger de recibo, claim e lease                       | NUV-16/17 depois de HR-07 | Índice de número       |
-| Posse, OTP e vínculo de e-mail                        | `identity`, mais tarde    | Número comercial       |
-| Disclosure de endereço, itens, NF-e e pagamento       | `orders` / `identity`     | Adapter e `/rastreio`  |
+| ----------------------------------------------------- | --------------------------- | ---------------------- |
+| `findOrderByNumber` parcial                           | Adapter Nuvemshop           | Consumer               |
+| Índice por número, cobertura, reconciliação, retenção | `orders`                    | Adapter; ledger NUV-16 |
+| Ledger de recibo, claim e lease                       | NUV-16/17 depois de HR-07   | Índice de número       |
+| Posse, OTP e vínculo de e-mail                        | `identity`, mais tarde      | Número comercial       |
+| Disclosure de endereço, itens, NF-e e pagamento       | `orders` / `identity`       | Adapter e `/rastreio`  |
 
 A chave proposta é texto decimal canônico, a mesma política de `readOrderNumber`, única em `(store_id, number)` e em `(store_id, order_id)`. Não usar `number` de JavaScript. Dois IDs com o mesmo número, ou número que muda de ID sem sucessor registrado, entram em quarentena. A loja atual é single-store; a chave composta evita colisão silenciosa se surgir outra loja.
 
@@ -167,14 +167,14 @@ Nenhuma neste cambio. Se um humano autorizar depois só a presença, a migration
 
 ## Riscos e rollback
 
-| Risco                                                              | Controle                                                                                      |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Ausência falsa se alguém promover backfill ou webhook a cobertura  | Nenhum estado de ausência é alcançável; falta de linha continua incompletude                  |
-| Ciclo `12 → orders → 24 → 12`                                      | DAG não é alterado até decisão humana                                                         |
-| Índice no adapter ou no ledger HR-07                               | Ownership ratificado como direção em `orders`, sem autorização de implementação                 |
-| Pedidos não pagos invisíveis se só `order/paid` alimentar o índice | Tópicos extras bloqueados por HR-02; cobertura não fica pronta                                |
-| PII no índice e em logs                                            | Projeção mínima; número não vira tag de Sentry; sem raw body por default                      |
-| Rollback                                                           | A ratificação não altera runtime; revisão futura não exige rollback da PR #50                 |
+| Risco                                                              | Controle                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Ausência falsa se alguém promover backfill ou webhook a cobertura  | Nenhum estado de ausência é alcançável; falta de linha continua incompletude    |
+| Ciclo `12 → orders → 24 → 12`                                      | DAG não é alterado até decisão humana                                           |
+| Índice no adapter ou no ledger HR-07                               | Ownership ratificado como direção em `orders`, sem autorização de implementação |
+| Pedidos não pagos invisíveis se só `order/paid` alimentar o índice | Tópicos extras bloqueados por HR-02; cobertura não fica pronta                  |
+| PII no índice e em logs                                            | Projeção mínima; número não vira tag de Sentry; sem raw body por default        |
+| Rollback                                                           | A ratificação não altera runtime; revisão futura não exige rollback da PR #50   |
 
 ## Gates humanos
 
