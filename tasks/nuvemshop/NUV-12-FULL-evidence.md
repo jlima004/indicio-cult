@@ -10,7 +10,7 @@ Não declara `NUV-12 COMPLETE`, `T03-GENERAL PASS`, `DIRECT_API_COVERAGE_PROVEN`
 
 A API Order `2025-03` não fornece garantia verificável de cobertura sob mutação de membership. A busca direta não pode devolver `Order` ou `null` no caso geral sem fabricar essa garantia.
 
-A SPEC nomeia uma projeção durável em `orders`. Ela não existe e, mesmo como desenho, não prova ausência: backfill e webhook não eliminam o contraexemplo. Presença pode ser registrada depois de `getOrder`; ausência permanece `BLOCKED_COVERAGE_EVIDENCE`. A proposta está em [ADR-003](../../docs/decisions/ADR-003-nuv-12-cobertura-integral.md), com status proposto.
+A SPEC nomeia uma projeção durável em `orders`. Ela não existe e, mesmo como desenho, não prova ausência: backfill e webhook não eliminam o contraexemplo. Presença pode ser registrada depois de `getOrder`; ausência permanece `BLOCKED_COVERAGE_EVIDENCE`. A decisão vigente é `ADR-003 / HUMAN_RATIFIED — LIMITATION_AND_PRESENCE_ONLY_DIRECTION` (2026-10-20), registrada posteriormente à proposta original [no ADR-003](../../docs/decisions/ADR-003-nuv-12-cobertura-integral.md) e [na ratificação da PR #51](https://github.com/jlima004/indicio-cult/pull/51#issuecomment-6301671103). Ownership da direção presence-only em `orders` está ratificado; isso não aprova a implementação nem as pendências abaixo.
 
 O comportamento da PR #50 permanece intacto. O `null` desse subset é política de uma resposta, não ausência geral.
 
@@ -25,7 +25,7 @@ O comportamento da PR #50 permanece intacto. O `null` desse subset é política 
 | HEAD de código                            | O mesmo baseline; nenhum commit de produto            |
 | Worktrees históricas                      | Preservadas; nenhum reset, clean, stash ou force-push |
 
-## C — Subagents
+## C — Subagents (registro histórico da execução original; não é evidência de delegação R1)
 
 Orquestrador: Grok 4.7 High Fast. Modelos abaixo são os slugs configurados no spawn. Nenhum resultado foi inventado.
 
@@ -57,13 +57,15 @@ O contraexemplo `[A, B, T, C] → [B, T, C, D]` continua possível sob o contrat
 
 ## F — Arquitetura
 
-Rota direta: incompatível com o aceite integral. Custo de uma varredura de 10.000 itens também estoura o ritmo documentado de 2 req/s e o prazo de 9 s por GET lógico, e o erro de teto não é ausência.
+Rota direta: incompatível com o aceite integral porque não há garantia de snapshot entre páginas e a membership pode mudar durante a consulta. O contrato NUV-05 limita cada GET lógico a até 9 s, incluindo até duas tentativas de até 4 s cada; esse não é um deadline agregado da busca multi-page. O pacing de até 2 requests/s (intervalo mínimo de 500 ms) permite espaçar até 50 páginas de 200 itens, derivadas do teto documentado de 10.000. Uma duração total superior a 9 s não demonstra violação da NUV-05, e não se cria deadline agregado. Contagem, Links, IDs distintos ou observar todas as páginas não certificam cobertura sob membership mutável; o teto de 10.000 limita a consulta, mas não prova completude. Erro de teto também não prova ausência.
 
 Rota durável: a SPEC atribui o owner a `orders`, e o repositório não tem a projeção. Supabase tem clientes e tipos `public.Tables: never`. Não há migration de domínio, consumer `orders`, rota `/rastreio` nem webhook. NUV-15 a NUV-19 estão bloqueadas por HR-07 e persistem recibo genérico, não o índice. Guardar presença observada não certifica a chave ausente.
 
-Recomendação: parar para adjudicação humana de ownership, sem implementar tabela, fila, cron ou handler, e sem tratar a projeção como prova de ausência.
+Recomendação: manter a direção presence-only ratificada e aguardar adjudicação normativa do DAG e dos gates de significado de NUV-12 para NUV-22/23/24/25, contrato dos consumers, schema, privacidade, retenção, acesso e implementação; sem implementar tabela, fila, cron ou handler, e sem tratar a projeção como prova de ausência.
 
-## G — Revisão adversarial
+## G — Revisão adversarial (registro histórico da execução original; não é revisão independente de R1)
+
+O `APPROVE` abaixo pertence à releitura do ADR original, anterior à ratificação humana registrada em 2026-10-20; ele não avalia a redação atual nem substitui o Gate C de R1. Os findings remediados nesta rodada são [P2-01](https://github.com/jlima004/indicio-cult/pull/51#discussion_r4330808923) e [P2-02](https://github.com/jlima004/indicio-cult/pull/51#discussion_r4330808928).
 
 Gate E de código: não aplicável; não há diff de produção. [Revisão do ADR](a030cf59-3236-40b3-8768-a637c7cfeeff) não participou da redação. O primeiro parecer foi `CHANGES_REQUIRED`.
 
@@ -87,23 +89,30 @@ P0 de código: nenhum. A releitura independente deu `APPROVE`, com zero P0/P1/P2
 
 ## H — Validação
 
+Registro histórico da execução original; não valida o candidato R1.
+
 Não houve alteração de `src/` nem de testes. Não foi executada suíte nova, `npm run check` ou `npm run build` para um diff vazio de produto. `git diff --check` aplica-se ao markdown novo antes do commit.
 
 Nenhum token real, `.env`, escopo OAuth ou timeout foi alterado.
 
 ## I — Integridade
 
+Registro histórico da execução original; não descreve o diff R1.
+
 Arquivos novos previstos: este relatório e `docs/decisions/ADR-003-nuv-12-cobertura-integral.md`. SPEC, PLAN, TODO, evidências históricas e código da PR #50 sem edição. Nenhuma migration. Worktrees históricas intocadas.
 
 ## J — GitHub
 
-Branch isolada `feat/nuv-12-full-coverage`. Depois do `APPROVE`, a publicação é um Draft somente destes dois arquivos, sem merge e sem deploy. CI de produto não é critério de aceite desta retomada porque não há mudança de runtime. O endereço da PR fica no corpo dela, para não gravar aqui uma referência ainda inexistente.
+Registro histórico da primeira execução: a expectativa de publicar um Draft e a afirmação de que CI não era critério descreviam aquele momento, não o estado atual. R1 atua na PR #51, já `OPEN` e `Ready` (`draft=false`). O candidato R1 exige revisão independente, `npm run format:check`, `npm run check`, CI e nova revisão remota vinculados ao novo HEAD; resultados ainda não observados não são PASS.
 
 ## K — Pendências e decisão humana
 
-1. Aceitar ou recusar o ADR-003.
-2. Se aceitar, emendar o significado de `12` no DAG sem marcar T03 como PASS e sem mover o índice para o adapter.
-3. Manter HR-02, HR-07, legado fiscal e CI-FONT-01 abertos.
-4. Não iniciar NUV-13, NUV-22, NUV-23, NUV-24, NUV-25, `identity`, `/rastreio`, OTP ou disclosure a partir desta evidência.
+1. Fazer a adjudicação normativa do DAG e definir o significado de NUV-12 para NUV-22/23/24/25, sem marcar `T03-GENERAL / PENDING_COVERAGE_EVIDENCE` como PASS.
+2. Definir o contrato de resultado dos consumers, incluindo que ausência global continua `BLOCKED_COVERAGE_EVIDENCE`.
+3. Aprovar schema, privacidade, retenção e políticas de acesso da projeção.
+4. Resolver HR-02 e HR-07 nos seus escopos próprios.
+5. Autorizar separadamente a implementação; ela não está autorizada pela ratificação.
+6. Merge e deploy da PR #51 permanecem gates humanos separados. Legado fiscal e CI-FONT-01 continuam abertos.
+7. Não iniciar NUV-13, NUV-22, NUV-23, NUV-24, NUV-25, `identity`, `/rastreio`, OTP ou disclosure a partir desta evidência.
 
-Próximo gate: decisão humana de arquitetura. Sem ela, a NUV-12 integral não avança para RED nem para persistência.
+Histórico: a decisão humana de ratificação foi concluída em 2026-10-20; não se solicita nova ratificação. A fonte rastreável é [o comentário de ratificação na PR #51](https://github.com/jlima004/indicio-cult/pull/51#issuecomment-6301671103). A ratificação preserva a limitação multi-page, a direção presence-only owned por `orders`, o bloqueio de ausência global e o subset da PR #50.

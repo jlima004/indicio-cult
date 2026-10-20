@@ -187,7 +187,7 @@ Nenhuma neste cambio. Se um humano autorizar depois só a presença, a migration
 
 ## Consequências
 
-- A NUV-12 integral permanece `ARCHITECTURAL_ADJUDICATION_REQUIRED` quanto a ownership e DAG. A ausência comprovada permanece `BLOCKED_COVERAGE_EVIDENCE`.
+- A NUV-12 integral permanece `ARCHITECTURAL_ADJUDICATION_REQUIRED` para adjudicação normativa do DAG e dos gates de significado para NUV-22/23/24/25, contrato dos consumers e schema, privacidade, retenção, acesso e implementação; a direção presence-only e seu owner `orders` estão ratificados. A ausência comprovada permanece `BLOCKED_COVERAGE_EVIDENCE`.
 - O subset da PR #50 continua o comportamento vigente, fail-closed fora da sua resposta única. Esse `null` não é reaceite da cobertura geral.
 - Não há candidato técnico de lookup multi-page para revisar ou deployar.
 - Uma garantia oficial futura pode superseder este ADR com outro registro; não se reescreve o histórico da PR #49 nem da PR #50.
