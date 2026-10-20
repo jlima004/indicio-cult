@@ -28,6 +28,20 @@ export interface NuvemshopPageNavigation {
   readonly previousPage?: number
 }
 
+type NuvemshopPageNavigationInternal = NuvemshopPageNavigation & {
+  readonly lastPage?: number
+}
+
+function stripLastPage(navigation: NuvemshopPageNavigationInternal): NuvemshopPageNavigation {
+  return {
+    page: navigation.page,
+    perPage: navigation.perPage,
+    ...(navigation.totalCount === undefined ? {} : { totalCount: navigation.totalCount }),
+    ...(navigation.nextPage === undefined ? {} : { nextPage: navigation.nextPage }),
+    ...(navigation.previousPage === undefined ? {} : { previousPage: navigation.previousPage }),
+  }
+}
+
 function failProtocol(): never {
   throw new NuvemshopProtocolError()
 }
@@ -120,7 +134,7 @@ function scalar(value: unknown, min = 0): number | undefined {
   return snapshot.kind === 'valid' ? integer(snapshot.value, min) : undefined
 }
 
-function navigation(metadata: unknown): NuvemshopPageNavigation {
+function navigation(metadata: unknown): NuvemshopPageNavigationInternal {
   const snapshot = record(metadata, ['request', 'rateLimit', 'pagination'])
   const request = record(
     snapshot.request,
@@ -237,17 +251,34 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
     ...(totalCount === undefined ? {} : { totalCount }),
     ...(nextPage === undefined ? {} : { nextPage }),
     ...(previousPage === undefined ? {} : { previousPage }),
+    ...(lastPage === undefined ? {} : { lastPage }),
+  }
+}
+
+function readNavigation(metadata: NuvemshopResponseMetadata): NuvemshopPageNavigationInternal {
+  try {
+    return navigation(metadata)
+  } catch {
+    // Never inspect or propagate a hostile exception, including Error subclasses.
+    throw new NuvemshopProtocolError()
   }
 }
 
 export function parseNuvemshopPageNavigation(
   metadata: NuvemshopResponseMetadata,
 ): NuvemshopPageNavigation {
-  try {
-    return navigation(metadata)
-  } catch {
-    // Never inspect or propagate a hostile exception, including Error subclasses.
-    throw new NuvemshopProtocolError()
+  return stripLastPage(readNavigation(metadata))
+}
+
+/** One navigation walk for lookup: public page fields plus the validated last relation. */
+export function readNuvemshopLookupNavigation(metadata: NuvemshopResponseMetadata): {
+  navigation: NuvemshopPageNavigation
+  lastPage?: number
+} {
+  const full = readNavigation(metadata)
+  return {
+    navigation: stripLastPage(full),
+    ...(full.lastPage === undefined ? {} : { lastPage: full.lastPage }),
   }
 }
 
