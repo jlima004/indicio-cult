@@ -366,3 +366,77 @@ O SHA do commit que introduz esta seção é registrado no recibo imediatamente 
 
 - Commit de remediação: `27ae1a6e1172d60ad4225af7797c8c69f49419a5`, mensagem `fix(nuvemshop): remediate NUV-11 order review findings`.
 - Os sete hashes técnicos acima pertencem a esse commit. Este recibo não altera código nem testes.
+
+## NUV-11-R2 — Optional Transition ID Reconciliation
+
+Data: 2026-10-20 (America/Sao_Paulo).
+Estado local: **LOCAL_PASS**. Publicação e estados remotos ficam no recibo posterior a este texto. Esta seção não declara CI nem Code Review do HEAD publicado.
+
+### Baseline
+
+- Checkout técnico: `/home/jlima/.codex/worktrees/nuv-11-orders-resume/indicioCult`, branch `codex/nuv-11-orders-resume`.
+- HEAD inicial, igual a `origin/codex/nuv-11-orders-resume` e ao head da PR #46: `d6694c8949550d3210f437f4d69489e9e82a4146`.
+- Base: `origin/main` `966b31b70a96b4051312d8356c05b3e7ebf5239a`.
+- `git status --porcelain=v1` antes da primeira edição: vazio. Não havia alteração local para snapshot.
+- Checkout original `/home/jlima/Projetos/indicioCult` permanece em `main` `a11ff4f0a453f33d60f922f41cc600c546a67b5f`, com a sujeira pré-existente. Não foi lido para copiar patch, nem alterado.
+- SPEC, PLAN, TODO e `NUV-11-LEGACY-B.md` não foram modificados. `NUV-11-LEGACY-B` continua diferido. P2-01 e P2-02 permanecem remediados na R1.
+
+### Achado
+
+| ID    | Thread                                                                  | Causa-raiz                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P2-03 | https://github.com/jlima004/indicio-cult/pull/46#discussion_r4325623929 | O matcher de `statusHistory` só aceitava id ausente no lado anterior (`known.id === undefined \|\| known.id === candidate.id`). Uma projeção posterior que omite o id opcional, válido em `readTransition`, fazia `retainedHistory` lançar `NuvemshopProtocolError`. A reconciliação também só reaplicava `createdAt`, então afrouxar o predicado ainda perderia o id já conhecido. |
+
+### Subagents
+
+| Papel         | Agente                                 | Modelo             | Resultado                                                                                                                                                                                                                            |
+| ------------- | -------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A — contratos | `bd750973-3b0c-4796-b53d-d68690a5527e` | Grok 4.6 High Fast | Causa-raiz no matcher e na retenção. Id só pode ser promovido quando o par `(fromStatus, toStatus, happenedAt)` é único. Duplicatas sem id permanecem no emparelhamento guloso da R1. Sem contradição que bloqueie a implementação.  |
+| B — RED       | `b3bc4b8b-4b36-4bcc-b400-20e7bf2c9988` | Composer 2.5 Fast  | 17 testes em `getOrder`. Cinco falharam antes da correção. Doze controles já passavam. Não editou `orders.ts`.                                                                                                                       |
+| C — GREEN     | `918197e3-8a94-4daf-b763-85146e56b61a` | Grok 4.6 High Fast | `retainedStatusHistory` em `orders.ts`. Não alterou tracking, schema, filtro fiscal nem os testes RED.                                                                                                                               |
+| D — revisão   | `92126622-573b-40d3-b669-128b9efa4de4` | Grok 4.6 High Fast | PASS independente sobre os hashes abaixo. 17/17 probes próprios. P0=0, P1=0, P2=0. P3 não material: curinga de `fromStatus`/`toStatus` só no lado anterior, já presente antes da R2; falha fechado. O arquivo de probe foi removido. |
+
+O orquestrador (Grok 4.7 High Fast) aplicou Prettier e estreitou o acesso tipado às coleções consultadas nos testes, sem afrouxar asserts. Não houve merge nem deploy.
+
+### RED
+
+Comando, antes da correção: `npm run test -- tests/unit/modules/nuvemshop/orders.test.ts -t "NUV-11-R2"`. Exit 1. 5 falhas, 12 passes.
+
+Falhas reais:
+
+- R2-01, R2-02, R2-08 e R2-11: `NuvemshopProtocolError` com mensagem `Nuvemshop response is incompatible.` onde o id decimal exato deveria ser preservado.
+- R2-07b: dois eventos iguais sem id na agregação e com ids distintos na lista resolviam por posição, em vez de `NuvemshopProtocolError`.
+
+Controles que já passavam: R2-03, R2-04, R2-05, R2-06, R2-07, R2-09, R2-10, R2-12, R2-13, R2-14, R2-15 e o curinga `from_status: null` contra duas linhas posteriores.
+
+### GREEN
+
+- Omissão compatível de id só quando o item anterior tem um único candidato e esse candidato tem um único anterior.
+- Id conhecido é copiado para a projeção que o omite. Id novo é mantido quando o anterior o omite. Ids diferentes falham. Nenhum id é inventado e nenhum decimal passa por `Number`.
+- `createdAt` continua em `reconcileTime`. `happenedAt` não é reescrito. Evento anterior ausente continua `ProtocolError`. Tracking exige id exato.
+- GREEN do describe R2: 17/17, exit 0. Arquivo `orders.test.ts`: 160/160.
+
+### Gates
+
+| Gate               | Resultado                                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Regressão focada   | `orders`, `order-query`, `pagination`, `request`, `retry`, `schemas`: 6 arquivos, 1256/1256 PASS.                                                                                                                                                 |
+| `npm run check`    | PASS, exit 0. Prettier limpo. `tsc` limpo. ESLint 0 erros; 2 warnings pré-existentes em `boundary.test.ts`, fora do diff.                                                                                                                         |
+| Vitest integral    | 34 arquivos, 2581/2581 PASS. O HEAD `d6694c8` tinha 2564. O acréscimo são os 17 casos R2. Nenhum skip novo.                                                                                                                                       |
+| `npm run build`    | Next 16.4.1, exit 0, 8/8 páginas. Variáveis públicas sintéticas apenas (`http://localhost:3000`, `https://example.supabase.co`, chave publishable sintética). Sentry avisou ausência de auth token e não criou release. Nenhum segredo foi usado. |
+| `git diff --check` | Limpo.                                                                                                                                                                                                                                            |
+
+### Revisão adversarial
+
+PASS independente, vinculado aos hashes abaixo. Probes próprios cobriram omissão aggregate/list e list/detail, conflito de ids, ambiguidade nos dois sentidos, dois ids grandes em `happenedAt` distintos, `createdAt` retido junto do id, conflito de `createdAt`, `null` retido, `happenedAt` não reescrito, evento desaparecido, tracking com id mutado e timestamp retido, curinga que não copia id, ausência de id quando ambos omitem, evento posterior distinto preservado, e GET fiscal com `owner_id`, `namespace=nfe`, `key=list`, `fields=value` sem subleitura de fulfillment.
+
+### Hashes do commit de correção
+
+Commit: `152b71c114ef8cb85788a56ce8da868f1b3b7df2`, mensagem `fix(nuvemshop): preserve optional transition ids`.
+
+| Arquivo                                       | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `src/modules/nuvemshop/server/orders.ts`      | `1558c8a5f5f7b73d6b0b2247e2babac41c8f750da65c349c986abe06409abc72` |
+| `tests/unit/modules/nuvemshop/orders.test.ts` | `695fe514b7765fa750c6efa6d06e85b1158dcab26fef902bf32330c27980a51a` |
+
+P2-03: remediado nesse commit. P0/P1/P2 local aberto: 0. P3 não material permanece documentado acima. Threads do Codex não são marcadas resolvidas por este recibo.
