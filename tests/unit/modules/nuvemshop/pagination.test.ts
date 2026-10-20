@@ -16,6 +16,8 @@ const STORE = '00123'
 const ORIGIN = 'https://api.nuvemshop.com.br'
 const VERSION = '2025-03'
 const HOSTILE = 'synthetic-private-value@example.invalid'
+const FISCAL_ORDER_ID = '900719925474099312345'
+const FISCAL_ROUTE: NuvemshopRoute = ['metafields', 'orders']
 const absent = { kind: 'absent' } as const
 function fixture(
   page = 1,
@@ -214,8 +216,11 @@ describe('counterfeit metadata fails closed with fixed redacted ProtocolError', 
     ['zero page size', { pagination: { page: 1, perPage: 0 } }],
     ['fractional page size', { pagination: { page: 1, perPage: 1.5 } }],
     ['detail route', { segments: ['products', '123'] }],
-    ['fulfillment orders', { segments: ['orders', '123', 'fulfillment-orders'] }],
-    ['metafields filter route', { segments: ['metafields', 'orders'] }],
+    [
+      'fulfillment detail',
+      { segments: ['orders', '123', 'fulfillment-orders', '01BX5ZZKBKACTAV9WEVGEMMVRZ'] },
+    ],
+    ['incomplete metafields route', { segments: ['metafields'] }],
     ['store singleton', { segments: ['store'] }],
     ['unknown suffix', { segments: ['products', '123', 'variants', 'extra'] }],
     ['numeric resource ID', { segments: ['products', 123, 'variants'] }],
@@ -431,6 +436,21 @@ describe('counterfeit metadata fails closed with fixed redacted ProtocolError', 
       ...metadata,
       request: { ...metadata.request, pagination: { page: 1, perPage: 30, owner_id: HOSTILE } },
     })
+  })
+  it('rejects fiscal collection navigation metadata without a declared filter identity', () => {
+    rejectMetadata(fixture(1, 1, FISCAL_ROUTE, [target('next', 2, 1, FISCAL_ROUTE)]))
+  })
+  it('accepts fiscal collection navigation when filter identity matches the link target', () => {
+    const filter = { kind: 'order-nfe' as const, orderId: FISCAL_ORDER_ID }
+    const metadata = fixture(1, 1, FISCAL_ROUTE, [
+      { ...target('next', 2, 1, FISCAL_ROUTE), filter },
+    ])
+    metadata.request = {
+      ...metadata.request,
+      filter,
+      pagination: { page: 1, perPage: 1 },
+    }
+    expect(parseNuvemshopPageNavigation(metadata)).toEqual({ page: 1, perPage: 1, nextPage: 2 })
   })
 })
 

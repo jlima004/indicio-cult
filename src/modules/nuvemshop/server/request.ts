@@ -16,6 +16,16 @@ import {
 import { readDecimalId, readUlid } from './schemas/ids'
 import { decodeLosslessJson } from './schemas/lossless-json'
 import {
+  filterFromLink,
+  filterIdentity,
+  filterQuery,
+  isFiscalCollection,
+  isFulfillmentCollection,
+  readOrderFilter,
+  type OrderReadFilter,
+  type OrderFilterIdentity,
+} from './order-query'
+import {
   claimNuvemshopAttempt,
   inspectNuvemshopLease,
   nuvemshopMonotonicNow,
@@ -125,6 +135,8 @@ const transportFailures = [
 ] as const
 
 export interface NuvemshopPaginationQuery {
+  readonly q?: string
+  readonly orderId?: string
   readonly page?: number
   readonly perPage?: number
 }
@@ -169,6 +181,7 @@ export interface PreparedNuvemshopAttempt {
   readonly signal?: AbortSignal
   readonly context: AttemptContext
   readonly pagination: NuvemshopPagePosition | null
+  readonly filter?: OrderReadFilter
   readonly readGeneration: number
 }
 
@@ -193,6 +206,7 @@ export interface NuvemshopLinkTarget {
   readonly segments: NuvemshopRoute
   readonly pagination: NuvemshopPagePosition
   readonly projection?: NuvemshopListProjection
+  readonly filter?: OrderFilterIdentity
 }
 export interface NuvemshopPaginationHeaders {
   readonly totalCount: NuvemshopHeaderField<number>
@@ -206,6 +220,7 @@ export interface NuvemshopRequestIdentity {
   readonly segments: NuvemshopRoute
   readonly pagination: NuvemshopPagePosition | null
   readonly projection?: NuvemshopListProjection
+  readonly filter?: OrderFilterIdentity
 }
 export interface NuvemshopResponseMetadata {
   readonly request: NuvemshopRequestIdentity
@@ -297,7 +312,9 @@ function isPageCollection(method: Method, segments: NuvemshopRoute): boolean {
     (method === 'GET' || method === 'HEAD') &&
     ((segments.length === 1 &&
       ['products', 'categories', 'orders', 'webhooks'].includes(segments[0])) ||
-      (segments.length === 3 && segments[0] === 'products' && segments[2] === 'variants'))
+      (segments.length === 3 && segments[0] === 'products' && segments[2] === 'variants') ||
+      isFiscalCollection(segments) ||
+      isFulfillmentCollection(segments))
   )
 }
 
@@ -322,7 +339,10 @@ function readPagination(
   const prototype: unknown = Object.getPrototypeOf(value)
   if (prototype !== Object.prototype && prototype !== null) failValidation(context)
   const keys = Reflect.ownKeys(value)
-  if (keys.length > 2 || keys.some((key) => key !== 'page' && key !== 'perPage'))
+  if (
+    keys.length > 4 ||
+    keys.some((key) => !['page', 'perPage', 'q', 'orderId'].includes(key as string))
+  )
     failValidation(context)
   if (!isPageCollection(method, segments)) failValidation(context)
   const query = value as NuvemshopPaginationQuery
@@ -412,7 +432,9 @@ export function prepareNuvemshopAttempt(input: NuvemshopRequestInput): PreparedN
       ...(correlationId === undefined ? {} : { correlationId }),
     })
     const segments = readSegments(input.segments, context)
-    const pagination = readPagination(input.query, method, segments, context)
+    const query = input.query
+    const filter = readOrderFilter(query, method, segments)
+    const pagination = readPagination(query, method, segments, context)
     const readGeneration = readGenerationValue(input.readGeneration, method, context)
     return Object.freeze({
       method,
@@ -421,6 +443,7 @@ export function prepareNuvemshopAttempt(input: NuvemshopRequestInput): PreparedN
       signal: readSignal(input.signal, context),
       context,
       pagination,
+      ...(filter === undefined ? {} : { filter }),
       readGeneration,
     })
   } catch {
@@ -444,6 +467,7 @@ function fixedUrl(
   segments: readonly string[],
   context: AttemptContext,
   pagination: NuvemshopPagePosition | null,
+  filter?: OrderReadFilter,
 ): URL {
   if (
     storeId.length === 0 ||
@@ -465,6 +489,7 @@ function fixedUrl(
     pagination === null ? [] : [`page=${pagination.page}`, `per_page=${pagination.perPage}`]
   if (nuvemshopListProjection(context.method, segments) !== undefined)
     query.push(`fields=${CATEGORY_LIST_FIELDS}`)
+  query.push(...filterQuery(filter))
   const search = query.length === 0 ? '' : `?${query.join('&')}`
   url.search = search
   if (
@@ -566,6 +591,7 @@ function linkEntries(value: string): string[] | undefined {
 function parseLinks(
   value: string | null,
   projection: NuvemshopListProjection | undefined,
+  expectedFilter?: OrderReadFilter,
 ): NuvemshopHeaderField<readonly NuvemshopLinkTarget[]> {
   if (value === null) return absent()
   if (value.length > 8192 || /[\u0000-\u0008\u000A-\u001F\u007F-\uFFFF]/.test(value))
@@ -615,13 +641,18 @@ function parseLinks(
         return invalid()
       const segments = readSegments(path.slice(3), {})
       const fields = parts[1]!.split('&')
-      if (fields.length !== (projection === undefined ? 2 : 3)) return invalid()
+      if (fields.length < 2 || fields.length > 6) return invalid()
+      const filterFields: string[] = []
       let page: number | undefined
       let perPage: number | undefined
       let hasProjection = false
       for (const field of fields) {
         const pair = field.split('=')
         if (pair.length !== 2) return invalid()
+        if (pair[0] !== 'page' && pair[0] !== 'per_page' && projection === undefined) {
+          filterFields.push(field)
+          continue
+        }
         if (pair[0] === 'fields') {
           // Admit two exact whole-value spellings, never general percent decoding.
           if (
@@ -645,6 +676,7 @@ function parseLinks(
         (!hasProjection || nuvemshopListProjection('GET', segments) !== projection)
       )
         return invalid()
+      const filter = filterFromLink(filterFields, segments, expectedFilter)
       targets.push(
         Object.freeze({
           relation,
@@ -653,6 +685,7 @@ function parseLinks(
           storeId,
           segments,
           pagination: Object.freeze({ page, perPage }),
+          ...(filter === undefined ? {} : { filter }),
           ...(projection === undefined ? {} : { projection }),
         }),
       )
@@ -677,12 +710,13 @@ function responseMetadata(
       method: attempt.method,
       segments: Object.freeze([...attempt.segments]) as NuvemshopRoute,
       pagination: attempt.pagination === null ? null : Object.freeze({ ...attempt.pagination }),
+      ...(attempt.filter === undefined ? {} : { filter: filterIdentity(attempt.filter) }),
       ...(projection === undefined ? {} : { projection }),
     }),
     rateLimit: parseRateLimit(headers),
     pagination: Object.freeze({
       totalCount: scalarHeader(headers.get('x-total-count')),
-      links: parseLinks(headers.get('link'), projection),
+      links: parseLinks(headers.get('link'), projection, attempt.filter),
     }),
   })
 }
@@ -986,7 +1020,13 @@ export async function performNuvemshopAttempt(
   try {
     const segments = readSegments(attempt.segments, attempt.context)
     assertTransportSecret(config.accessToken)
-    const url = fixedUrl(config.storeId, segments, attempt.context, attempt.pagination)
+    const url = fixedUrl(
+      config.storeId,
+      segments,
+      attempt.context,
+      attempt.pagination,
+      attempt.filter,
+    )
     if (attemptControl.expired()) throw new NuvemshopNetworkError(attempt.context)
     const headers: Record<string, string> = {
       Authorization: `Bearer ${config.accessToken}`,

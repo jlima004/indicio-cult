@@ -113,12 +113,17 @@ export type BoundedCollection<T> =
   | { readonly completeness: 'confirmed'; readonly items: readonly T[] }
 
 export type StatusTransition = {
+  readonly createdAt?: CanonicalDateTime | null
+  readonly id?: string
   readonly fromStatus: string | null
   readonly toStatus: string | null
   readonly happenedAt: CanonicalDateTime
 }
 
 export type TrackingEvent = {
+  readonly createdAt?: CanonicalDateTime | null
+  readonly updatedAt?: CanonicalDateTime | null
+  readonly estimatedDeliveryAt?: CanonicalDateTime | null
   readonly id: string
   readonly status: string
   readonly happenedAt: CanonicalDateTime | null
@@ -151,8 +156,9 @@ export type InvoiceReference = {
 
 export type OrderParseOptions = {
   readonly fulfillmentCompleteness?: CollectionCompleteness
+  /** Read-state hint; modern `nfe` / `list` never confirms global fiscal completeness. */
   readonly invoiceCompleteness?: CollectionCompleteness
-  /** Metafield `nfe` / `list` JSON string. Omit when that read did not happen. */
+  /** Metafield `nfe` / `list` JSON string, or null for consulted absence. Omit when unread. */
   readonly invoiceValue?: string | null
 }
 
