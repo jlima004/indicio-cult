@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { NuvemshopProtocolError } from './errors'
+import { isFiscalCollection, readFilterIdentity, sameFilter } from './order-query'
 import {
   NUVEMSHOP_API_ORIGIN,
   NUVEMSHOP_API_VERSION,
@@ -124,7 +125,7 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
   const request = record(
     snapshot.request,
     ['origin', 'apiVersion', 'storeId', 'method', 'segments', 'pagination'],
-    ['projection'],
+    ['projection', 'filter'],
   )
   if (
     request.origin !== NUVEMSHOP_API_ORIGIN ||
@@ -139,12 +140,23 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
     failProtocol()
   }
   const current = position(request.pagination)
+  const route = segments(request.segments)
+  const filter = Object.hasOwn(request, 'filter')
+    ? readFilterIdentity(request.filter, route)
+    : undefined
+  if (isFiscalCollection(route) && (filter === undefined || filter.kind !== 'order-nfe')) {
+    failProtocol()
+  }
+  if (filter !== undefined && request.method !== 'GET') failProtocol()
   // Reuse the transport's canonical route/ID and collection admission policy.
   // The fresh explicit query prevents default inference; preparation does no I/O.
   const prepared = prepareNuvemshopAttempt({
     method: request.method,
-    segments: segments(request.segments),
-    query: current,
+    segments: route,
+    query:
+      filter?.kind === 'order-nfe'
+        ? { page: current.page, perPage: current.perPage, orderId: filter.orderId }
+        : current,
   })
   const projection = nuvemshopListProjection(prepared.method, prepared.segments)
   if (
@@ -172,7 +184,7 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
       const target = record(
         value,
         ['relation', 'origin', 'apiVersion', 'storeId', 'segments', 'pagination'],
-        ['projection'],
+        ['projection', 'filter'],
       )
       const route = segments(target.segments)
       const page = position(target.pagination)
@@ -183,6 +195,10 @@ function navigation(metadata: unknown): NuvemshopPageNavigation {
         route.length !== prepared.segments.length ||
         route.some((part, index) => part !== prepared.segments[index]) ||
         page.perPage !== current.perPage ||
+        !sameFilter(
+          filter,
+          Object.hasOwn(target, 'filter') ? readFilterIdentity(target.filter, route) : undefined,
+        ) ||
         Object.hasOwn(target, 'projection') !== (projection !== undefined) ||
         target.projection !== projection ||
         typeof target.relation !== 'string' ||

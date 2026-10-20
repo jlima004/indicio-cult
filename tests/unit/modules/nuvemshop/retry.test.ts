@@ -1505,8 +1505,8 @@ describe('frozen query and generation preparation contract', () => {
     ['products', '123'],
     ['products', '123', 'variants', '456'],
     ['store'],
-    ['orders', '123', 'fulfillment-orders'],
-    ['metafields', 'orders'],
+    ['orders', '123', 'fulfillment-orders', '01BX5ZZKBKACTAV9WEVGEMMVRZ'],
+    ['metafields', 'orders', '123'],
   ])('excluded route %j rejects query before fetch', async (...segments) => {
     const fake = installFetch()
     expect(name(await done(start(read({ segments, query: {} })), 0))).toBe(
