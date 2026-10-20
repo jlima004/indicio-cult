@@ -2,9 +2,9 @@
 
 ## Status
 
-**Proposto / PENDING HUMAN ADJUDICATION — 2026-10-20.**
+**HUMAN RATIFIED — LIMITATION_AND_PRESENCE_ONLY_DIRECTION (2026-10-20).** A versão inicialmente publicada nesta PR tinha estado `Proposto / PENDING HUMAN ADJUDICATION`. Esta ratificação posterior aceita somente o diagnóstico da limitação e a direção arquitetural *presence-only*; os gates de implementação, DAG e release permanecem separados.
 
-Este registro não aceita a decisão, não altera a SPEC, o PLAN nem o TODO, e não conclui a NUV-12. A busca parcial já mergeada na PR #50 permanece o comportamento vigente do adapter. Nenhuma migration, índice, worker, webhook ou consumer é autorizado por este texto.
+Esta decisão não altera a SPEC, o PLAN nem o TODO, e não conclui a NUV-12. A busca parcial já mergeada na PR #50 permanece o comportamento vigente do adapter. Nenhuma migration, índice, worker, webhook, consumer, merge ou deploy é autorizado pela ratificação.
 
 ## Date
 
@@ -50,9 +50,9 @@ Fatos citados:
 
 Não há, nessas páginas, `GET` pelo número comercial, parâmetro cujo domínio exclua nome/e-mail, ordenação documentada, cursor, snapshot entre páginas ou semântica de leitura sob mutação concorrente. Não foi localizada resposta oficial de suporte com essa garantia. Webhooks notificam o `id`, admitem duplicata e reordenação, e não provam ausência.
 
-## Decisão proposta
+## Direção arquitetural ratificada — sem autorização de implementação
 
-Ainda não aceita. A proposta submetida ao owner humano é:
+O responsável humano ratificou o diagnóstico de limitação e a direção *presence-only*. Os itens abaixo estabelecem limites dessa direção; não aprovam um mecanismo técnico específico, esquema persistente ou alteração normativa do DAG:
 
 1. A rota direta pela API não implementa a NUV-12 integral. `findOrderByNumber` permanece o subset fail-closed da PR #50: um GET lógico com `page=1`, `per_page=200` e `q` canônico. `Order` ou `null` saem só quando `page=1`, `totalCount = items.length = IDs únicos`, `items.length <= perPage`, `nextPage` ausente, `previousPage` ausente e `last` ausente ou `1`, depois da comparação exata de `Order.number`. Qualquer outra observação lança `NuvemshopLookupIncompleteError`. Esse `null` é política do subset para uma resposta, não ausência geral e não garantia do provedor.
 2. Uma projeção durável, se for construída no futuro, é owned pelo domínio `orders`, não pelo adapter. Ela pode registrar presença somente depois de `getOrder` cujo `Order.number` canônico seja a chave. `q` não é chave.
@@ -60,7 +60,7 @@ Ainda não aceita. A proposta submetida ao owner humano é:
 4. `T03-GENERAL` não recebe PASS por esta proposta. NUV-22, NUV-23, NUV-24 e NUV-25 não são desbloqueadas. O DAG não é reescrito aqui.
 5. HR-07 continua sendo a decisão do ledger genérico de webhooks. Ela não escolhe o schema de pedidos nem autoriza colapsar o índice de número nesse ledger.
 
-O humano pode recusar a proposta e manter somente o bloqueio, ou fornecer depois uma garantia oficial nova que reabra a rota direta. Nenhuma das duas alternativas é implementada neste registro.
+Uma garantia oficial nova pode reabrir a rota direta em adjudicação posterior. A ratificação atual não implementa nenhuma alternativa e pode ser revista por nova decisão expressa e rastreável.
 
 ## Alternativas
 
@@ -97,7 +97,7 @@ Estados operacionais possíveis no futuro, nenhum implementado: `not_started`, `
 
 ## Ownership
 
-| Peça                                                  | Owner proposto            | Não é owner            |
+| Peça                                                  | Owner na direção ratificada | Não é owner            |
 | ----------------------------------------------------- | ------------------------- | ---------------------- |
 | `findOrderByNumber` parcial                           | Adapter Nuvemshop         | Consumer               |
 | Índice por número, cobertura, reconciliação, retenção | `orders`                  | Adapter; ledger NUV-16 |
@@ -135,7 +135,7 @@ Ainda não normativo.
 
 Não executar nesta branch.
 
-1. Humano aceita ou recusa este ADR e, se aceitar, emenda SPEC/PLAN/TODO e o significado de `12` no DAG sem marcar `T03-GENERAL` como PASS.
+1. Ratificação limitada do ADR registrada. Elaborar e submeter à aprovação humana separada a emenda de SPEC/PLAN/TODO e do significado de `12` no DAG, sem marcar `T03-GENERAL` como PASS.
 2. HR-07 escolhe o backend do ledger. Em paralelo, `orders` especifica schema, RLS, retenção e o sinal de cobertura.
 3. NUV-15 a NUV-19 implementam recebimento durável, sem virar o índice.
 4. Se `orders` for autorizado a guardar presença, a ingestão começa e permanece incapaz de declarar ausência. Nenhum gate interno de backfill ou webhook muda isso.
@@ -171,14 +171,14 @@ Nenhuma neste cambio. Se um humano autorizar depois só a presença, a migration
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Ausência falsa se alguém promover backfill ou webhook a cobertura  | Nenhum estado de ausência é alcançável; falta de linha continua incompletude                  |
 | Ciclo `12 → orders → 24 → 12`                                      | DAG não é alterado até decisão humana                                                         |
-| Índice no adapter ou no ledger HR-07                               | Ownership permanece proposto em `orders`                                                      |
+| Índice no adapter ou no ledger HR-07                               | Ownership ratificado como direção em `orders`, sem autorização de implementação                 |
 | Pedidos não pagos invisíveis se só `order/paid` alimentar o índice | Tópicos extras bloqueados por HR-02; cobertura não fica pronta                                |
 | PII no índice e em logs                                            | Projeção mínima; número não vira tag de Sentry; sem raw body por default                      |
-| Rollback                                                           | Rejeitar este ADR não exige rollback de código: a PR #50 já está em `main` e não é modificada |
+| Rollback                                                           | A ratificação não altera runtime; revisão futura não exige rollback da PR #50                 |
 
 ## Gates humanos
 
-1. Aceitar ou recusar uma projeção só de presença, com owner `orders`, sem ramo de ausência.
+1. **CONCLUÍDO neste escopo:** ratificação de direção presence-only, com owner `orders`, sem ramo de ausência. Schema, retenção, privacidade e implementação ainda exigem gates próprios.
 2. Decidir o que `12` significa para NUV-22/23/24 sem fingir que T03 passou.
 3. Fechar HR-07 antes de qualquer recibo durável.
 4. Fechar HR-02 antes de API real ou tópico novo.
@@ -191,3 +191,17 @@ Nenhuma neste cambio. Se um humano autorizar depois só a presença, a migration
 - O subset da PR #50 continua o comportamento vigente, fail-closed fora da sua resposta única. Esse `null` não é reaceite da cobertura geral.
 - Não há candidato técnico de lookup multi-page para revisar ou deployar.
 - Uma garantia oficial futura pode superseder este ADR com outro registro; não se reescreve o histórico da PR #49 nem da PR #50.
+
+## Registro posterior — decisão humana de ratificação (2026-10-20)
+
+**Fonte da decisão:** instrução expressa do responsável humano pelo projeto na conversa Product Manager, após a publicação da PR #51 e a revisão documental independente do ADR-003. **Estado de mérito:** `HUMAN_RATIFIED / LIMITATION_AND_PRESENCE_ONLY_DIRECTION`.
+
+**Escopo aceito:** a Order API disponível não comprova cobertura multi-page sob mutação; uma futura projeção durável pertence ao domínio `orders` e, caso autorizada e construída, poderá registrar **presença** somente a partir de identidade de pedido e `Order.number` canônico conferidos por `getOrder`.
+
+**Limites obrigatórios:** chave sem linha no índice não prova ausência. Nem backfill, webhook, contagem estável, links ou `ready_for_absence` autorizam `null` como ausência global. O `null` já permitido no subset da PR #50 é uma política restrita de resposta única; não comprova inexistência na loja e não pode ser promovido por consumers a negativa global, negação de vínculo ou decisão de disclosure.
+
+**Fora da ratificação:** implementação de índice, schema, migration, fila, worker, webhook, HR-02/HR-07, alterações em SPEC/PLAN/TODO, reinterpretação do DAG, contrato do consumer `orders`, `/rastreio`, API autenticada real, merge ou deploy. Cada um exige sua própria adjudicação/autorização.
+
+**Estados preservados:** `NUV-12-PARTIAL / DEPLOYED`; `NUV-12-FULL / ARCHITECTURAL_ADJUDICATION_REQUIRED`; `T03-GENERAL / PENDING_COVERAGE_EVIDENCE`; `ABSENCE / BLOCKED_COVERAGE_EVIDENCE`; NUV-22/23/24/25 continuam bloqueadas pelos requisitos integrais vigentes.
+
+O histórico de que o ADR foi inicialmente publicado como proposta permanece verificável na primeira revisão da PR #51; esta seção registra a decisão posterior sem alegar que a proposta já estivesse ratificada na publicação.
