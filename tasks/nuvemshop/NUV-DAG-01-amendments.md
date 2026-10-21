@@ -10,6 +10,24 @@ The baseline for these anchors is `main@43a41ca51f0732d1a918e677bdd9e8d2bef29f13
 
 The three task prerequisite substitutions proposed are `12-FULL→22` to `12-PARTIAL→22`, `12-FULL→23` to `12-PARTIAL→23`, and `12-FULL→24` to `12-PARTIAL→24`. Each takes effect only after joint approval/materialization of D1–D5 and the explicit `DAG_EFFECTIVE` gate. NUV-24 retains NUV-01–11 and NUV-13–23 plus all existing gates; only NUV-12-FULL is excluded from its entry condition. Clarified retained obligations include NUV-12-FULL/T03-GENERAL, global-absence evidence and all 18 criteria at NUV-25, plus the existing consumer sequence `NUV-24→catalog→identity→orders`. Consumers produce evidence before NUV-25; NUV-25 does not gate consumer implementation. Every negative test, other task predecessor, release control and full-closure criterion remains in force. No item becomes complete or ready from this proposal.
 
+## Status rendering during future approved materialization
+
+This rule is itself **PROPOSED / PENDING HUMAN ADJUDICATION** today. It does not assert that any D1–D5 decision has been approved. The following is the exact proposed rendering rule for the later, separately reviewed materialization PR. “Exact insertion” means the approved payload after this explicit rendering step, not a byte-for-byte copy of pending proposal labels into an effective contract.
+
+1. Before rendering, verify concrete human approval records for **each** of D1–D5, the exact approved proposal HEAD, and authorization for the materialization PR. Record the real approval references, date and approved proposal SHA in a new current-state supplement in each of SPEC, PLAN and TODO. Missing/rejected/partial approval, changed text or a missing reference stops materialization. A renderer cannot establish human approval.
+2. Apply the two literal substitutions below **only inside the newly approved quoted insertion payloads in this packet**. They cover every SPEC/TODO insertion and the PLAN heading/wave note. Do not substitute across the existing canonical files, historical snapshots, this proposal's metadata, or the stored approval record.
+
+| Proposal-payload token                  | Future materialized-payload token, conditional on verified approval and authorized merge |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `PROPOSED / PENDING HUMAN ADJUDICATION` | `D1–D5 APPROVAL RECORDED / EFFECTIVE ONLY ON AUTHORIZED MATERIALIZATION MERGE`           |
+| `NUV-DAG-01 proposal (not effective)`   | `NUV-DAG-01 adjudicated amendment (effective only on authorized materialization merge)`  |
+
+3. In each canonical file, accompany the rendered payload with this exact record template, replacing every brace field with concrete verified evidence: `NUV-DAG-01 materialization record: D1={record}; D2={record}; D3={record}; D4={record}; D5={record}; approved proposal HEAD={40-hex SHA}; approval date={YYYY-MM-DD}; materialization PR={URL}. These rendered amendments become effective only on the authorized human merge of this materialization PR; before that merge the prior contract remains effective. No implementation or release authorization follows.` Unfilled/synthetic fields are forbidden in an actual materialization. The enclosing proposal files remain pending today; this template is not an approval record.
+4. Before requesting the later human merge, require that **none of the newly rendered insertion payloads** retains either source token. The new record must identify the earlier, explicitly scoped sentences retained as historical baseline and link their supersession to the actual D1–D5 approvals. Recheck all three canonical documents for one unambiguous current interpretation. Existing historical pending labels stay historical; they are not silently rewritten.
+5. Independent review must confirm the actual approval references, exact scoped substitutions, absence of stale pending labels in the new payloads, every retained proof/HR gate and the human merge boundary. After authorized merge the conditional effect marker is satisfied by that merge; it never continues to claim human adjudication is pending. A rejected or unmerged materialization does not activate any edge.
+
+The old proposal tokens and template braces appear above solely to specify future transformation. They do not change this packet's pending status, waive D1–D5, or authorize any materialization now.
+
 ## SPEC exact patches
 
 ### SPEC §10 — Resource contracts / Orders

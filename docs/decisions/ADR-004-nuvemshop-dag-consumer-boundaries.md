@@ -6,6 +6,8 @@
 
 **PROPOSED / PENDING HUMAN ADJUDICATION.** This record and its accompanying amendment packet are documentary proposals only. They do not change the effective SPEC, PLAN, TODO, runtime, release authority, or task status. They do not authorize implementation, provider access, merge, or deploy. Effectiveness requires separate human adjudication D1–D5 and a later exact materialization of the approved text.
 
+The later materialization must use the explicit status-rendering rule in the amendment packet: pending labels stay in this proposal today, while newly approved insertion payloads receive the specified approval-recorded/conditional-effect marker and concrete D1–D5 approval references before the later human merge. Exact materialization never copies pending-adjudication labels into newly effective text. Historical snapshots remain intact and explicitly scoped as superseded; no approval is asserted here.
+
 ## Context and scope
 
 ADR-003 was ratified as `HUMAN RATIFIED — LIMITATION_AND_PRESENCE_ONLY_DIRECTION`. It establishes `orders` as owner of a future durable presence-only projection, does not authorize implementation or DAG changes, leaves `T03-GENERAL` pending, and leaves global absence blocked. NUV-12-PARTIAL is deployed subset behavior; it is not NUV-12-FULL. See [ADR-003](ADR-003-nuv-12-cobertura-integral.md#direção-arquitetural-ratificada--sem-autorização-de-implementação), especially its clauses 1–5.
