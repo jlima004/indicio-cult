@@ -560,6 +560,24 @@ function createTestProgram(roots: string[], options: ts.CompilerOptions, host: t
   return diagnosticPredecessor.program
 }
 
+function createAdapterDiagnosticProgram(
+  roots: string[],
+  options: ts.CompilerOptions,
+  host: ts.CompilerHost,
+): ts.Program {
+  const declaration = ts.resolveTypeReferenceDirective('node', configPath, options, host)
+    .resolvedTypeReferenceDirective?.resolvedFileName
+  const installedNodeRoot = path.join(projectRoot, 'node_modules/@types/node')
+  if (
+    !declaration ||
+    !path.resolve(declaration).startsWith(`${installedNodeRoot}${path.sep}`) ||
+    !ts.sys.fileExists(declaration)
+  ) {
+    throw new Error('Installed Node declarations are required for adapter diagnostics')
+  }
+  return createTestProgram([...roots, declaration], options, host)
+}
+
 function createBindingProgram(roots: string[], options: ts.CompilerOptions, host: ts.CompilerHost) {
   bindingPredecessor = createProgramWithPredecessor(roots, options, host, bindingPredecessor)
   return bindingPredecessor.program
@@ -1747,9 +1765,10 @@ declare global { type BGlobal = BContract; } export {};`
       sources: Sources,
       clients: Sources,
       roots = [path.join(projectRoot, clientName)],
+      programFactory = createTestProgram,
     ) {
       const environment = sourceEnvironment(sources, clients)
-      const program = createTestProgram(
+      const program = programFactory(
         roots,
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -1924,9 +1943,12 @@ declare global { namespace BNamespace { type Contract = BContract; } } export {}
         sources.set('server/__b-types-guard.d.ts', "import 'server-only'; export {};")
         sources.set('__b-types-marker.d.ts', "import 'server-only'; export {};")
         sources.set(filename as string, source as string)
-        const result = compile(sources, new Map(), [
-          ...sourceEnvironment(sources, new Map()).files.keys(),
-        ])
+        const result = compile(
+          sources,
+          new Map(),
+          [...sourceEnvironment(sources, new Map()).files.keys()],
+          createAdapterDiagnosticProgram,
+        )
         clean(result)
         const parsed = result.program.getSourceFile(path.join(moduleRoot, filename as string))!
         const edge = dependencies(parsed, result.program.getTypeChecker()).find(
@@ -2116,9 +2138,12 @@ declare global { namespace BNamespace { type Contract = BContract; } } export {}
         '/// <reference types="../catalog/__b-types-consumer.d.ts" />\nimport "server-only"; export {};',
       )
       const clients = new Map([['src/modules/catalog/__b-types-consumer.d.ts', 'export {};']])
-      const result = compile(sources, clients, [
-        ...sourceEnvironment(sources, clients).files.keys(),
-      ])
+      const result = compile(
+        sources,
+        clients,
+        [...sourceEnvironment(sources, clients).files.keys()],
+        createAdapterDiagnosticProgram,
+      )
       clean(result)
       expect(
         result.environment.internalTarget(
@@ -2143,9 +2168,12 @@ declare global { namespace BNamespace { type Contract = BContract; } } export {}
         '__b-types-missing-source.d.ts',
         '/// <reference types="./__b-types-missing.d.ts" />\nimport "server-only"; export {};',
       )
-      const result = compile(sources, new Map(), [
-        ...sourceEnvironment(sources, new Map()).files.keys(),
-      ])
+      const result = compile(
+        sources,
+        new Map(),
+        [...sourceEnvironment(sources, new Map()).files.keys()],
+        createAdapterDiagnosticProgram,
+      )
       expect(ts.getPreEmitDiagnostics(result.program).map((diagnostic) => diagnostic.code)).toEqual(
         [2688],
       )
@@ -2410,7 +2438,7 @@ export type UnguardedContract = { id: string };`,
       sources.set('server-only.ts', "import 'server-only'; export {};")
       sources.set(filename, source)
       const environment = sourceEnvironment(sources, new Map())
-      const program = createTestProgram(
+      const program = createAdapterDiagnosticProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -2501,7 +2529,7 @@ ${adapter ? "export type { FixtureContract } from '@/modules/nuvemshop/__tsref-c
 import 'server-only'; export {};`,
       )
       const environment = sourceEnvironment(sources, new Map())
-      const program = createTestProgram(
+      const program = createAdapterDiagnosticProgram(
         [...environment.files.keys()],
         { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] },
         environment.host,
@@ -5275,5 +5303,88 @@ describe('CI-OPT-01 library resolution', () => {
     expect(diagnostics(restored)).toEqual(diagnostics(firstReference))
     expect(restored.getSourceFile(replacementLibrary)).toBeUndefined()
     expect(restored.getSourceFile(installedLibrary)).toBeDefined()
+  })
+})
+
+describe('native Node diagnostic opt-in isolation', () => {
+  it('NODE-DIAGNOSTIC includes real installed declarations without weakening complete adapter diagnostics', () => {
+    expect(typeof createAdapterDiagnosticProgram, 'adapter diagnostic capability is absent').toBe(
+      'function',
+    )
+    const fixtureName = path.join(projectRoot, 'src/__nuv14-native-diagnostic.ts')
+    const environment = sourceEnvironment(
+      readSources(),
+      new Map([
+        [
+          fixtureName,
+          "import { createHmac } from 'node:crypto'; createHmac('sha256', 42); export {};",
+        ],
+      ]),
+    )
+    const roots = [...environment.files.keys()]
+    const options = {
+      ...compilerOptions,
+      incremental: false,
+      skipLibCheck: false,
+      types: [],
+    }
+    const nodeDeclaration = ts.resolveTypeReferenceDirective(
+      'node',
+      configPath,
+      options,
+      environment.host,
+    ).resolvedTypeReferenceDirective?.resolvedFileName
+    expect(nodeDeclaration).toBeDefined()
+    const program = createAdapterDiagnosticProgram(roots, options, environment.host)
+    expect(program.getCompilerOptions()).toEqual(options)
+    expect(program.getRootFileNames()).toEqual(expect.arrayContaining(roots))
+    expect(program.getRootFileNames()).toContain(nodeDeclaration)
+    expect(program.getSourceFile(nodeDeclaration!)).toBeDefined()
+    const diagnostics = ts.getPreEmitDiagnostics(program)
+    expect(
+      diagnostics.map((diagnostic) => ({ code: diagnostic.code, file: diagnostic.file?.fileName })),
+    ).toEqual([{ code: 2345, file: fixtureName }])
+  })
+
+  it('NODE-DIAGNOSTIC-CLIENT keeps the existing client program without Node roots or globals', () => {
+    const fixtureName = path.join(projectRoot, 'src/__nuv14-client-diagnostic.ts')
+    const environment = sourceEnvironment(
+      new Map(),
+      new Map([[fixtureName, "'use client'; export const missingNode = process;"]]),
+    )
+    const roots = [...environment.files.keys()]
+    const options = { ...compilerOptions, incremental: false, skipLibCheck: false, types: [] }
+    const program = createTestProgram(roots, options, environment.host)
+    const source = program.getSourceFile(fixtureName)!
+    expect(program.getCompilerOptions()).toEqual(options)
+    expect(program.getRootFileNames()).toEqual(roots)
+    expect(
+      program.getSourceFiles().some((file) => /[/\\]@types[/\\]node[/\\]/.test(file.fileName)),
+    ).toBe(false)
+    expect(
+      program.getTypeChecker().resolveName('process', source, ts.SymbolFlags.Value, false),
+    ).toBeUndefined()
+    expect(ts.getPreEmitDiagnostics(program).map((diagnostic) => diagnostic.code)).toEqual([2591])
+  })
+
+  it('NODE-DIAGNOSTIC-BINDING preserves the noLib types-empty binding environment without Node globals', () => {
+    const fixtureName = path.join(projectRoot, 'src/__nuv14-binding-diagnostic.ts')
+    const environment = sourceEnvironment(
+      readSources(),
+      new Map([[fixtureName, 'export const localValue = 1;']]),
+    )
+    const program = environment.program()
+    const source = program.getSourceFile(fixtureName)!
+    expect(program.getCompilerOptions().types).toEqual([])
+    expect(program.getCompilerOptions().noLib).toBe(true)
+    expect(program.getRootFileNames()).toEqual([...environment.files.keys()])
+    expect(
+      program.getSourceFiles().some((file) => /[/\\]@types[/\\]node[/\\]/.test(file.fileName)),
+    ).toBe(false)
+    for (const name of ['process', 'Buffer', 'require', 'module', 'global']) {
+      expect(
+        program.getTypeChecker().resolveName(name, source, ts.SymbolFlags.Value, false),
+      ).toBeUndefined()
+    }
   })
 })
