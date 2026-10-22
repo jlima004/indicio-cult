@@ -4,6 +4,8 @@ Temporary measurement script, embedded as documentation only. It was not install
 
 The source requires Python3 and the already installed Node22.23.1/npm10.9.8; it adds no dependencies. The npm subprocess receives an explicit environment allowlist with private empty npmrc and public registry. Log stdout/stderr stay in memory; debug files are disabled. Numeric timing files are reduced to allowlisted fields then removed. The reproduction retains scripts/audit for the original variant.
 
+Provenance correction after remote review: the fence below is the corrected reproduction (SHA-256 `d615e243fcf085996f02911601b5f420070b41a94049a694967b0ce6a8ff5b40`), differing from the executed harness only in its `ioUnits` string. The original executed script remains preserved privately with SHA-256 `f58b263499a8395e7b9fb5a3b7833b139d35d0735d1acc5b80403a56f3c049ce`; captured JSON is unchanged. Those historical JSON files retain the incorrect `ioUnits` string describing 512-byte blocks; that string is superseded and must be disregarded. Interpret their counters as operation counts using this correction while retaining the raw files unchanged for provenance. The legacy keys `filesystemInputBlocks` and `filesystemOutputBlocks` contain filesystem input/output **operation counts**, never 512-byte blocks or bytes. The corrected source retains those keys for schema compatibility. All four captured counter pairs were zero; timings and conclusions are unaffected. The corrected reproduction has not been used to rerun the installations. Extract it as `npm-benchmark.py` when using the commands below. See [Linux getrusage(2)](https://man7.org/linux/man-pages/man2/getrusage.2.html) for `ru_inblock`/`ru_oublock` semantics.
+
 <!-- prettier-ignore -->
 ```python
 #!/usr/bin/env python3
@@ -140,7 +142,7 @@ def run(variant,number):
         maxProcessRssKiB=usage.ru_maxrss,
         filesystemInputBlocks=usage.ru_inblock,filesystemOutputBlocks=usage.ru_oublock,
         voluntaryContextSwitches=usage.ru_nvcsw,involuntaryContextSwitches=usage.ru_nivcsw)
-    out['ioUnits']='wait4 filesystem blocks (Linux blocks of 512 bytes), not logical bytes; root /proc sampled maxima are bounds'
+    out['ioUnits']='wait4 filesystem input/output operation counts, not byte counts; root /proc sampled maxima are bounds'
     summary=re.search(r'added (\d+) packages(?:, and audited (\d+) packages)? in ([\w.]+)',text)
     out['packageSummary']={'added':int(summary[1]),'audited':int(summary[2]) if summary[2] else None} if summary else None
     out['timersMs']={}
@@ -198,10 +200,10 @@ python3 /private/evidence/npm-benchmark.py --variant offline --samples 1
 
 The seed report records coverage for all integrity-distinct public lock tarballs, including platform-ineligible entries. Missing other-platform tarballs alone do not prohibit an offline attempt; successful offline npm ci establishes sufficiency for the actual installed platform. A failed offline attempt must be retained as a negative result. Do not substitute offline/no-audit for the official CI install. npm offline mode also bypasses audit, so offline is not a pure tarball-network contrast.
 
-Results are individual JSON files plus preparation/source identity. CPU values are wait4 usage; maxRSS is maximum process RSS rather than concurrent process-tree sum. wait4 filesystem counters measure physical block operations, not all logical cache traffic. root /proc samples are lower bounds and may miss short processes or final writes. Total resource timers and overlapping npm phase timers must not be summed as elapsed wall time. No test-suite success is implied by an install exit0.
+Results are individual JSON files plus preparation/source identity. CPU values are wait4 usage; maxRSS is maximum process RSS rather than concurrent process-tree sum. wait4 filesystem counters count input/output operations, not bytes or all logical cache traffic. root /proc samples are lower bounds and may miss short processes or final writes. Total resource timers and overlapping npm phase timers must not be summed as elapsed wall time. No test-suite success is implied by an install exit0.
 
 REMOTE_INSTRUMENTATION_AUTHORIZATION_PENDING: this document does not authorize or launch GitHub workflows. R01 is first to instrument the original npm ci while preserving audit/scripts, then contrast a single auxiliary operation under the same pinned remote environment if explicitly authorized.
 
 The cache evolves across samples; these contrasts are exploratory. If the first original install stalls for seven minutes, stop repeating that variant without a new discriminator and record the observed resource/phase evidence. Extend to at most three samples per variant only when viable. Samples never overwrite an existing result.
 
-Executed order on2026-10-22: original1(76.219s), no-audit1(57.297s), original2(75.338s), offline1(81.971s), all exit0. Original n2 median75.779/min75.338/max76.219s; each auxiliary n1. No suite pass or causal speedup is claimed. Timing JSON produced751–792numeric phase timers per run, then was reduced/deleted; no debug log file retained. Root /proc I/O was unavailable; wait4 blocks0 do not prove no writes. npm offline is not a lifecycle network sandbox and printed audited544 despite absent audit HTTP/getReport. See npm-report.md and npm-local-summary.json for full limitations.
+Executed order on2026-10-22: original1(76.219s), no-audit1(57.297s), original2(75.338s), offline1(81.971s), all exit0. Original n2 median75.779/min75.338/max76.219s; each auxiliary n1. No suite pass or causal speedup is claimed. Timing JSON produced751–792numeric phase timers per run, then was reduced/deleted; no debug log file retained. Root /proc I/O was unavailable; zero wait4 operation counts do not prove no writes. npm offline is not a lifecycle network sandbox and printed audited544 despite absent audit HTTP/getReport. See npm-report.md and npm-local-summary.json for full limitations.

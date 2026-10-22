@@ -231,9 +231,9 @@ For one sample, report the observation without a reproducibility claim; for two 
 
 External wall time covers the invocation. CPU user/system and maximum RSS have process/child scopes documented by the runner; maximum RSS is not the simultaneous process-tree memory sum. Worker heap deltas can be negative after GC. Nested helper timers are inclusive and must not be added as disjoint phases. Family selections start with a different predecessor history; their times do not sum into the full-suite wall time. A main-process-only CPU profile would not represent TypeScript running in a Vitest worker.
 
-Local filesystem block counters returned zero and npm's sampled `/proc` I/O was unavailable; this does not establish zero I/O. The measured host/API call counts describe logical access, not physical storage traffic. Instrumentation records worker CPU and memory endpoints rather than a calibrated CPU flamegraph or continuous allocation trace. No claimed compiler optimization depends on subtracting its overhead.
+Local filesystem input/output operation counters returned zero and npm's sampled `/proc` I/O was unavailable; this does not establish zero I/O. The measured host/API call counts describe logical access, not physical storage traffic. Instrumentation records worker CPU and memory endpoints rather than a calibrated CPU flamegraph or continuous allocation trace. No claimed compiler optimization depends on subtracting its overhead.
 
-Reproduction is versioned as documentation: [npm protocol and exact private harness](./CI-PERF-02-npm-reproduction.md) and [boundary wrappers, instrumentation, aggregation and commands](./CI-PERF-02-boundary-reproduction.md). Fenced source is preserved byte-for-byte and checked after formatting. It runs only when explicitly extracted into an isolated measurement workspace; it is not wired into CI or the application. Absolute paths identify this measurement instance and must be adjusted explicitly for another machine. Raw Actions/npm logs and private per-test JSONL are not automatically published.
+Reproduction is versioned as documentation: [npm protocol and corrected reproduction harness](./CI-PERF-02-npm-reproduction.md) and [boundary wrappers, instrumentation, aggregation and commands](./CI-PERF-02-boundary-reproduction.md). The five boundary source fences preserve executed bytes. The npm fence includes a post-review metadata correction, with original and corrected hashes and the one-string difference documented; it is not represented as the executed original. All fences are checked after formatting. It runs only when explicitly extracted into an isolated measurement workspace; it is not wired into CI or the application. Absolute paths identify this measurement instance and must be adjusted explicitly for another machine. Raw Actions/npm logs and private per-test JSONL are not automatically published.
 
 The first session was interrupted by an agent usage limit. Temporary evidence under `/tmp` and the unfinished baseline process were lost. Those unfinished executions are not counted as PASS or used for performance figures. The resumed audit keeps evidence in a private durable directory and repeats the needed measurements.
 
@@ -331,45 +331,45 @@ No real provider calls or benchmark credentials are used. Raw npm/Actions logs a
 
 ## I — Independent Review
 
-D's independent adversarial verdict is **APPROVE**, zero material P0/P1/P2, covering the diagnostic accuracy, limits and recommendations. E's separate final release/evidence verdict is **APPROVE**, zero required findings. Both first reviewed staged documentary diff SHA-256 `bed39446ce063889ef6f5769dcb1156672da86cc269757fbf4408fcc3d8423fd`; the final receipt update is reconfirmed before commit. Final file/diff/commit binding will be published in the PR conversation rather than embedded as a self-referential hash here.
+D's initial independent adversarial verdict was **APPROVE**, zero material P0/P1/P2, covering the diagnostic accuracy, limits and recommendations. E's separate initial release/evidence verdict was **APPROVE**, zero required findings. Both first reviewed staged documentary diff SHA-256 `bed39446ce063889ef6f5769dcb1156672da86cc269757fbf4408fcc3d8423fd`; the final receipt update is reconfirmed before commit. Final file/diff/commit binding will be published in the PR conversation rather than embedded as a self-referential hash here.
 
-D's only nonblocking P3 (`R-D-01`) notes machine-specific home/worktree paths in the exact reproduction scripts. They disclose directory layout, not credentials. The appendix already requires explicit prefix adaptation on another host; preserving the recorded script bytes keeps the measured-instance hashes verifiable. There were no P0/P1/P2 findings requiring analysis or safety-contract changes.
+D's only nonblocking P3 (`R-D-01`) notes machine-specific home/worktree paths in the exact reproduction scripts. They disclose directory layout, not credentials. The appendix already requires explicit prefix adaptation on another host; preserving the recorded script bytes keeps the measured-instance hashes verifiable. Those initial local reviews reported no P0/P1/P2. The one authorized remote Codex Review of `aa694000470ca82478e899c02b2428a7566ace88` subsequently found a valid [P2 in the I/O units](https://github.com/jlima004/indicio-cult/pull/56#discussion_r4349574612): Linux rusage counters count filesystem operations, not 512-byte blocks. This revision corrects the reproduction metadata and prose, preserves original script/JSON provenance, and leaves all numeric measurements and recommendations unchanged. Fresh remediation reviews are kept in private evidence; publication of their final verdicts and corrected-HEAD remote CI receipts remains pending at this snapshot. The original remote review does not attest a later HEAD.
 
-| D question               | Independent conclusion                                                |
-| ------------------------ | --------------------------------------------------------------------- |
-| 1 — Logs                 | Command/summary, Actions step and Docker timing scopes distinguished  |
-| 2 — SHAs                 | Three requested runs reconciled; PR merge ref and API head separated  |
-| 3 — Cache HIT            | npm content cache distinguished from installed node_modules           |
-| 4 — Seven-minute cause   | Unproven; correctly left pending instrumentation                      |
-| 5 — Hypotheses           | No material causal overclaim                                          |
-| 6 — Comparability        | Local, GitHub and Docker cohorts/limitations explicit                 |
-| 7 — Cache states         | Evolving cache and absent/removal states explicit                     |
-| 8 — Sample size          | Adequate for exploratory conclusions only; no significance claim      |
-| 9 — Resources            | CPU/RSS/I/O limits and missing metrics recorded                       |
-| 10 — Real suite          | D1 full original; D3 all 598 boundary identities                      |
-| 11 — Preservation        | Same ordered 598 identities, real negative outcomes retained          |
-| 12 — Timing sums         | No concurrent-file or nested-phase additive overclaim                 |
-| 13 — CI-OPT-01           | Fresh Programs and bounded predecessor/cache canaries preserved       |
-| 14 — Diagnostics         | No full equivalence PASS; D5 only 34 selected consistency controls    |
-| 15 — NUV-14              | Opt-in/client/binding controls and HMAC scope preserved               |
-| 16 — Stale state         | R05 rejected; invalidation requirements explicit                      |
-| 17 — Order               | Future partition risk explicit; shuffle proof not claimed             |
-| 18 — Focused regressions | Filtered cases not counted as complete-suite PASS                     |
-| 19 — Security            | No weakened gate/assertion/timeout or delivered optimization          |
-| 20 — Release             | No changed DAG; future aggregate/ruleset risks specified              |
-| 21 — db-types            | Required by main-push DAG; PR skip is not PASS                        |
-| 22 — Deploy              | Whole CI/event/branch/SHA predicates and identity checks preserved    |
-| 23 — Secrets             | No credential material found; raw logs excluded; P3 paths noted       |
-| 24 — Reproduction        | Exact scripts/commands/versions/hashes, with explicit path adaptation |
-| 25 — Authorization       | Diagnosis, remote experiments, implementation and release separated   |
+| D question               | Independent conclusion                                                    |
+| ------------------------ | ------------------------------------------------------------------------- |
+| 1 — Logs                 | Command/summary, Actions step and Docker timing scopes distinguished      |
+| 2 — SHAs                 | Three requested runs reconciled; PR merge ref and API head separated      |
+| 3 — Cache HIT            | npm content cache distinguished from installed node_modules               |
+| 4 — Seven-minute cause   | Unproven; correctly left pending instrumentation                          |
+| 5 — Hypotheses           | No material causal overclaim                                              |
+| 6 — Comparability        | Local, GitHub and Docker cohorts/limitations explicit                     |
+| 7 — Cache states         | Evolving cache and absent/removal states explicit                         |
+| 8 — Sample size          | Adequate for exploratory conclusions only; no significance claim          |
+| 9 — Resources            | CPU/RSS/I/O limits and missing metrics recorded                           |
+| 10 — Real suite          | D1 full original; D3 all 598 boundary identities                          |
+| 11 — Preservation        | Same ordered 598 identities, real negative outcomes retained              |
+| 12 — Timing sums         | No concurrent-file or nested-phase additive overclaim                     |
+| 13 — CI-OPT-01           | Fresh Programs and bounded predecessor/cache canaries preserved           |
+| 14 — Diagnostics         | No full equivalence PASS; D5 only 34 selected consistency controls        |
+| 15 — NUV-14              | Opt-in/client/binding controls and HMAC scope preserved                   |
+| 16 — Stale state         | R05 rejected; invalidation requirements explicit                          |
+| 17 — Order               | Future partition risk explicit; shuffle proof not claimed                 |
+| 18 — Focused regressions | Filtered cases not counted as complete-suite PASS                         |
+| 19 — Security            | No weakened gate/assertion/timeout or delivered optimization              |
+| 20 — Release             | No changed DAG; future aggregate/ruleset risks specified                  |
+| 21 — db-types            | Required by main-push DAG; PR skip is not PASS                            |
+| 22 — Deploy              | Whole CI/event/branch/SHA predicates and identity checks preserved        |
+| 23 — Secrets             | No credential material found; raw logs excluded; P3 paths noted           |
+| 24 — Reproduction        | Scripts/commands/versions/hashes, path adaptation and metadata correction |
+| 25 — Authorization       | Diagnosis, remote experiments, implementation and release separated       |
 
 ## J — Validation & GitHub
 
-Local documentary `npm run format:check` passed using the baseline installed Prettier through a process-only PATH, without installing dependencies in the documentation worktree. All six executable-source fences were extracted after formatting and matched the private measurement scripts byte-for-byte; the boundary supplement also verifies their SHA-256 values. The original checkout and both disposable measurement worktrees are tracked-clean; only the three report/reproduction Markdown files enter the candidate diff.
+Local documentary `npm run format:check` passed using the baseline installed Prettier through a process-only PATH, without installing dependencies in the documentation worktree. The five boundary executable-source fences match the executed private scripts byte-for-byte. The npm fence matches the separately preserved corrected reproduction, whose only difference from the executed script is the documented I/O unit string; no new benchmark result is claimed. Fences are extracted after formatting and their SHA-256 values checked. The original checkout and both disposable measurement worktrees are tracked-clean; only the three report/reproduction Markdown files enter the candidate diff.
 
 The local complete Vitest result is the negative D1 result, not PASS. No end-to-end local `npm run check` or application build is claimed for this documentary candidate. Build/E2E/Gitleaks/client-marker/Docker and the complete check remain required in the normal PR CI; main's privileged db-types remains a distinct later gate. Local schema/provider/production validation was not performed.
 
-Independent D/E approval, format/fence checks, staged scope/whitespace checks and targeted credential-pattern review passed for the consolidated dossier. The final receipt update is revalidated and reconfirmed before commit. Commit, push, Draft PR, exact-HEAD CI and one Codex Review remain later publication steps at this versioned snapshot. Final receipts will be recorded in the PR body/conversation against the full immutable SHA, avoiding report self-reference and unnecessary HEAD changes. A later remote result must be read from those bound receipts rather than assumed from local measurements.
+The initial dossier was published as Draft PR #56 at `aa694000470ca82478e899c02b2428a7566ace88`; its normal CI passed, with PR db-types skipped, and its one authorized Codex Review returned the P2 described above. That initial CI/review does not validate this correction. At this correction snapshot, only the initial HEAD has published CI/review receipts. Remediation review and local checks are private evidence; their final verdicts and fresh normal CI for the corrected HEAD must be recorded in the PR body/conversation after publication. No second Codex Review request is authorized by this task. Final receipts distinguish the originally reviewed commit, the resolved finding and any later-HEAD review gap; remote PASS must not be assumed from local measurements.
 
 ## K — Human Decision Required
 
@@ -382,5 +382,6 @@ Additional instrumented GitHub diagnostic runs require specific authorization: `
 - [npm v10 logging/timing and sensitive-log limitations](https://docs.npmjs.com/cli/v10/using-npm/logging/): timing files expose named phase timers; npm redaction alone is not a publication sanitizer.
 - [TypeScript compiler API](https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API): Program, CompilerHost, SourceFile and diagnostics APIs. Installed TypeScript declarations/source take precedence for version-specific behavior.
 - [Vitest CLI](https://main.vitest.dev/guide/cli): focused name filters and JSON reporting, verified against installed v5 help before use.
+- [Linux getrusage(2)](https://man7.org/linux/man-pages/man2/getrusage.2.html): `ru_inblock` and `ru_oublock` count filesystem input/output operations, not byte quantities.
 - [Node v22 process metrics](https://nodejs.org/docs/latest-v22.x/api/process.html#processresourceusage): CPU, memory and process resource metrics. Exact local runtime version is recorded with the measurements.
 - [GitHub job dependencies](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs): needs/skip/failure propagation and explicit conditional execution.
