@@ -2,8 +2,20 @@ import 'server-only'
 
 export { getCategory, listCategories } from './categories'
 export type { GetCategoryInput, ListCategoriesInput } from './categories'
-export { findOrderByNumber, getOrder, listOrders } from './orders'
-export type { GetOrderInput, ListOrdersInput } from './orders'
+export {
+  ORDER_EMAIL_DISCOVERY_HANDOFF,
+  discoverOrdersByEmail,
+  findOrderByNumber,
+  getOrder,
+  listOrders,
+  orderContactEmailMatches,
+} from './orders'
+export type {
+  DiscoverOrdersByEmailInput,
+  GetOrderInput,
+  ListOrdersInput,
+  OrderEmailDiscoveryPage,
+} from './orders'
 export { getProduct, getVariant, listProducts } from './products'
 export type { GetProductInput, GetVariantInput, ListProductsInput } from './products'
 
