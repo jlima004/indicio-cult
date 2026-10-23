@@ -10,9 +10,21 @@ The original source is read from the uninstrumented baseline for manifest genera
 
 Run the C guard self-test before splitting. The C splitter uses the preserved original source and frozen family mapping, writes the two files/support, and removes only the experimental monolith. Format those three files with the installed Prettier before static equivalence and dynamic identity guards. The original afterEach callback must occur once in each partition.
 
+Before instrumentation, create `prototype/` inside the adapted evidence directory, copy the three **formatted, uninstrumented** files there, and save the exact `prototype/manifest.json` fence below to that path (including its final newline). The archived manifest explicitly supplies the `originalSha256` and three `files[].name/sha256/bytes` entries required by `c-restore-original.cjs`; `c-split-mapping.json` is not that schema and is not a substitute. Verify the preserved original source SHA and each copied payload's byte length/SHA against that manifest before continuing. This is the recorded R02 prototype manifest, not a claim that a differently regenerated grouping has the same hashes; do not edit its hashes to waive a mismatch. A newly designed prototype needs its own newly reviewed manifest/provenance. The exact copy procedure at the recorded paths is:
+
+<!-- prettier-ignore -->
+```sh
+mkdir -p /home/jlima/.codex/evidence/ci-perf-02-r02/prototype
+cp /home/jlima/.codex/worktrees/ci-perf-02-r02-experimental/indicioCult/tests/unit/modules/nuvemshop/boundary-partition-a.test.ts /home/jlima/.codex/evidence/ci-perf-02-r02/prototype/
+cp /home/jlima/.codex/worktrees/ci-perf-02-r02-experimental/indicioCult/tests/unit/modules/nuvemshop/boundary-partition-b.test.ts /home/jlima/.codex/evidence/ci-perf-02-r02/prototype/
+cp /home/jlima/.codex/worktrees/ci-perf-02-r02-experimental/indicioCult/tests/unit/modules/nuvemshop/boundary-support.ts /home/jlima/.codex/evidence/ci-perf-02-r02/prototype/
+```
+
+Extract/save the manifest's exact JSON fence to `prototype/manifest.json` before invoking the guarded rollback. No missing artifact needs to be invented. The appendix includes its SHA-256 in the table alongside the actual snapshot files' recorded hashes. Subsequent rollback-protocol validation used a separate synthetic temporary checkout: dry-run preserved all files, an intentionally changed candidate file was rejected without writes, and the restored matching snapshot then rolled back exactly while preserving an unrelated sentinel. This is file-operation validation, not a new TypeScript/Vitest benchmark or a repair of earlier failures.
+
 For detailed profiling, instrument baseline `boundary.test.ts` in standalone mode. Instrument candidate `boundary-support.ts` in support mode and both partition files in registration mode. Each target is backed up before alteration. Use the exact same prelude/transform bytes on both sides; the registration mode redirects direct TypeScript calls to support-owned measurement wrappers. Restore these temporary alterations from their verified backups before normal check/build. The C rollback additionally verifies the uninstrumented prototype hashes before reinstating the exact original monolith and deleting only the three known prototype files.
 
-The instrumentation adds observation, including WeakMap source-content fingerprints; it does not introduce a Program, TypeChecker or diagnostics cache. Assertions, negative paths, callback epochs and original timeouts remain unchanged. Its observer substitutes exact workspace text wherever that token occurs; the independent review checked actual captured paths for prefix-at-path behavior. The derived analyzer additionally normalizes the raw resolution name's exact worktree text, preserving the initial mismatch and unchanged JSONL. It does not remove diagnostic codes/messages/positions. Heap values are worker endpoints, RSS tree values are sampled sums with shared-page double counting, and reporter file timestamps are explicitly non-monotonic. Full-command wall is external monotonic time. Per-family sums cannot be added to parallel command wall.
+The instrumentation adds observation, including WeakMap source-content fingerprints; it does not introduce a Program, TypeChecker or diagnostics cache. Assertions, negative paths, callback epochs and original timeouts remain unchanged. Its observer substitutes exact workspace text wherever that token occurs, including `source.text` before fingerprinting. There is no separate raw-text digest in the measured profiles; source-digest equality is normalized equality only. Independent path-field checks do not establish raw source-byte equality. The derived analyzer additionally normalizes the raw resolution name's exact worktree text, preserving the initial mismatch and unchanged JSONL. It does not remove diagnostic codes/messages/positions. Heap values are worker endpoints, RSS tree values are sampled sums with shared-page double counting, and reporter file timestamps are explicitly non-monotonic. Full-command wall is external monotonic time. Per-family sums cannot be added to parallel command wall.
 
 The command ledger below contains every timed child command, including separately labelled setup/formatting, and the explicit profile destination. Preparation is not folded into test-command wall. For resource collection, invoke the corresponding Python runner with the label before that child command: `run.py` for untouched full/check/build/setup commands, `run-instrumented.py` for profile commands. Supply BOUNDARY_PROFILE to the runner environment for profile commands. The source/hash table and exact fences make the observer and comparison behavior reviewable. Original raw stdout/stderr, memory samples and per-case compiler traces remain private local evidence; reviewed aggregate observations and every failing identity are in the report. No remote performance extrapolation or validated speedup is implied.
 
@@ -138,6 +150,7 @@ env NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_SITE_URL=https://ci-perf-r02.invalid N
 | c-identity-check.cjs                 | `4f7c904edc6cba983346dcd34c25e8f6b8440b60ed80e073d35997bc5627f130` |
 | c-restore-original.cjs               | `4dfc99dc3c61b6397cbca90745f4cb657082873ac8093ebd692a6b95ee6f7590` |
 | c-family-freeze.json                 | `f3fee15f788dc260436894d8d8901d0cbe36f16b660533a983af5e96c002d6c5` |
+| prototype/manifest.json              | `7939bb15142f181a388ecd726d606ebc5f0a118721d69867219ee6b93cf7e038` |
 | scripts/run.py                       | `1f74e4117165d2337c5feef1b76c3da2941a37732e2d151152e057e2c17d97b9` |
 | scripts/run-instrumented.py          | `39ec40bbf4dd1d5fecf528b6264ced23d78fc9ebd53d10172df0b9c9a0c38be9` |
 | scripts/instrument.mjs               | `3c374e7bb7a1019e5149fffd65bf2b1980493d8a455afc3bf74efe5452217be2` |
@@ -539,6 +552,33 @@ console.log(JSON.stringify({restored: monolith, sha256: hash(fs.readFileSync(mon
     "b": 1218.5
   },
   "baselineFailureCount": 3
+}
+```
+
+## prototype/manifest.json
+
+<!-- prettier-ignore -->
+```json
+{
+  "baseline": "42bb6e4f21254854d232ae8e8422c949234e3c0f",
+  "originalSha256": "7e743bc104720fd6b6805d75310fa82ff75b4afc84c99b7d80d43c26b1ff5d50",
+  "files": [
+    {
+      "name": "boundary-partition-a.test.ts",
+      "sha256": "75782e80923bf1e2c7d1e2d887dfa40b0e6970d2feea0d55f78d05e0a580b6d1",
+      "bytes": 78464
+    },
+    {
+      "name": "boundary-partition-b.test.ts",
+      "sha256": "f36f719880c2ef7d57109ec2cd91fdbeddc716959044fa4716d4d9bffcc0e41b",
+      "bytes": 104538
+    },
+    {
+      "name": "boundary-support.ts",
+      "sha256": "f927b10c9674b95bc421cfc0029e8508b6e78929ef77d331a03dc75bb76d46de",
+      "bytes": 42453
+    }
+  ]
 }
 ```
 
