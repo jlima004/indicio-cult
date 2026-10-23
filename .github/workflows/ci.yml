@@ -61,6 +61,7 @@ jobs:
       - name: End-to-end smoke tests
         run: npm run test:e2e
         env:
+          DEBUG: 'pw:webserver'
           MAINTENANCE_MODE: 'false'
           SUPABASE_SERVICE_ROLE_KEY: ci-unused-foundation-e2e
 
