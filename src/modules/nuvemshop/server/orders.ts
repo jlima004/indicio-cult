@@ -5,6 +5,7 @@ import { NuvemshopLookupIncompleteError } from './errors'
 import { createNuvemshopPage, readNuvemshopLookupNavigation, type Page } from './pagination'
 import { failProtocol, failValidation } from './schemas/fail'
 import { parseCallerDecimalId, readOrderNumber } from './schemas/ids'
+import { readContactEmail } from './schemas/text'
 import {
   parseFulfillmentOrder,
   parseFulfillmentOrderList,
@@ -48,6 +49,42 @@ export type ListOrdersInput = {
   readonly signal?: AbortSignal
   readonly correlationId?: string
 }
+
+export type DiscoverOrdersByEmailInput = {
+  readonly email: string
+  readonly page: number
+  readonly perPage: number
+  readonly signal?: AbortSignal
+  readonly correlationId?: string
+}
+
+/** One observed page. Provider `q` never proves identity, ownership, absence, or coverage. */
+export type OrderEmailDiscoveryPage = {
+  readonly candidates: readonly Order[]
+  readonly page: number
+  readonly perPage: number
+  readonly totalCount?: number
+  readonly nextPage?: number
+  readonly previousPage?: number
+  readonly coverage: 'unproven'
+}
+
+export const ORDER_EMAIL_DISCOVERY_HANDOFF = {
+  adapter:
+    'one-page q discovery, exact contactEmail filter, coverage always unproven, typed errors, no identity',
+  identity:
+    'session and verified email are external; never supplied as a trusted or verified flag on this input',
+  orders:
+    'walk finite pages, apply the consumer identity-normalization policy if and when it is materialized, exact-compare contactEmail, and decide link, coverage, and durable projection; never present this page as a final list',
+  notProvenByThisApi: [
+    'identity',
+    'ownership',
+    'absence',
+    'integral index coverage',
+    'complete account order list',
+    'disclosure',
+  ],
+} as const
 
 function readInput(
   value: unknown,
@@ -443,4 +480,91 @@ export async function findOrderByNumber(input: {
   if (matches.length === 1) return matches[0]!
   if (matches.length === 0) return null
   throw new NuvemshopLookupIncompleteError({ operation: 'lookup', resourceKind: 'order' })
+}
+
+function readDiscoveryInput(value: unknown): Record<string, unknown> {
+  const allowed = ['email', 'page', 'perPage', 'signal', 'correlationId']
+  const required = ['email', 'page', 'perPage']
+  try {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      failValidation('order')
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype) failValidation('order')
+    const keys = Reflect.ownKeys(value)
+    if (
+      keys.length > allowed.length ||
+      keys.some((key) => typeof key !== 'string' || !allowed.includes(key))
+    ) {
+      failValidation('order')
+    }
+    const snapshot: Record<string, unknown> = {}
+    for (const key of allowed) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      if (keys.includes(key) !== (descriptor !== undefined)) failValidation('order')
+      if (descriptor === undefined) {
+        if (required.includes(key)) failValidation('order')
+        continue
+      }
+      if (!('value' in descriptor) || (required.includes(key) && descriptor.value === undefined)) {
+        failValidation('order')
+      }
+      snapshot[key] = descriptor.value
+    }
+    return snapshot
+  } catch {
+    failValidation('order')
+  }
+}
+
+function readDiscoveryEmail(value: unknown): string {
+  if (typeof value !== 'string' || readContactEmail(value) !== value) failValidation('order')
+  return value
+}
+
+function readDiscoveryInteger(value: unknown, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    failValidation('order')
+  }
+  return value
+}
+
+/** Exact contactEmail equality. Null, missing, accessors, and non-strings are not matches. */
+export function orderContactEmailMatches(order: Order, email: string): boolean {
+  try {
+    if (order === null || typeof order !== 'object') return false
+    const descriptor = Object.getOwnPropertyDescriptor(order, 'contactEmail')
+    if (descriptor === undefined || !('value' in descriptor)) return false
+    const contactEmail: unknown = descriptor.value
+    return typeof contactEmail === 'string' && typeof email === 'string' && contactEmail === email
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Discover order candidates for one explicit page.
+ * `coverage` stays `unproven`: missing `nextPage` is not exhaustion of the provider index.
+ */
+export async function discoverOrdersByEmail(
+  input: DiscoverOrdersByEmailInput,
+): Promise<OrderEmailDiscoveryPage> {
+  const record = readDiscoveryInput(input)
+  const email = readDiscoveryEmail(record.email)
+  const page = readDiscoveryInteger(record.page, 1, Number.MAX_SAFE_INTEGER)
+  const perPage = readDiscoveryInteger(record.perPage, 1, 200)
+  const observed = await listOrders({
+    page,
+    perPage,
+    q: email,
+    ...requestOptions(record),
+  })
+  return {
+    candidates: observed.items.filter((item) => orderContactEmailMatches(item, email)),
+    page: observed.page,
+    perPage: observed.perPage,
+    ...(observed.totalCount === undefined ? {} : { totalCount: observed.totalCount }),
+    ...(observed.nextPage === undefined ? {} : { nextPage: observed.nextPage }),
+    ...(observed.previousPage === undefined ? {} : { previousPage: observed.previousPage }),
+    coverage: 'unproven',
+  }
 }
