@@ -216,3 +216,52 @@ describe('Nuvemshop runtime config', () => {
     expect(() => getNuvemshopHmacConfig()).toThrow(key)
   })
 })
+
+describe('NUV-15 minimal trusted webhook store config', () => {
+  async function webhookConfig(): Promise<() => { storeId: string }> {
+    const config = (await loadConfig()) as unknown as Record<string, unknown>
+    expect(
+      config.getNuvemshopWebhookConfig,
+      'NUV-15 trusted store getter capability is absent',
+    ).toBeTypeOf('function')
+    return config.getNuvemshopWebhookConfig as () => { storeId: string }
+  }
+
+  it('reads only trusted store without API token, app ID or HMAC material', async () => {
+    stubEnv({
+      NUVEMSHOP_ACCESS_TOKEN: undefined,
+      NUVEMSHOP_CLIENT_SECRET: undefined,
+      NUVEMSHOP_APP_ID: undefined,
+    })
+    expect((await webhookConfig())()).toEqual({ storeId: apiValues.NUVEMSHOP_STORE_ID })
+  })
+
+  it.each(['1', '000123', apiValues.NUVEMSHOP_STORE_ID])(
+    'preserves existing schema acceptance and exact digits %s',
+    async (storeId) => {
+      stubEnv({ NUVEMSHOP_STORE_ID: storeId })
+      expect((await webhookConfig())()).toEqual({ storeId })
+    },
+  )
+
+  it.each([undefined, '', ' ', '0', '000', '-12', '1.2', '1e3', '１２', '12\n'])(
+    'rejects existing invalid store configuration %j',
+    async (storeId) => {
+      stubEnv({ NUVEMSHOP_STORE_ID: storeId })
+      expect(await webhookConfig()).toThrow(/NUVEMSHOP_STORE_ID/)
+    },
+  )
+
+  it('reads trusted configuration afresh for every call', async () => {
+    const getter = await webhookConfig()
+    expect(getter().storeId).toBe(apiValues.NUVEMSHOP_STORE_ID)
+    stubEnv({ NUVEMSHOP_STORE_ID: '7' })
+    expect(getter().storeId).toBe('7')
+  })
+
+  it('retains dynamic public Nuvemshop key rejection', async () => {
+    const getter = await webhookConfig()
+    stubEnv({ NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET: '' })
+    expect(getter).toThrow(/NEXT_PUBLIC_NUVEMSHOP_UNKNOWN_SECRET/)
+  })
+})
