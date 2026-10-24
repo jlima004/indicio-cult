@@ -52,6 +52,12 @@ export function getNuvemshopApiConfig() {
   }
 }
 
+// Webhook store authorization does not require API access credentials.
+export function getNuvemshopWebhookConfig() {
+  const config = parseEnv(nuvemshopApiSchema.pick({ NUVEMSHOP_STORE_ID: true }), readProcessEnv())
+  return { storeId: config.NUVEMSHOP_STORE_ID }
+}
+
 // Somente o app secret current; HR-03 ainda governa qualquer rotação futura.
 // Isto fornece material ao verifier futuro, sem implementar HMAC ou ACK.
 export function getNuvemshopHmacConfig() {
