@@ -1,0 +1,80 @@
+# Indicio Cult — NUV-HR-07 | Ratificação humana da arquitetura do ledger (MVP)
+
+> **Estado deste artefato:** `HUMAN_RATIFIED_DIRECTION / NORMATIVE_MATERIALIZATION_PENDING / IMPLEMENTATION_GATE_PENDING`.
+> **Data:** 2026-10-24 (America/Sao_Paulo).
+> **Projeto:** `jlima004/indicio-cult`.
+> **Baseline de referência:** `e96ac9763f77056fc2c7acdf01af4394ea0cf188` (`main`, merge NUV-15/PR #61).
+> **Fonte técnica:** dossiê HR-07 v2, SHA-256 `abdf7b7589dab1985ef9193f49c819a732f1ae3cc330b70b6c6cf937fffe4e1c`.
+> **Recibo da revisão documental r2:** SHA-256 `2a456d0146c89088cafc07fd2b4a2bb781303aa2bee59f70dc09958b743f16af` (conforme recibo enviado pelo executor).
+> **Fonte de autorização:** declaração expressa do responsável humano nesta conversa em 2026-10-24, aprovando a recomendação PostgreSQL/Supabase sem Redis, a direção D1–D6/D8/D9 e as adaptações MVP; **URL/ID imutável da decisão no GitHub ainda pendente**. O presente arquivo foi preparado fora da árvore do repositório; não é PR, merge nem implementação.
+
+## 1. Efeito e limites da ratificação
+
+Ratificada a **direção arquitetural**: PostgreSQL gerenciado no Supabase será a fonte única de verdade do intake Nuvemshop, em schema privado, com SQL/TLS e credencial técnica PostgreSQL restrita, sem Redis nesta primeira implementação. O responsável operacional único do MVP é o próprio owner humano; não foi designado substituto. Essa concentração de responsabilidade é risco aceito **para planejamento MVP**, não prova de operação assistida 24×7.
+
+Esta ratificação **não** cria credenciais, provisiona roles, aplica migrations, instala bibliotecas, habilita webhooks, executa testes, fecha automaticamente os gates de implementação, autoriza merge/deploy nem altera a topologia de produção. A materialização normativa versionada e as provas de transporte/segurança são subsequentes e rastreáveis. HR-02/03/06/08 continuam independentes. HR-07 exige fechamento explícito do registro e da matriz de pré-requisitos, sem reinterpretar os gates de NUV-16/17/19/20/24.
+
+## 2. Decisões D1–D10
+
+| ID | Decisão humana / política ratificada | Evidência ou limite ainda pendente |
+|---|---|---|
+| D1 — backend e transporte | PostgreSQL Supabase único. Runtime Node.js **22.23.0** como alvo declarado. Driver SQL **`pg`** (node-postgres), versão exata compatível a fixar no lockfile da task. **Supavisor em session mode** (`5432`) para o runtime, com TLS e conexão de role específica; sem Redis. | Validar o endpoint real de Session Pooler, autenticação de custom role, certificados, capacidade e conectividade no ambiente de destino. Divergência com `.nvmrc` da baseline (22.23.1 reportado pelo dossiê) requer reconciliação e teste; **não** alterar Node global/workflow implicitamente. Para migrations/administradores, usar caminho oficial adequado separado do pool runtime. |
+| D2 — atomicidade | Um commit durável registra receipt e intenção mínima normalizada (incluindo vínculo) ou nenhum deles. Unknown elegível gera apenas receipt terminal `ignored_unknown_event`. Commit sem confirmação nunca é relatado como sucesso; identidade local estável suporta reconciliação sem deduplicação por conteúdo. | Invariante de banco e operação transacional devem ser testados na NUV-16, **não** adiados para NUV-17. Tratamento de COMMIT ambíguo deve ser fail-closed; injeção adversarial específica pode ficar diferida no MVP. |
+| D3 — dados e segurança | Schema privado, não exposto pela Data API; acesso SQL/TLS com role runtime separada de role de migrations. Persistir somente allowlist mínima; IDs decimais exatos como texto. Nada de raw body, PII extra, HMAC, secrets, headers arbitrários ou URLs do provedor. | Desenho de grants, RLS, funções, ownership e inviolabilidade receipt→work será revisado antes de migração; runtime não terá privilégios administrativos nem DML parcial que contorne a operação atômica. Role técnica **não** é conta pessoal do owner nem usuário do Supabase Auth. |
+| D4 — retenção | Para business/lifecycle/unknown: mínimo de 14 dias desde intake **e** 14 dias após terminal, o que expirar por último. Replay manual controlado até 7 dias desde intake. Nunca expurgar pending, in-flight, quarentena ou incidentes sob hold. | Política de backup/PITR, expurgo em lote e capacidade precisam de prova antes de ativação operacional; as janelas não se aplicam automaticamente a privacy. Não há job de expurgo nesta decisão. |
+| D5 — worker futuro | NUV-17 usará processo independente do servidor Next, com PG fonte de verdade; claim transacional, lease, heartbeat e fencing. Valores do dossiê (lease 60 s, heartbeat 20 s, polling 5 s) são **parâmetros iniciais**, sujeitos a teste/tuning na NUV-17. | Nenhum worker, scheduler, claim ou lease é implementado na NUV-16. Não existe garantia de exactly-once para efeitos externos. |
+| D6 — recuperação | NUV-16 precisa permitir leitura por conexão/processo independente do trabalho confirmado após a transação. NUV-17 fará recovery operacional, reclaim/retry/quarentena. | Reinício forçado do DB, restauração de desastre e RPO/RTO regionais não serão demonstrados no MVP; não atribuir `PASS` a essas capacidades. |
+| D7 — operação e alerta | Owner humano único do MVP, sem substituto, expressamente aceito nesta fase. Eventos materialmente perigosos não podem ser tratados como sucesso: falha/indeterminação de commit, receipt sem work, backlog, perda de heartbeat, quarentena e retenção inválida. | Canal específico, mecanismo de notificação e runbook operacional executável permanecem `PENDING`; NUV-21/24 são responsáveis por instrumentação/ensaio. Ausência de substituto não equivale a cobertura 24×7; deve ser reavaliada antes da ativação pública. |
+| D8 — protocolo de ensaio | Aprovar o protocolo completo do dossiê v2 **como backlog de prova**, com escopo MVP reduzido nesta decisão. Na NUV-16, exigir prova real de BEGIN/COMMIT/ROLLBACK, atomicidade receipt+work, unknown terminal, falha normal de gravação e leitura persistida por outra conexão no projeto Supabase atual. | Diferir testes destrutivos e caros: injeção de COMMIT ambíguo, SIGKILL/restart do banco, stress concorrente, ataque adversarial a roles e corrida expurgo×replay. São `DEFERRED_UNPROVEN`, nunca `PASS`; testes básicos de grants por metadados/roles permanecem requisito de segurança. Antes de ACK público, revisar riscos e executar as provas exigidas pelo contrato das tasks aplicáveis. |
+| D9 — privacy | Núcleo transacional versionado e extensível, sem schema de payload privacy, proprietário funcional, retenção privacy, resposta ou dados pessoais adicionais. NUV-20 especificará projeção própria após HR-08. | Não instalar os três callbacks privacy nem assumir que o HMAC da API se aplique operacionalmente a eles. |
+| D10 — rastreabilidade e autorização | Aprovação da direção arquitetural prestada pelo owner na conversa em 2026-10-24; identidade operacional: owner único do MVP. Este registro referencia o SHA-256 do dossiê ratificado e enumera os desvios ratificados frente à proposta. | **PENDING_MATERIALIZATION** até o registro canônico no repositório/PR vinculando a decisão humana, o diff final e os recibos. A autorização de implementação e seus limites devem constar separadamente na PR. Aprovação documental não autoriza merge, deploy ou mutação remota. |
+
+## 3. Escolha de SQL/TLS e credenciais
+
+Escolha operacional preferencial: **Supavisor shared session pooler, porta 5432**, usando a connection string fornecida pelo **Connect** do projeto no Supabase. Não construir host/usuário por suposição. Para role custom, o username de pooler usa a forma `[ROLE].[PROJECT_REF]`, conforme documentação oficial. Esse transporte evita depender de IPv6 na VPS, não exige add-on IPv4 e suporta sessões para transação em uma única conexão. Evitar **transaction pooler 6543** nesta fase para não acrescentar restrições de prepared statements/sessão desnecessárias. Escolher o driver `pg` com `Pool`, adquirir um `PoolClient`, executar BEGIN/INSERTs/COMMIT ou ROLLBACK sempre na mesma conexão e liberá-la em `finally`, sob timeouts bounded.
+
+A decisão de usar o session pooler não é prova de conectividade real; validar TLS/certificado, rede e latência antes da implementação. Nunca desativar verificação TLS com `rejectUnauthorized:false` para forçar PASS.
+
+Definir uma role técnica runtime (nome lógico sugerido `nuvemshop_intake_runtime`, sujeito a colisões/verificação de convenção) com LOGIN, sem SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE, REPLICATION, DDL ou acesso a outros módulos. A role pessoal de operação **não** é necessária. Uma role separada de migration administra DDL de forma controlada. Não colocar credenciais do banco em NEXT_PUBLIC_* nem no Git. Não criar as roles agora; provisionamento/migrations exigem escopo e aprovação da PR pertinente. Se o desenho exigir função `SECURITY DEFINER`, isolar em schema privado, usar owner NOLOGIN de privilégio mínimo, search_path seguro e EXECUTE explicitamente revogado de PUBLIC/anon/authenticated; revisão especializada obrigatória.
+
+## 4. Invariantes que NÃO podem ser adiadas
+
+- Um receipt marcado processável não pode ser confirmado sem a intenção mínima de trabalho recuperável e vinculada, nem por DML parcial permitido à role runtime.
+- A operação de receipt/work deve ser atômica no PostgreSQL, não duas operações HTTP separadas.
+- Unknown aprovado por política explícita cria receipt terminal sem work, nunca ACK nessa task.
+- Falha comprovada ou indeterminação de commit resulta em falha segura e nunca confirma aceite sem prova.
+- Reentregas legítimas recebem recibos locais distintos; tentativa interna repetida pode reutilizar identidade estável para reconciliação; não usar hash do payload nem `(store,event,resource)` como chave de deduplicação global.
+- Projeções de `app/suspended` e `app/resumed` não inventam IDs. `app/uninstalled` usa App ID, não delivery ID.
+- Nenhuma rota de webhook, worker ou ACK será criada na NUV-16.
+
+A implementação do invariante inverso receipt→work precisa de enforcement no próprio banco por permissões e/ou constraints/função transacional com teste independente, em vez de confiar exclusivamente em um `try/catch` do aplicativo. O desenho exato ficará para a PR NUV-16, sob revisão de segurança.
+
+## 5. Ambiente de teste designado pelo owner
+
+O owner designa o **projeto Supabase atualmente conectado** como ambiente **não produtivo para dados de negócio** e solicita que os testes reais de compatibilidade sejam realizados nele. A consulta ao conector Supabase em 2026-10-24 encontrou projeto `indicioCult`, `ACTIVE_HEALTHY`, PostgreSQL 17.6.1.155 (engine 17). Essa observação não comprova o plano, as quotas, as strings SQL/TLS, o isolamento efetivo, backups nem ausência de consumidores do ambiente.
+
+Como existe dependência conhecida do `/api/health` do site publicado em relação ao Supabase, os testes **não podem** pausar/reiniciar/desligar o projeto, alterar roles compartilhadas, quebrar conectividade ou modificar dados existentes. Usar schema/namespace de ensaio, nomes e identidades sintéticas, acesso restrito, migrations revisadas e cleanup seguro; registrar isolamento e owners dos objetos. Se a segregação não for demonstrável, bloquear testes remotos e utilizar PostgreSQL local/descartável **somente como apoio**, sem confundi-lo com a prova de compatibilidade solicitada.
+
+A matriz mínima NUV-16 executada no Supabase atual deve incluir: transaction commit, rollback por falha, terminal unknown sem work, leitura por nova conexão, integridade de FK/constraint/restrição, verificação básica de grants via catálogo/role controlada, falhas de autorização normal (não ataques extensivos) e ausência de PII/segredos no armazenamento. Resultado, SQL, paths e credenciais devem ser redigidos e rastreáveis. Os cenários avançados diferidos não são ensaios substituídos por mocks.
+
+Não aplicar mudanças de schema, criar roles ou rodar testes agora; o presente documento apenas prepara a decisão.
+
+## 6. Gates remanescentes antes da NUV-16
+
+1. **MATERIALIZATION** — criar PR documental separada de HR-07; reconciliar SPEC/PLAN/TODO de modo mínimo, preservando histórico e fronteiras HR-02/03/06/08; obter revisão adversarial, CI e aprovação humana de merge documental vinculada ao HEAD. O merge da PR documental pode disparar deploy automático: exigir autorização própria.
+2. **TRANSPORT_VERIFICATION** — provar Session Pooler SQL/TLS, role custom, limites de conexão, trusted cert e ambientação Node 22; não exigir credencial real em documentação.
+3. **NODE_VERSION_RECONCILIATION** — validar Node 22.23.0 selecionado pelo owner versus `.nvmrc` 22.23.1 da baseline e pipeline, sem downgrade silencioso.
+4. **ROLE_AND_INVARIANT_DESIGN** — definir SQL versionado e a superfície mínima de privilégios, com revisão especializada, sem executar migration remota neste estágio.
+5. **TEST_ENV_ISOLATION** — provar que a segregação do projeto Supabase atual evita efeitos sobre `health`, login e dados existentes; autorizar aplicação controlada do schema de teste na implementação.
+6. **RELEASE** — PR técnica NUV-16 Draft, RED/GREEN, testes reais mínimos, revisão independente, CI. Merge/deploy apenas após liberação humana no HEAD, considerando migration e risco operacional; nenhum webhook ativado.
+
+A direção da HR-07 está **humanamente ratificada**, mas sua eficácia normativa, as verificações e a autorização de implementação seguem controles separados. Não promover `NUV-16 / READY_FOR_IMPLEMENTATION` até satisfazer o gate de materialização e registrar as pré-condições técnicas necessárias.
+
+## 7. Referências
+
+- Dossiê HR-07 v2, SHA-256 `abdf7b7589dab1985ef9193f49c819a732f1ae3cc330b70b6c6cf937fffe4e1c`.
+- Recibo final Fase A, SHA-256 `e561c8856a478b5abc9cbb96536a350ffd777e96a80037eb40129a4d48`.
+- [Supabase: Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres).
+- [Supabase: Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+- [PostgreSQL 17: Transactions](https://www.postgresql.org/docs/17/tutorial-transactions.html).
+- `docs/specs/SPEC-nuvemshop.md`; `tasks/nuvemshop/plan.md`; `tasks/nuvemshop/todo.md`; `tasks/nuvemshop/NUV-15-evidence.md`.
