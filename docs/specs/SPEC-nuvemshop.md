@@ -16,6 +16,14 @@
 
 Este documento separa contratos upstream do repositório, **fatos externos verificados**, **decisões de design do projeto** e **decisões humanas/account-specific**. Design do projeto não é garantia do provider.
 
+## HR-07 — direção ratificada e materialização documental — 2026-10-24
+
+O [registro canônico HR-07](../../tasks/nuvemshop/HR-07.md) materializa a decisão humana e o dossiê v2 vinculados por SHA-256: **HUMAN_RATIFIED_DIRECTION / NORMATIVE_MATERIALIZATION_READY_FOR_HUMAN_REVIEW**. A aprovação da direção já foi prestada; eficácia normativa depende do merge humano autorizado desta PR, sem autorizar implementação, mutação remota ou deploy. Após esse merge, o registro prevalece somente sobre HR-07 `OPEN`/backend sem escolha e ausência de decisão arquitetural nas cláusulas anteriores, preservadas como histórico; não fecha NUV-16/17 nem altera o DAG ou HR-02/03/06/08.
+
+A direção é PostgreSQL/Supabase único, schema privado, `pg` e Supavisor Session Pooler 5432 preferenciais, condicionados à prova SQL/TLS/custom role/permissões. Node **22.23.0 solicitado pelo owner** deve ser reconciliado com `.nvmrc` **22.23.1** antes da implementação; nenhuma configuração é alterada aqui. Owner humano é o único responsável operacional MVP, sem substituto; canal/runbook seguem pendentes em NUV-21/24. NUV-16 só inicia depois da materialização normativa e dos pré-requisitos técnicos aplicáveis registrados em HR-07.
+
+A matriz HR-07 D1–D10 preserva atomicidade real receipt+work/vínculo, enforcement inverso receipt→work e acesso mínimo em NUV-16. Os cenários avançados dispensados de seu aceite MVP ficam **DEFERRED_UNPROVEN**, nunca PASS; o protocolo completo é backlog de prova. A designação do Supabase conectado como ambiente futuro não autoriza testes/mutações nesta PR; antes do ACK público, continuam exigidos revisão de riscos e contratos de prova das tasks aplicáveis. Privacy segue HR-08/NUV-20; nenhuma policy de unknown é criada por esta ratificação.
+
 ## NUV-DAG-01 materialization — 2026-10-21
 
 NUV-DAG-01 materialization record: D1=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D2=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D3=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D4=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D5=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; approved proposal HEAD=70f44be6aaaf64ad98e7bb96c890aefd117472b1; approval date=2026-10-21; materialization PR=https://github.com/jlima004/indicio-cult/pull/53. These rendered amendments become effective only on the authorized human merge of this materialization PR; before that merge the prior contract remains effective. No implementation or release authorization follows.

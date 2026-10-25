@@ -12,6 +12,14 @@
 | Tasks                          | [todo.md](./todo.md); IDs `NUV-01` a `NUV-25`                                                          |
 | Foundation                     | COMPLETE; [plano](../plan.md) e [histórico](../todo.md) preservados                                    |
 
+## HR-07 — direção ratificada e materialização documental — 2026-10-24
+
+[HR-07](./HR-07.md) registra **HUMAN_RATIFIED_DIRECTION / NORMATIVE_MATERIALIZATION_READY_FOR_HUMAN_REVIEW**, com decisão humana e dossiê v2 arquivados/hashados e matriz própria D1–D10. Após merge humano autorizado desta PR documental, sua precedência limitada substitui as afirmações históricas HR-07 `OPEN`, infraestrutura “sem escolha”, `NUV-OPEN-DURABILITY` sem decisão e bloqueio exclusivamente por ausência da direção arquitetural. Preservar os snapshots, DAG, checklists e demais gates; ratificação não comprova backend/recovery nem autoriza implementação, mutação remota, merge ou deploy.
+
+PostgreSQL/Supabase sem Redis, schema privado, `pg` e Supavisor Session Pooler 5432 são a direção preferencial, condicionada à prova SQL/TLS/custom role/permissões. Antes de NUV-16, concluir materialização normativa e reconciliar transporte, Node **22.23.0 solicitado** versus `.nvmrc` **22.23.1**, desenho de role/invariante e isolamento/autorização do ambiente de teste. Nenhum pacote, config, role SQL ou usuário Supabase Auth é criado aqui. Owner humano é o único responsável operacional MVP, sem substituto; canais/runbook continuam pendentes.
+
+NUV-16 preserva provas reais de transação, atomicidade receipt+work/vínculo/invariante inverso, leitura independente e acesso mínimo. As exceções avançadas MVP descritas em HR-07 são **DEFERRED_UNPROVEN**, nunca PASS nem dispensa dos contratos das demais tasks antes do ACK público. NUV-17/19/21/24 mantêm suas responsabilidades; privacy fica em HR-08/NUV-20. O projeto Supabase conectado foi designado para prova futura sob segregação comprovada; esta PR não autoriza executar testes remotos nem alterar banco.
+
 ## NUV-DAG-01 materialization — 2026-10-21
 
 NUV-DAG-01 materialization record: D1=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D2=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D3=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D4=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D5=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; approved proposal HEAD=70f44be6aaaf64ad98e7bb96c890aefd117472b1; approval date=2026-10-21; materialization PR=https://github.com/jlima004/indicio-cult/pull/53. These rendered amendments become effective only on the authorized human merge of this materialization PR; before that merge the prior contract remains effective. No implementation or release authorization follows.

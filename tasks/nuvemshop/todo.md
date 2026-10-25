@@ -14,6 +14,10 @@ A execução documental de 2026-10-01 não iniciou NUV-03/07. O snapshot corrent
 
 **Atualização documental — 2026-10-20:** [NUV-12-COVERAGE-PARTIAL](./NUV-12-COVERAGE-PARTIAL.md) está **PROPOSED / PENDING HUMAN APPROVAL**. As aprovações históricas acima não a ratificam. NUV-12 integral está bloqueada pela prova de cobertura multi-page; nenhum checklist técnico é marcado nesta execução. Aprovação humana explícita e merge da emenda normativa antecedem código parcial. NUV-22/23/24/25 continuam bloqueadas pela NUV-12 completa, sem alteração do DAG.
 
+## HR-07 — direção ratificada e materialização documental — 2026-10-24
+
+[HR-07](./HR-07.md): **HUMAN_RATIFIED_DIRECTION / NORMATIVE_MATERIALIZATION_READY_FOR_HUMAN_REVIEW**. Aprovação arquitetural já prestada, com fontes/hash e matriz D1–D10; eficácia normativa depende do merge humano autorizado desta PR. Depois do merge, a precedência se limita à ausência histórica de decisão HR-07/backend e ao bloqueio causado somente por ela, inclusive NUV-16/17/18. Não marcar checklists, fechar tasks ou promover READY por essa ratificação. NUV-16 só inicia após materialização normativa e reconciliação dos pré-requisitos técnicos aplicáveis; nenhuma implementação/mutação remota/merge/deploy é autorizada aqui.
+
 ## NUV-DAG-01 materialization — 2026-10-21
 
 NUV-DAG-01 materialization record: D1=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D2=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D3=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D4=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; D5=https://github.com/jlima004/indicio-cult/pull/52#issuecomment-6324159211; approved proposal HEAD=70f44be6aaaf64ad98e7bb96c890aefd117472b1; approval date=2026-10-21; materialization PR=https://github.com/jlima004/indicio-cult/pull/53. These rendered amendments become effective only on the authorized human merge of this materialization PR; before that merge the prior contract remains effective. No implementation or release authorization follows.
@@ -203,6 +207,10 @@ O harness verifica a propriedade limitada de isolamento por grafo e ownership co
 - **PR/evidência:** `codex/nuv-15-event-schema`; `feat(nuvemshop): type verified business events`; revisão segurança, fixtures e CI.
 
 ### NUV-16 · Ledger durável de intake
+
+**Precedência HR-07 (2026-10-24), condicionada ao merge documental autorizado:** a [matriz HR-07](./HR-07.md) ratifica PostgreSQL/Supabase sem Redis e a preferência `pg`/Session Pooler 5432, sem instalar pacote ou selecionar versão implicitamente. Os campos BLOCKED/TBD abaixo são preservados como histórico da ausência de decisão, não prova de prontidão atual. Materialização, prova SQL/TLS/custom role/permissões, reconciliação Node **22.23.0 solicitado** versus `.nvmrc` **22.23.1**, desenho do invariante e isolamento/autorização do ambiente de teste continuam pendentes antes da implementação. Owner humano é o único responsável operacional MVP, sem substituto.
+
+**Prova MVP preservada:** NUV-16 exige BEGIN/COMMIT/ROLLBACK reais, receipt+work/vínculo atômicos e enforcement inverso receipt→work no banco, inclusive contra DML parcial da role runtime; unknown terminal sem work; falha normal de escrita; leitura por conexão independente; grants básicos/roles/autorização normal e ausência de PII extra/segredos. Os ensaios avançados enumerados em HR-07 (COMMIT ambíguo adversarial, SIGKILL/restart, stress, ataques extensivos a roles, expurgo×replay e desastre/RPO/RTO) são **DEFERRED_UNPROVEN**, nunca PASS; indeterminação continua fail-closed. Esta redução é limitada ao aceite MVP de NUV-16; os contratos de prova das demais tasks aplicáveis e revisão de riscos antes de ACK público permanecem. Prova futura no Supabase designado exige segregação demonstrada e autorização específica; nenhuma execução remota ocorre nesta PR. Não antecipar worker/claim/lease/rotas/ACK nem decisões privacy HR-08/NUV-20.
 
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** 2xx antes de persistência perde eventos.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-15, **HR-07**. **Escopo/arquivos prováveis:** interface em `src/modules/nuvemshop/server/durability/**` e backend/schema/migration **TBD somente após HR-07**; `tests/unit/modules/nuvemshop/durability-intake.test.ts`.

@@ -1,0 +1,222 @@
+# NUV-16 — HR-07 Decision Dossier
+
+Data: 2026-10-24, America/Sao_Paulo. Revisão documental v2 para adjudicação humana.
+
+**HR_07_NOT_APPROVED**
+
+**NUV-16 / BLOCKED_BY_NUV_HR_07 / ARCHITECTURAL_ADJUDICATION_REQUIRED**
+
+Este documento é uma proposta fora da árvore versionada. Não fecha HR-07, não seleciona tecnologia em nome do owner e não autoriza implementação, dependências, provisionamento, migration remota, merge ou deploy. Todos os números operacionais abaixo são propostas locais, não garantias do provedor ou configurações verificadas. Provas implementadas pertencem a NUV-16/17; não são pré-requisito circular para aprovar a arquitetura.
+
+## 1. Resultado e preflight
+
+| Item | Evidência atual |
+| --- | --- |
+| Repositório / checkout | `jlima004/indicio-cult`, `/home/jlima/Projetos/indicioCult` |
+| Branch / árvore | `main`, limpa antes da autoria do dossiê |
+| Baseline real após `git fetch origin` | HEAD = origin/main = `e96ac9763f77056fc2c7acdf01af4394ea0cf188` |
+| NUV-07 | [PR #34](https://github.com/jlima004/indicio-cult/pull/34), merged; candidate `9ae12ee2fa036df7ad6d2ce28f2f652c24f0b86d`; merge `be617b71c80c65d6621d22f966245514e97344c9`, ancestral da baseline |
+| NUV-14 | [PR #55](https://github.com/jlima004/indicio-cult/pull/55), merged; candidate `ed142a0c4f0dfc75f6b2327eab4f789f721d3b05`; merge `b305d8aa9771aafc8b08d73856412a8604c8f787`, ancestral da baseline |
+| NUV-15 | [PR #61](https://github.com/jlima004/indicio-cult/pull/61), merged; candidate `e863f7c305e2493063ac5284a1e58df623045898`; merge = baseline |
+| AUTH / HR-01 | AUTH GRANTED conforme SPEC linhas 36–47 e PLAN linhas 8–13/33–37; HR-01 CLOSED conforme `tasks/nuvemshop/HR-01.md:3–25`. O NOT GRANTED de HR-01 é snapshot anterior, explicitamente superado pela decisão posterior na SPEC/PLAN |
+| HR-07 | OPEN em SPEC §19/§23, PLAN:59/132/145 e TODO:205–212; nenhum registro inequívoco encontrado de decisão D1–D8 e autorização do backend |
+| PRs abertas | Nenhuma retornada na consulta atual do conector GitHub, filtro repositório + estado open |
+| Worktrees | Inventariadas por `git worktree list`; todas preservadas. Nenhuma worktree/branch de implementação NUV-16 criada |
+| Runtime local | Node v22.23.1, npm 10.9.8; `.nvmrc` 22.23.1; engines >=22.22.2 <23 |
+| Pacotes efetivamente instalados | Next 16.4.1; Vitest 5.0.1; TypeScript 5.9.3; Playwright 1.63.0; Supabase CLI 2.117.0; supabase-js 2.116.0 |
+| Ferramentas locais | Docker CLI e psql encontrados; isso não comprova daemon, banco isolado nem credenciais utilizáveis. Nenhum serviço iniciado |
+
+Busca de decisão: arquivos rastreados e histórico Git local, SPEC/PLAN/TODO/ADRs e evidências; busca GitHub em PRs por HR-07, HR07, durable, ledger e retenção, com 22 timelines de PRs pertinentes. Os resultados e limites estão nos recibos `/tmp/nuv-16/preflight-github-summary.json` e `/tmp/nuv-16/hr07-discussion-search-complete.json`; o snapshot Git está em `git-preflight-snapshot.json` e os hashes das fontes em `source-manifest.json`, no mesmo diretório. As aprovações D1–D5 do DAG em PR #52 e a ratificação NUV-12 da PR #51 têm escopo próprio: não aprovam HR-07. Nenhum outro registro humano autorizado foi fornecido nesta conversa. Ausência na busca não prova inexistência em sistemas externos; na ausência de evidência inequívoca, o gate permanece fechado. Busca de issues retornou zero resultados, sem ser usada isoladamente como prova de ausência.
+
+## 2. Fontes e contrato preservado
+
+Foram lidas as partes pertinentes da SPEC §§11/12/17/19/20/21, PLAN, TODO NUV-15–21, NUV-14/15/READINESS-01-evidence, ADR-004 e HR-01, além de webhook-schema/auth, errors, types, configuração Nuvemshop, Supabase, testes e CI/deploy. Âncoras locais importantes:
+
+- `docs/specs/SPEC-nuvemshop.md:593–729`: auth → validação → commit; unknown terminal; genericidade; estados/recovery; duplicatas.
+- `docs/specs/SPEC-nuvemshop.md:806–839`: observabilidade e redaction; `:927`: HR-07; `:954–1033`: critérios de sucesso.
+- `tasks/nuvemshop/plan.md:59/132/153/190`: backend sem escolha, decisão antes de implementação, dependências e CI preservadas.
+- `tasks/nuvemshop/todo.md:205–259`: responsabilidades distintas de NUV-16/17/18/19/20/21.
+- `src/modules/nuvemshop/server/webhook-schema.ts:13–111`: união dos sete topics, correlação local, política unknown síncrona confiável; não existe recibo/ACK.
+- `src/modules/nuvemshop/server/webhook-auth.ts`: verifier único; reutilizar autenticação existente. Nenhuma segunda estratégia de auth ou parser concorrente.
+- ADR-004 mantém HR-07 antes de NUV-16/17, HR-08 antes do contrato privacy e release humano por HEAD.
+
+Não foi identificada contradição material com a SPEC na proposta. Snapshots antigos que chamavam NUV-14/15 futuras são históricos; os merges atuais acima prevalecem para disponibilidade do código, sem ampliar autorização operacional.
+
+### Fatos externos reconferidos em 2026-10-24
+
+A [documentação oficial Webhook API 2025-03](https://nuvemshop.dev/en-US/api/resources/2025-03/webhook#retry-policies) informa resposta 2xx em 3 s e reentregas até 16 tentativas em aproximadamente 48 h. Também alerta para duplicatas e falta de ordenação. O ID de subscription não é delivery ID. Isso é contrato documental do conjunto API selecionado; entrega/configuração real e privacy não foram ensaiadas. Não estender a janela a privacy, nem considerar 48 h retenção suficiente. Uma entrega repetida legítima mantém identidade local própria.
+
+Fontes tecnológicas oficiais consultadas:
+
+1. [PostgreSQL 17 transactions](https://www.postgresql.org/docs/17/tutorial-transactions.html), [reliability](https://www.postgresql.org/docs/17/wal-reliability.html) e [WAL settings](https://www.postgresql.org/docs/17/runtime-config-wal.html): transação pode fornecer tudo-ou-nada; durabilidade exige configuração e armazenamento adequados. `synchronous_commit=off`, tabelas unlogged ou fsync desabilitado não satisfazem a proposta.
+2. [PostgreSQL locking SELECT](https://www.postgresql.org/docs/17/sql-select.html): `SKIP LOCKED` é candidato para fila, não prova de cobertura geral; claim/reclaim exigem atualização transacional e proteção contra claimant antigo.
+3. [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres), [roles](https://supabase.com/docs/guides/database/postgres/roles), [functions](https://supabase.com/docs/guides/database/functions) e [securing Data API](https://supabase.com/docs/guides/api/securing-your-api): transporte, grants e schema exposto são decisões distintas de RLS. Uma chave service_role amplia privilégios; função invoker não reduz os privilégios do caller.
+4. [PostgREST transactions](https://docs.postgrest.org/en/stable/references/transactions.html): cada request tem sua transação; duas chamadas SDK não formam uma transação conjunta. Documentação stable é genérica, não prova a versão/configuração remota; tipos locais indicam PostgREST 14.15.
+5. [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/), [transactions](https://redis.io/docs/latest/develop/using-commands/transactions/) e [WAIT](https://redis.io/docs/latest/commands/wait/): persistência e replicação precisam de configuração; `MULTI/EXEC` não oferece rollback de erro de execução; WAIT não torna Redis fortemente consistente.
+6. [Supabase changelog](https://supabase.com/changelog.md): consulta de atualidade, sem implementação de API. Configuração e capacidades efetivas continuam UNPROVEN.
+
+Guia Next instalado consultado conforme AGENTS.md: `node_modules/next/dist/docs/01-app/01-getting-started/17-deploying.md`, `02-guides/self-hosting.md` e `03-api-reference/04-functions/after.md`. A aplicação é Node/Docker; `after()` depende do processo e da duração da rota. Graceful shutdown não cobre SIGKILL ou falha do host e não substitui ledger/worker recuperável.
+
+## 3. Infraestrutura: existente, planejada e não comprovada
+
+| Capacidade | Evidência atual | Limite / decisão pendente |
+| --- | --- | --- |
+| App | `next.config.ts` standalone, Docker Node `server.js`, usuário não root | Não há worker independente ou imagem/comando worker versionado |
+| Deploy | Docker/Coolify/Traefik em deploy/README e ADR-002; workflow promove push/main após CI | Workflow é READ-ONLY. Limites reais de CPU/RAM, réplicas, rede, pool e restart de worker UNPROVEN; nenhum acesso ao VPS/Coolify |
+| Supabase | SDK/SSR, cliente admin server-only, config local Postgres major 17 | Não comprova capacidade operacional do ledger. Nenhuma migration SQL; tipos public Tables/Functions vazios não provam ausência de objetos em schemas privados/remotos |
+| Credenciais | admin lê service role no runtime; Nuvemshop usa getters lazy e boundary server-only | Nenhum valor foi lido ou exposto. Nova role/conexão SQL não existe como contrato autorizado; serviço admin atual ignora RLS |
+| Rede | App usa HTTPS Data API; local pooler configurado disabled | SQL/TLS direto ou session pooler desde app/worker, IPv4/IPv6 e limites precisam ser confirmados em ambiente isolado autorizado |
+| Redis | Nenhuma dependência, fila, configuração operacional ou processo encontrado | Menções arquiteturais opcionais não são disponibilidade; provisionamento seria novo custo/serviço |
+| Banco local/testes | config Supabase, CLI, psql e Docker CLI; README histórico diz Docker indisponível no WSL | Banco/daemon atuais não ensaiados; não usar produção como teste. Ambiente isolado permanece UNPROVEN |
+| CI | Vitest unit/jsdom, check/build/E2E/scans/Docker; db-types só push/main | Nenhum serviço DB/ensaio de atomicidade, permissões ou restart configurado. Tipos só public. CI verde atual não prova durabilidade e SKIPPED não é PASS |
+| Backup/restore | Persistência de negócio fora do VPS conforme ADR-001; cache local reconstruível | Plano Supabase, backup/PITR, RPO/RTO e restauração testada não comprovados. Backup de .env não é backup do ledger |
+| Observabilidade | Sentry/configuração Foundation e health sentinela Data API | Health não testa INSERT/commit/worker/backlog. Alertas/runbook NUV-21 ainda futuros; owner de operação não nomeado |
+
+## 4. Alternativas comparadas
+
+| Critério | A — PostgreSQL/Supabase | B — Redis/fila Redis | C — PostgreSQL + sinalização Redis |
+| --- | --- | --- | --- |
+| Receipt + trabalho atômicos | Mesma transação, restrições e rollback; não dois inserts HTTP | Um registro composto minimiza parcialidade; MULTI/Lua exigem tratar erros e não equivalem rollback SQL | Só PG determina aceite; sinalizar depois do commit, nunca duas escritas críticas |
+| Crash/reinício | WAL em tabelas permanentes; nova conexão recupera registros commitados | RDB pode perder dados entre snapshots; AOF everysec tem janela de perda; always depende de disco/config/latência | Igual PG, inclusive com Redis totalmente perdido |
+| Claim/lease/recovery | Lock/update transacional, lease DB, fencing e varredura | Streams/PEL, reclaim e fencing ainda necessários; persistência não basta | Worker varre PG; notificações são apenas aceleração |
+| Vários processos | Banco arbitra concorrência e vínculos, pool limitado | Coordenação possível; failover/cluster/slots/eviction exigem projeto próprio | Duas topologias e mais modos de falha |
+| Retenção/expurgo | Expurgo terminal em lotes com proteção de trabalho pendente | TTL/trim podem apagar trabalho/PEL prematuramente; retenção manual requerida | PG é autoridade; expurgo Redis independente não apaga intenção |
+| Segurança | Schema privado, roles/grants/RLS e TLS | ACL/TLS/rede privada e restrições de comandos; risco de payload em streams | Superfície e credenciais de ambos |
+| Caminho do ACK futuro | Um commit com RTT/pool/disco; latência deve ser medida | fsync always/replicação têm custo; baixa latência em RAM não prova durabilidade | ACK não espera Redis; ganho só em despertar worker |
+| Operação/custo | Reusa stack conhecido, adiciona storage/IO/conexões/PITR | Novo serviço, memória, persistência, backup, HA e biblioteca de fila | Maior custo e complexidade; sem benefício medido atual |
+| Migrations/rollback | Aditivas, expand/contract; preservar ledger no rollback de app | Evolução/versionamento de envelopes, scripts e stream keys | Duas evoluções, outbox e reconciliação |
+| Next/Coolify | Node app + DB externo; worker independente futuro | Node + Redis externo + worker; volume efêmero não serve | Compatível em princípio; mais conectividade/ops |
+| NUV-17/18/19/20 | Intenção, claim futuro e famílias extensíveis; privacy após HR-08 | Reutilização possível, requer garantir mesma fonte de verdade | Compatível se fila não se tornar segunda autoridade |
+| Testabilidade CI | PG17 isolado, transações/restart/grants reais, sem workflow alterado automaticamente | Redis persistente isolado + crash/failover/erros reais | Dois serviços e teste de sinal perdido/duplicado |
+| Risco principal | Credencial ampla, pool saturado, ambiguidade de commit, desastre além do domínio local | Perda em persistence/failover, falsa atomicidade, eviction/trim | Dual-write acidental e backlog invisível se depender do sinal |
+
+**Recomendação técnica PROPOSED:** opção A, PostgreSQL gerenciado no Supabase como única fonte de verdade, schema privado e acesso SQL TLS com role dedicada restrita; sem Redis inicialmente. Motivo: transação única ajusta-se ao invariante central e evita novo serviço. Esta recomendação não escolhe backend em nome do owner. Não há benchmark/cotação para afirmar SLA ou custo; volume/tamanho de backlog ainda precisam ser medidos.
+
+### Decisão material sobre transporte/permissões
+
+Caminho preferido a adjudicar: conexão SQL TLS direta, ou session pooler compatível com role dedicada caso rede exija, com cliente SQL aprovado separadamente; mesma conexão para toda transação. Role de migration distinta; runtime sem superuser/BYPASSRLS/DDL/ownership e sem acesso a outros módulos. Grants somente para as operações necessárias e políticas RLS correspondentes. Isso limita o alcance por módulo; DML da role não comprova que o caller autenticou HMAC, então o trusted boundary continua obrigatório e restrições/invariantes do banco também precisam de prova.
+
+Schema privado não deve integrar schemas expostos da Data API. Revogar grants/default privileges de PUBLIC/anon/authenticated; funções sem EXECUTE público; RLS em toda tabela nova conforme convenção. Security invoker é preferência; não inventar RPC HTTP diretamente sobre schema não exposto. Se autoridade mais estreita exigir função definer privada, ownership NOLOGIN, search_path fixo e grants de execução mínimos requerem adjudicação própria, sem definer exposto.
+
+Alternativa de menor mudança de dependência: RPC POST transacional SECURITY INVOKER com SDK já instalado e service_role, protegendo explicitamente EXECUTE e tables. Não é o caminho preferido: mantém blast radius da chave e exposição controlada de entrypoint na Data API. Só pode ser escolhida por decisão explícita que aceite o risco e defina grants/testes; server-only ou RLS não neutralizam BYPASSRLS. Duas chamadas `insert()` continuam proibidas como prova de atomicidade.
+
+Não há driver SQL aprovado/instalado para este contrato. Escolha de biblioteca/versão, autorização de dependência/lockfile, forma de conexão e arquivos adicionais são **BLOCKED_DEPENDENCY_OR_SCOPE** até decisão específica. Aprovar apenas “usar Supabase” não resolve D1/D3. Não instalar nem alterar pacote nesta fase.
+
+## 5. D1–D10 para adjudicação
+
+Status PROPOSED significa proposta sem aprovação humana. UNPROVEN significa capacidade operacional/teste não verificado. Nenhum item deste quadro é APPROVED.
+
+| Decisão | Status | Proposta concreta | Aprovação/evidência que falta |
+| --- | --- | --- | --- |
+| D1 Backend | PROPOSED | PostgreSQL/Supabase único, schema privado, SQL/TLS e role dedicada; sem Redis | Owner confirmar serviço/topologia/versão suportada, transporte, credenciais e autorização de biblioteca separada |
+| D2 Atomicidade | PROPOSED | Uma transação grava receipt + intenção + vínculo, ou nenhum; unknown só terminal | Aprovar invariantes e semântica de commit ambíguo abaixo |
+| D3 Envelope/segurança | PROPOSED | Projeção allowlist, IDs texto exato, correlação/identidade local, runtime restrito e RLS | Aprovar campos, roles/grants, trusted caller e segregação |
+| D4 Retenção | PROPOSED | 14 dias após terminal, mínimo 14 dias desde intake; replay manual até 7 dias de intake, com controles abaixo | Owner confirmar janela, margem, expurgo, auditoria e backups; política privacy segue HR-08 |
+| D5 Claim/worker | PROPOSED | NUV-17 implementará worker independente, claim transacional, lease 60 s, heartbeat 20 s, fencing | Owner aprovar topologia, budgets e responsável; números ajustáveis só por decisão/evidência |
+| D6 Recovery | PROPOSED | Trabalho commitado consultável em conexão/processo distintos; varredura periódica e reclaim futuro | Aprovar contrato e objetivos de recuperação; operação/HA/PITR UNPROVEN |
+| D7 Falhas/alertas | PROPOSED | Sem sucesso sem commit confirmado; falhas/backlog/quarentena/inconsistência alertam com runbook | Nomear owner e substituto, canal e escala; validar latência/capacidade depois |
+| D8 Protocolo de ensaio | PROPOSED | Matriz §7 com banco real isolado, conexões distintas, crash e acesso negativo | Aprovar protocolo e ambiente de teste/escopo sem exigir suíte já pronta |
+| D9 Privacy | PROPOSED | Primitive transacional com família/versão/projeção e retenção por família; nenhuma projection privacy agora | Ratificar fronteira; campos/owner/payload/retenção/resposta privacy só HR-08/NUV-20 |
+| D10 Aprovação | BLOCKED | Registro humano separado, com decisões exatas e versão/hash deste dossiê | Humano responsável, data, URL/ID do registro e autorização local NUV-16 ausentes |
+
+### D2 — invariantes, duplicatas e commit ambíguo
+
+Cada intake autenticado novo recebe receipt local próprio; a `correlationId` da NUV-15 é local, não delivery ID do provedor. A mesma execução local pode repetir uma tentativa de banco com identidade estável para reconciliação de resposta perdida; uma nova entrega HTTP gera outro intake. Isso é idempotência da operação local, nunca dedupe de conteúdo. Nenhuma unicidade por hash, `(store,event,resource)`, recurso ou App ID.
+
+Business/lifecycle: receipt `received`, intenção mínima e vínculo atômicos; nenhum estado aceito visível antes de commit. Unknown: apenas receipt `ignored_unknown_event`, terminal, sem intenção/dispatch, após política owner registrada. A API de persistência não retorna status HTTP nem sucesso antes de COMMIT confirmado. FK/constraints e prova transacional devem impedir órfãos ou colisões de identidade incompatíveis. Novo receipt processável e sua intenção devem ser recuperáveis juntos; comportamento exato de constraints será detalhado após aprovação, sem DDL nesta fase.
+
+Uma FK apenas work→receipt não impede receipt processável sem work: exigir a invariável inversa no commit, inclusive contra DML parcial feito diretamente pela role runtime autorizada. Colisão/reuso do ID local com envelope diferente é conflito seguro e alerta, nunca sobrescrita. Isolamento inicial proposto READ COMMITTED para append com invariantes protegidos por constraints/locks explícitos; ele não serializa automaticamente regras entre linhas ou efeitos externos.
+
+Falha antes de COMMIT conhecido: rollback e erro seguro. Queda da conexão durante COMMIT: resultado **indeterminado**, nunca classificar ausência nem repetir com ID novo silenciosamente. Consultar no primário com conexão nova pela identidade estável; par completo e envelope correspondente confirmam commit; inconsistência vai para incidente. Ausência observada pode concorrer com transação ainda concluindo: repetir somente sob a mesma identidade e protocolo que serialize/resolva a transação original, ou manter erro indeterminado e reconciliar. Não usar read replica possivelmente atrasada. Sem confirmação, caller recebe falha segura; NUV-19 depois não emite ACK. Outra entrega pode coexistir; efeitos idempotentes são dever dos consumers/NUV-18.
+
+### D3 — envelope mínimo proposto
+
+Receipt comum: ID local opaco, correlação local existente, timestamp do banco, família e versão de contrato, classificação e vínculo local quando processável; loja/evento onde pertencentes ao contrato normalizado autenticado. Work business/lifecycle: somente `storeId`, `event`, correlação e `resourceId` nos quatro business ou `appId` em uninstall; suspended/resumed sem IDs adicionais. IDs são strings decimais canônicas exatas, sem bigint SQL de largura limitada ou coerção JS insegura. Unknown mínimo: ID/correlação/timestamp locais, store/event autenticados minimizados, classificação terminal e referência/versionamento da política owner. Não inventar policy: na falta de registro operacional, default deny; fixture sintética não aprova topic real.
+
+Proibidos: raw body, HMAC, tokens/secrets, headers arbitrários, email/customer PII, Order/Product/Customer inteiros, URL arbitrária ou erro upstream bruto. Identificadores privados permanecem somente server-side; logs não incluem store/resource por padrão. Erros novos devem projetar código estável + correlação segura sem SQL/DSN/payload/cause. A allowlist pós-gate precisa considerar erro local ao diretório durability, sem alterar errors.ts protegido por conveniência.
+
+### D4 — retenção, expurgo e replay
+
+Proposta business/lifecycle/unknown: retenção mínima de 14 dias desde intake e 14 dias desde término, prevalecendo a data mais tardia. Replay manual autorizado somente até 7 dias desde intake; para manter `retention > retry/replay`, há margem de 7 dias além dessa janela e superior a ~48 h upstream. Reprocessamento pendente/retryable/claimed/processing/quarantined e incidentes em aberto bloqueiam expurgo, mesmo após 14 dias, até resolução humana; isso é exceção controlada com alerta, não TTL cego. Replay tardio exige nova decisão de retenção antes do expurgo, registro auditável e preservação de linhagem local; não reabrir unknown terminal como trabalho externo.
+
+Expurgo futuro diário em lotes limitados, de par receipt/work terminal consistente, com proteção concorrente; auditar contagem, versão de política, intervalo e resultado, sem conteúdo privado. Owner deve aceitar responsabilidade/capacidade/custo de backlog retido e autorizar resolução de quarentena; registros não terminais não desaparecem por pressão de storage. Proposta inicial de evidência agregada de expurgo: 30 dias, sem IDs/PII; backups não herdam automaticamente esse prazo. Prazo de backup/PITR e remoção de dados restaurados devem ser decididos pelo owner antes de operação; nada disso define retenção privacy.
+
+### D5/D6 — contrato futuro de worker e recuperação
+
+NUV-16 só persiste e fornece identificação/leitura recuperável; não implementa claim, scheduler, worker ou efeitos. NUV-17 deverá usar processo independente do servidor Next, com mesma fonte PG, rede/credencial próprias e encerramento supervisionado. Proposta: polling a cada 5 s, lote máximo 10, 2 trabalhos concorrentes por worker; DB controla claim/lease e instante de expiração. Valores são budgets de fila propostos, não alteração do limiter NUV-05; leituras provedor entre processos continuam dependentes da topologia/shared budget já exigidos.
+
+Lease 60 s, renovação a cada 20 s, token/geração de fencing em cada claim; concluir/renovar apenas com geração vigente. Claimant antigo não pode concluir estado após reclaim. Fencing no ledger não garante exatamente uma execução externa: consumers exigem idempotência/reconciliação. Crash após commit não elimina trabalho; nova conexão lista pendentes; NUV-17 prova execução/reclaim depois de lease. Estados comuns seguem SPEC: received, claimed, processing, succeeded, retryable e quarantined; unknown terminal não entra em claim/retry de trabalho.
+
+Lote de claim deve caber na capacidade real ou renovar lease de cada item aguardando, sem preclaimar dez trabalhos para dois slots e deixá-los expirar na fila local. Nenhuma chamada externa ocorre dentro da transação de claim. Pool proposto de até duas conexões por processo de intake; o teto global deve ser adjudicado antes de replicar containers. Filas de aquisição e espera são limitadas pelo mesmo deadline, sem memória ilimitada como mecanismo de durabilidade.
+
+Objetivo proposto: trabalho pendente volta a ser encontrável em até 10 s após worker saudável; claim órfão em até 70 s após última renovação, sem prometer SLA sob indisponibilidade. Crash do app é domínio coberto pela persistência; perda de storage/restore anterior ao commit requer backup/HA e reconciliação. RPO de commits reconhecidos no restart do processo: zero sob armazenamento durável correto. RPO/RTO de desastre/região não foram comprovados; owner deve aprovar capacidade/plano antes de operação, sem chamar WAL local de HA. Nenhum worker pode usar a fila como justificativa para chamada real Nuvemshop sem HR-02/03/06 e gates próprios.
+
+### D7 — falhas, alertas e runbook propostos
+
+| Gatilho | Comportamento contratual | Resposta futura proposta |
+| --- | --- | --- |
+| Storage/commit indisponível ou indeterminado | Erro seguro, sem sucesso terminal/processável | Registrar métrica redigida na fonte de observabilidade independente do DB; incidente se 3 falhas em 5 min |
+| Receipt sem work, vínculo divergente, estado impossível | Não tratar como aceito/processado | Alerta imediato, interromper consumo afetado, preservar dados e reconciliar |
+| Backlog mais antigo >5 min ou worker sem heartbeat >2 min | Persistência não é prova de processamento | Alerta acionável; verificar worker/pool/DB, recuperar pelo ledger |
+| Quarentena ou retry budget esgotado | Sem descartar/expurgar | Alerta e decisão humana de replay/resolução |
+| ACK futuro p95 >2 s / aproximação a 3 s | Não relaxar durable-before-ACK | Medir HMAC/parse/pool/commit/egress, ajustar arquitetura por evidência |
+| Backup/restore/retenção divergente | Não declarar readiness operacional | Bloquear ativação, corrigir runbook e comprovar ensaio |
+
+Owner operacional e substituto: **UNPROVEN, a nomear pelo humano**; canal/on-call/escalonamento também pendentes. Runbook contratual aprovado em HR-07, implementação observável em NUV-21 e ensaio operacional em NUV-24: diagnosticar storage/commit desconhecido, inspecionar por ID local sem payload, reconciliar, controlar replay/quarentena, validar recuperação, registrar resultado e autorizar rollback. Persistência de alerta no mesmo DB indisponível não serve como único canal. Alertas de assinatura/schema/provider e redaction integral permanecem NUV-21.
+
+Budget interno proposto para persistência e eventual reconciliação: deadline total de 1,5 s, incluindo aquisição/conexão, locks, statements e confirmação; lock_timeout alvo 250 ms e statement_timeout até1 s, sempre subordinados ao tempo restante. Não somar retries/timeouts além desse deadline. Esses valores precisam aprovação e medição para caber em HMAC+parse+commit+resposta nos3 s documentados; não são SLA comprovado. Cancelamento/timeout do caller não prova rollback. Coletar máximos/percentis e erros, sem chamar média baixa de PASS.
+
+## 6. Genericidade e fronteiras
+
+NUV-16 possui atomicidade, receipt/work mínimo, terminal unknown, leitura/identificação recuperável e erros seguros. NUV-17 possui claim/lease/reclaim/worker/retry/quarentena. NUV-18 possui dispatcher/coalescing/estado lifecycle e consumers. NUV-19 possui HTTP/maintenance/ACK. NUV-21 implementa observabilidade/runbook. Nenhum desses efeitos é implementado aqui.
+
+D9 propõe núcleo genérico: unidade transacional aceita projeção mínima versionada de uma família registrada por código servidor confiável, sem endpoint genérico de persistência de JSON arbitrário. Business/lifecycle/unknown são as únicas famílias concretas nesta fase futura NUV-16; registro de outra família exige novo contrato aprovado. Metadados de fila/identidade/vínculo independem de resourceId obrigatório, topic obrigatório ou owner/retention comuns. Payload específico é validado pelo boundary dono, não reparsado por outro parser genérico. NUV-20 poderá adicionar sua projeção e política depois de HR-08 reutilizando transação/vínculo e NUV-17, sem outro store. Não definir campos, PII, resposta, autenticação, owner ou retenção privacy agora, nem impor os 14 dias a privacy.
+
+## 7. D8 — protocolo verificável, ainda não executado
+
+Ambiente proposto: PostgreSQL 17 isolado e descartável, persistência em volume de teste identificável e roles sintéticas; versão/config equivalentes à escolha D1. Se RPC for escolhida em vez de SQL, também executar PostgREST/roles reais equivalentes. Sem banco de produção, `.env` real, provider real ou pacote instalado nesta Fase A. Fixture sintética e oracle de consulta independente via conexão/processo B; registrar SHA, versões, settings de durabilidade, hashes dos logs e ausência de skips. Docker/serviço de teste precisa ser disponibilizado explicitamente; não assumir disponibilidade por CLI.
+
+| Ensaio | Método e oráculo obrigatório | Dono após gate |
+| --- | --- | --- |
+| Commit business/lifecycle | Quatro business + uninstall/App ID + suspend/resume sem ID; B vê receipt/work/vínculo completos após commit | C RED, D GREEN NUV-16 |
+| Falha receipt/work e COMMIT | Injetar falha real na segunda escrita e falha em COMMIT por constraint deferida no fixture compatível; consultar por B; zero receipt aceito isolado e zero work órfão após resolução da transação | NUV-16 |
+| Unknown com policy explícita sintética | B vê terminal mínimo e zero work; sem policy não há terminal; privacy não elegível | NUV-16 |
+| Falha de persistência/commit unknown | Com policy sintética autorizando elegibilidade, provocar separadamente falha de INSERT do receipt terminal, storage indisponível e falha de COMMIT; B nova verifica ausência de terminal válido nas falhas comprovadamente abortadas e zero work. Primitive falha sem classificação terminal de sucesso. Para resposta de COMMIT perdida, manter resultado indeterminado até prova no primary, sem alegar ausência; NUV-19 posteriormente comprova 5xx/sem ACK | NUV-16 para primitive; NUV-19 para HTTP |
+| Storage indisponível | Serviço isolado parado ou conexão bloqueada; erro seguro, sem falso sucesso | NUV-16 |
+| Commit ambíguo | Cortar retorno entre COMMIT e confirmação por proxy/harness isolado; testar commit realizado e abortado, mesma identidade e consulta primária; sem falso sucesso/ausência | NUV-16 |
+| Crash antes/depois commit | Encerrar processo A por SIGKILL; B novo verifica nenhum parcial ou par durável após commit, respectivamente | NUV-16 |
+| Restart do banco | Reiniciar PG isolado com volume preservado; nova conexão recupera pares confirmados, sem depender de cache do driver | NUV-16 |
+| Duplicatas/concorrência | N processos com conteúdos iguais recebem IDs locais distintos; cada novo intake tem exatamente um vínculo, sem perda; retry da mesma operação local resolve identidade estável | NUV-16 |
+| Acesso/segredos | anon/authenticated e role outro módulo não leem/escrevem/executam; runtime não tem DDL/ownership/BYPASSRLS; RLS/grants/default ACL verificados; tentar DML parcial pela role runtime não permite receipt órfão commitado; marcadores secretos ausentes em storage/log/erro/bundle | NUV-16 |
+| Retenção | Relógio controlado no harness; bordas 48 h, 7 d, 14 d, terminal tardio, replay, incidente, pending/quarentena; expurgo não perde vínculo/trabalho | NUV-16 para primitives e política aprovada; execução operacional posterior |
+| Corrida expurgo × replay/transição ativa | Duas conexões sincronizadas por barreiras/locks, nunca sleep: A seleciona candidato terminal para purge; B solicita replay permitido, ativa hold ou transição autorizada para trabalho ativo. Executar ambas as ordens de aquisição/commit. Se B vence, A revalida e preserva receipt/work e seu vínculo; se purge vence, replay/transição falha com resultado explícito de registro expirado/ausente, sem novo work órfão nem falso aceite. Unknown continua sem replay de consumer. Para sobreposição de replay além da janela7d, fixture usa política sintética explicitamente estendida com retenção recalculada, não altera política real silenciosamente | NUV-16 testa a primitive/guard de expurgo; operações claim/replay completas em NUV-17 |
+| Genericidade | Família sintética sem PII/topic/resource obrigatórios sob registry confiável usa mesma transação/leitura; nenhuma projection privacy real fixada | NUV-16 |
+| Claim/lease/reclaim/fencing | Dois workers reais, crash pós-claim, expiração/heartbeat, claimant antigo rejeitado; efeitos simulados idempotentes | NUV-17, sem antecipar worker em16 |
+| Rollback/restore | App anterior após migration aditiva preserva dados; restore isolado mede RPO/RTO e reconcilia efeitos que podem repetir | Plano em HR-07, prova implementada/operacional nas tasks donas |
+| ACK/crash pós-ACK | Route normal/manutenção só 2xx após commit; falha 5xx; matar processo e recuperar trabalho | NUV-19 + NUV-17; ensaio real NUV-24 |
+
+RED independente C precede D/GREEN na Fase B, com controles existentes verdes e falha funcional, não import/setup artificial. Mocks podem apoiar unidade, nunca provar durabilidade. Fase A não cria testes acoplados a backend. Testes/check/build da implementação não foram executados nesta auditoria documental e não são apresentados como PASS. Caso o ambiente isolado ou CI existente não suporte prova obrigatória: **BLOCKED_DURABILITY_PROOF** e/ou **BLOCKED_DEPENDENCY_OR_SCOPE**, sem alterar workflows/timeouts/lockfile automaticamente. Protocolo pode ser ratificado agora; resultados são gates posteriores.
+
+## 8. Migration, rollback e custo futuro
+
+Após HR-07 e aprovação de escopo/dependência: migration aditiva via CLI conforme convenção, objetos/roles/permissões mínimos, revisão SQL e testes de grants/RLS. Nenhuma migration aplicada remotamente por esta execução. Tipos públicos existentes não cobrem schema privado: decidir geração/teste do contrato privado sem editar arquivo gerado manualmente ou ampliar CI por inferência. Arquivos permitidos e cliente SQL deverão ser autorizados em lista exata antes de B.
+
+Rollback de app deve preservar ledger e backlog; não dropar/truncar recibos confirmados para voltar versão. Congelar ingresso/processamento conforme runbook, manter formato antigo legível, corrigir para frente por nova migration; restore destrutivo requer autorização operacional separada e reconciliação de efeitos. Sem estimativa de tráfego não há custo comprovado: dimensionar por entradas/dia × tamanho de receipt/work × retenção real (incluindo pendências) + índices/WAL/backups; observar conexões, IOPS e pool. Redis/híbrido só reavaliar com evidência de necessidade, por nova adjudicação material.
+
+## 9. Registro humano necessário, decisões concretas
+
+O owner deve registrar, em decisão separada identificável, a versão/hash do dossiê e a resposta para cada D1–D10: aprovar, rejeitar ou alterar os pontos exatos. Campos requeridos: nome/identidade do responsável humano e delegação, data, URL/ID rastreável, backend/serviço/topologia/transportes e credenciais, atomicidade/commit indeterminado, envelope/grants, retenção/replay/expurgo/backups, worker/lease/fencing/recovery, owner/substituto/canal/runbook e protocolo/ambiente de ensaio. Alterações materiais reabrem adjudicação. Decisão deve declarar se autoriza execução local NUV-16 nessa arquitetura; não inferir autorização de pacote, cloud, migration remota, merge ou deploy.
+
+Escolhas concretas propostas: A PostgreSQL único; SQL TLS/role dedicada em schema privado; transação única e reconciliação por ID local; 14 d após terminal com mínimo desde intake e replay até7 d; worker externo futuro com lease60 s/heartbeat20 s/poll5 s; owner operacional a nomear; ensaios reais conforme §7; privacy segregada sob HR-08. Owner pode rejeitar ou modificar qualquer escolha. Sem decisão humana completa D1–D8, parar após este dossiê.
+
+## 10. Auditoria independente e integridade
+
+A — Architecture & Contract Auditor: `gpt-6.1-sol`, high. B — Durability & Database Specialist: `gpt-6.1-sol`, high. E — Independent Adversarial Reviewer: `gpt-6-luna`, xhigh, contexto novo, sem autoria deste dossiê. Configurações solicitadas e aceitas pelas chamadas reais do harness; não atestam identidade interna do backend. Orquestrador solicitado: GPT-6.1 Sol/Alto; modelo da sessão não é alterável nem atestado independentemente. Nenhuma substituição de subagent foi necessária. C/D/F são condicionais à Fase B e não foram acionados como execução/validação de código.
+
+Relatórios A e B: `/tmp/nuv-16/A-architecture.md`, `/tmp/nuv-16/B-durability.md`. Ambos recomendam PG fonte única, sem Redis inicial. Propostas exploratórias diferem: A priorizou inicialmente RPC e7d/replay5d; B priorizou SQL restrito e14d com7d pós-terminal. Integração escolhe como recomendação, nunca ratificação, SQL restrito e14d após terminal com mínimo14d intake/replay7d, para limitar privilégios e ampliar margem de auditoria; custo adicional é trade-off a decidir pelo owner. As metas de recovery e alerta deste dossiê são a proposta integrada, não aprovação conjunta automática de todos os números dos relatórios.
+
+E r1 revisou v1 SHA-256 `71f35254141924e7c19af753ea5850072bc59fb450f2eeec8a5bf05207c42bf1`; parecer `/tmp/nuv-16/E-review-r1.md`, SHA-256 `8d458ac7c9e65904ee33c261cb9e34f6694442ab524675f6a5fa72b42847a314`. Dois P2 válidos e acionáveis: faltava ensaio explícito de falha do receipt unknown e corrida determinística expurgo/replay. Ambos foram incorporados a D8 nesta v2, além de explicitar invariável inversa/DML parcial, isolamento, limites de aquisição e fase de COMMIT. Isso corrige o protocolo documental, sem alegar que ensaios foram executados. Nova revisão E sobre v2 está pendente; não declarar aprovação antes do parecer real. Revisão com modelo diferente já foi explicitamente solicitada pelo usuário (Luna); não se invocou CLI externo por inferência.
+
+Nenhuma branch/worktree NUV-16, código, schema, migration, fila, adapter, teste backend, relatório versionado NUV-16, PR técnica, mudança de workflow/dependência, consulta autenticada Nuvemshop, mudança de infraestrutura, merge ou deploy foi criada/executada. `git fetch origin` atualizou somente refs de acompanhamento; consultas GitHub e documentação foram de leitura. Artefatos desta fase ficam exclusivamente em `/tmp/nuv-16`.
+
+**Gate final: HR_07_NOT_APPROVED; implementação permanece BLOCKED_BY_NUV_HR_07.**
