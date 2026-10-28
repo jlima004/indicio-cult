@@ -86,6 +86,24 @@ describe('contrato do runtime Node', () => {
     )
   })
 
+  it('aceita o engine >= 10.x declarado por split2 sem mudar o contrato Node 22', () => {
+    const fixture = createRuntimeFixture({ dependencyEngine: '>= 10.x' })
+    assert.deepEqual(validateNodeRuntime(fixture, '22.23.1'), [])
+  })
+
+  it('rejeita um engine wildcard cujo limite exige Node 23', () => {
+    const fixture = createRuntimeFixture({ dependencyEngine: '>= 23.x' })
+    assert.equal(validateNodeRuntime(fixture, '22.23.1').length, 3)
+  })
+
+  it('continua rejeitando wildcard seguido de versão numérica', () => {
+    const fixture = createRuntimeFixture({ dependencyEngine: '>= 10.x.1' })
+    assert.equal(
+      validateNodeRuntime(fixture, '22.23.1').some((error) => /não suportado/.test(error)),
+      true,
+    )
+  })
+
   it('ignora pacote opcional incompatível com a plataforma atual', () => {
     const fixture = createRuntimeFixture()
     const lockPath = path.join(fixture, 'package-lock.json')

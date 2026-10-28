@@ -34,6 +34,10 @@ function parseRangeVersion(value) {
 function satisfiesComparator(version, comparator) {
   if (comparator === '*' || /^x$/i.test(comparator)) return true
 
+  // npm X-range: >=10.x means >=10.0.0 (split2's declared engine).
+  // Keep other unsupported comparator forms fail-closed.
+  comparator = comparator.replace(/^(>=)(v?\d+)\.[xX*]$/, '$1$2.0.0')
+
   const match = /^(>=|<=|>|<|\^|~|=)?(v?\d+(?:\.\d+){0,2})$/.exec(comparator)
   if (!match) throw new Error(`comparador de engine não suportado: ${comparator}`)
 
