@@ -109,7 +109,8 @@ jobs:
 
   db-types:
     needs: ci
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # D0: remote Supabase type generation is disabled until explicit Owner authorization.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment:
       name: ci-supabase-types
