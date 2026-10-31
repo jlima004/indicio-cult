@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 import { env, publicEnv } from '@/lib/env'
 import { loadMaintenanceHtml } from '@/lib/proxy/maintenance'
-import { decideProxyAction, isHealthPath } from '@/lib/proxy/rules'
+import { decideProxyAction, isHealthPath, isLivePath } from '@/lib/proxy/rules'
 import type { Database } from '@/lib/supabase/database.types'
 
 export const RETRY_AFTER_SECONDS = 300
@@ -48,8 +48,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return response
   }
 
-  // O health é operacional e não pode depender de uma sessão de usuário.
-  if (isHealthPath(pathname)) return NextResponse.next()
+  // Os endpoints operacionais não podem depender de uma sessão de usuário.
+  if (isHealthPath(pathname) || isLivePath(pathname)) return NextResponse.next()
 
   let response = NextResponse.next({ request: { headers: request.headers } })
   const pendingCookies: PendingCookie[] = []

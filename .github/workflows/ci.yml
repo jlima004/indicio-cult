@@ -18,10 +18,10 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      NEXT_PUBLIC_SENTRY_DSN: ''
       APP_VERSION: ${{ github.sha }}
     steps:
       - name: Check out source
@@ -41,7 +41,7 @@ jobs:
         run: |
           for name in NEXT_PUBLIC_SITE_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
             if [ -z "${!name}" ]; then
-              echo "Missing GitHub Variable: $name" >&2
+              echo "Missing test configuration: $name" >&2
               exit 1
             fi
           done
