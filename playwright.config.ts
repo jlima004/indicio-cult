@@ -7,6 +7,8 @@ const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERV
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testMatch: process.env.PLAYWRIGHT_INTEGRATION === '1' ? '**/*.integration.spec.ts' : undefined,
+  testIgnore: process.env.PLAYWRIGHT_INTEGRATION === '1' ? undefined : '**/*.integration.spec.ts',
   outputDir: 'test-results',
   reporter: [['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: { baseURL: normalUrl },
@@ -19,7 +21,7 @@ export default defineConfig({
       name: 'normal',
       command:
         'env MAINTENANCE_MODE=false npm run build && env MAINTENANCE_MODE=false npm run start -- -H 127.0.0.1 -p 3000',
-      url: `${normalUrl}/api/health`,
+      url: `${normalUrl}/api/live`,
       reuseExistingServer,
       timeout: 180_000,
     },
@@ -27,8 +29,8 @@ export default defineConfig({
       name: 'maintenance',
       // webServer entries start concurrently. Wait for the normal server so its build owns .next.
       command:
-        'attempt=0; until curl --fail --silent --output /dev/null http://127.0.0.1:3000/api/health; do attempt=$((attempt + 1)); if [ "$attempt" -ge 190 ]; then exit 1; fi; sleep 1; done; exec env MAINTENANCE_MODE=true npm run start -- -H 127.0.0.1 -p 3001',
-      url: `${maintenanceUrl}/api/health`,
+        'attempt=0; until curl --fail --silent --output /dev/null http://127.0.0.1:3000/api/live; do attempt=$((attempt + 1)); if [ "$attempt" -ge 190 ]; then exit 1; fi; sleep 1; done; exec env MAINTENANCE_MODE=true npm run start -- -H 127.0.0.1 -p 3001',
+      url: `${maintenanceUrl}/api/live`,
       reuseExistingServer,
       timeout: 240_000,
     },

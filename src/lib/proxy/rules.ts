@@ -10,6 +10,10 @@ export function isHealthPath(pathname: string): boolean {
   return pathname === '/api/health'
 }
 
+export function isLivePath(pathname: string): boolean {
+  return pathname === '/api/live'
+}
+
 export function isProtectedPath(pathname: string): boolean {
   return (
     pathname === '/conta' ||
@@ -24,7 +28,7 @@ export function decideProxyAction({
   maintenanceMode,
   hasVerifiedClaims,
 }: ProxyDecisionInput): ProxyAction {
-  if (maintenanceMode && !isHealthPath(pathname)) return 'maintenance'
+  if (maintenanceMode && !isHealthPath(pathname) && !isLivePath(pathname)) return 'maintenance'
   if (isProtectedPath(pathname) && !hasVerifiedClaims) return 'redirect'
   return 'continue'
 }

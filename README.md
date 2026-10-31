@@ -35,6 +35,18 @@ Abra [http://localhost:3000](http://localhost:3000) e confirme a Home com o tít
 
 Para a configuração e operação em produção no Coolify, consulte o [runbook de deploy](./deploy/README.md).
 
+## Testes Playwright
+
+Os smoke tests usam arquivos `*.spec.ts`; os testes de integração real usam `*.integration.spec.ts`. `npm run test:e2e` executa os smoke tests mobile e desktop sem exigir Supabase real. Os servidores aguardam `GET /api/live`, que verifica apenas se o processo responde, inclusive em manutenção; o health de produção continua em `/api/health`.
+
+Os testes de integração de `/api/health` consultam o Supabase real e ficam excluídos por padrão. Execute-os somente com um ambiente Supabase real autorizado e a configuração apropriada; não use projetos protegidos sem autorização:
+
+```sh
+PLAYWRIGHT_INTEGRATION=1 npm run test:e2e
+```
+
+O job `db-types` é separado dos smoke tests de PR: no push para `main`, sua geração de tipos requer acesso remoto autorizado, com `SUPABASE_PROJECT_ID` e `SUPABASE_ACCESS_TOKEN`.
+
 ## Documentação
 
 | Arquivo                           | Conteúdo                                                                                                                                                                                                                                                                                                                                    |

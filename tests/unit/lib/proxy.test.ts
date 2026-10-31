@@ -90,6 +90,12 @@ describe('regras puras do Proxy', () => {
     ).toBe('continue')
   })
 
+  it('liveness ignora maintenance', () => {
+    expect(
+      decideProxyAction({ pathname: '/api/live', maintenanceMode: true, hasVerifiedClaims: false }),
+    ).toBe('continue')
+  })
+
   it.each(['/conta', '/conta/perfil', '/admin', '/admin/pedidos'])(
     'redireciona %s sem claims verificadas',
     (pathname) => {
@@ -120,6 +126,7 @@ describe('matcher do Proxy', () => {
     '/admin',
     '/admin/pedidos',
     '/api/health',
+    '/api/live',
     '/_next/staticity',
     '/_next/imagery',
     '/favicon.ico-extra',
@@ -184,6 +191,20 @@ describe('fluxo request/response do Proxy', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(createServerClient).not.toHaveBeenCalled()
   })
+
+  it.each([false, true])(
+    'permite liveness sem cliente Supabase com maintenance=%s',
+    async (mode) => {
+      mocks.env.MAINTENANCE_MODE = mode
+
+      const response = await proxy(request('/api/live'))
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('x-middleware-next')).toBe('1')
+      expect(createServerClient).not.toHaveBeenCalled()
+      expect(mocks.getClaims).not.toHaveBeenCalled()
+    },
+  )
 
   it('usa getClaims e deixa rota pública sem sessão continuar', async () => {
     const response = await proxy(request('/'))
