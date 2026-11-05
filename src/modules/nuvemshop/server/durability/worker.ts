@@ -18,6 +18,11 @@ export interface RecoveryStore {
   start(claim: RecoveryClaim): Promise<boolean>
   heartbeat(claim: RecoveryClaim, leaseSeconds: number): Promise<boolean>
   succeed(claim: RecoveryClaim): Promise<boolean>
+  defer?(
+    claim: RecoveryClaim,
+    reason: DispatchDeferralReason,
+    backoffSeconds: number,
+  ): Promise<boolean>
   fail(
     claim: RecoveryClaim,
     recoverable: boolean,
@@ -26,11 +31,18 @@ export interface RecoveryStore {
   ): Promise<boolean>
   close(): Promise<void>
 }
+export type DispatchDeferralReason =
+  'NO_CONSUMER' | 'OPERATION_PAUSED' | 'DISPATCH_BUSY' | 'RECONCILIATION_PENDING'
+export interface DeferredDispatch {
+  disposition: 'deferred'
+  reason: DispatchDeferralReason
+}
 /** Processors must honor abort promptly; uncooperative effects may continue after ownership is lost. */
 export type RecoveryProcessor = (
   projection: RecoveryClaim['projection'],
   signal: AbortSignal,
-) => Promise<void>
+  claim: RecoveryClaim,
+) => Promise<void | DeferredDispatch>
 
 /** Use only when the processor knows another execution cannot duplicate effects. */
 export class SafeRetryError extends Error {
@@ -130,9 +142,9 @@ export function createRecoveryWorker(
     })()
     // Attach rejection handling immediately, including if the processor ignores abort.
     const execution = Promise.resolve()
-      .then(() => processor(claim.projection, controller.signal))
+      .then(() => processor(claim.projection, controller.signal, claim))
       .then(
-        () => ({ failed: false as const }),
+        (result) => ({ failed: false as const, result }),
         (error: unknown) => ({ failed: true as const, error }),
       )
     let abortTimer: ReturnType<typeof setTimeout> | undefined
@@ -169,6 +181,12 @@ export function createRecoveryWorker(
       )
         throw new RecoveryError('OWNERSHIP_LOST')
       throw new RecoveryError('PROCESSOR_FAILED')
+    }
+    if (outcome.result?.disposition === 'deferred') {
+      if (!store.defer) throw new RecoveryError('DEFERRAL_UNSUPPORTED')
+      if (!(await store.defer(claim, outcome.result.reason, backoffSeconds)))
+        throw new RecoveryError('OWNERSHIP_LOST')
+      return true
     }
     if (!(await store.succeed(claim))) throw new RecoveryError('OWNERSHIP_LOST')
     return true

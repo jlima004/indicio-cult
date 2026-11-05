@@ -160,6 +160,7 @@ export function createRecoveryStore(pool: RecoverySqlPool): RecoveryStore {
     start: (claim) => transition('start_work', claim),
     heartbeat: (claim, lease) => transition('heartbeat_work', claim, [lease]),
     succeed: (claim) => transition('succeed_work', claim),
+    defer: (claim, reason, backoff) => transition('defer_work', claim, [reason, backoff]),
     fail: (claim, recoverable, code, backoff) =>
       transition('fail_work', claim, [recoverable, code, backoff]),
     close: () => pool.close(),
