@@ -1,6 +1,7 @@
 # Gerados
 node_modules/
 .next/
+.worker-build/
 out/
 coverage/
 .vitest/

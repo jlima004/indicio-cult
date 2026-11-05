@@ -2,8 +2,18 @@ import 'server-only'
 
 import { Pool } from 'pg'
 
-import type { SqlPool } from '@/modules/nuvemshop/server/durability'
-import { NuvemshopIntakeError } from '@/modules/nuvemshop/server/durability/errors'
+import { NuvemshopIntakeError } from '../../modules/nuvemshop/server/durability/errors'
+
+export interface IntakeSqlPool {
+  connect(): Promise<{
+    query(
+      text: string,
+      values?: readonly unknown[],
+    ): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>
+    release(error?: Error | boolean): void
+  }>
+  close(): Promise<void>
+}
 
 export interface IntakePoolConfig {
   /** Supply the real primary endpoint and custom-role user from Dashboard Connect. */
@@ -19,7 +29,7 @@ export interface IntakePoolConfig {
 }
 
 /** Lazy bounded pool; it does not derive endpoints, provision roles or read env. */
-export function createIntakePool(config: IntakePoolConfig): SqlPool & { close(): Promise<void> } {
+export function createIntakePool(config: IntakePoolConfig): IntakeSqlPool {
   const max = config.maxConnections ?? 2
   if (
     config.mode !== 'session' ||
