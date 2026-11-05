@@ -59,6 +59,127 @@ describe('recovery worker', () => {
   })
 })
 
+describe('initial lease renewal', () => {
+  it('renews after a slow start and schedules periodic renewal from confirmation', async () => {
+    vi.useFakeTimers()
+    try {
+      const db = store()
+      let confirm!: (value: boolean) => void
+      let finish!: () => void
+      vi.mocked(db.start).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(true), 1500)),
+      )
+      vi.mocked(db.heartbeat).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            confirm = resolve
+          }),
+      )
+      const process = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      )
+      const run = createRecoveryWorker(db, process, {
+        leaseSeconds: 2,
+        heartbeatSeconds: 1,
+      }).runOnce()
+      await vi.advanceTimersByTimeAsync(1499)
+      expect(process).not.toHaveBeenCalled()
+      expect(db.heartbeat).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(db.start).toHaveBeenCalledExactlyOnceWith(claim)
+      expect(db.heartbeat).toHaveBeenCalledExactlyOnceWith(claim, 2)
+      expect(vi.mocked(db.heartbeat).mock.calls[0]?.[0]).toBe(claim)
+      expect(process).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(500)
+      confirm(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(process).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(db.heartbeat).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(db.heartbeat).toHaveBeenCalledTimes(2)
+      expect(db.heartbeat).toHaveBeenLastCalledWith(claim, 2)
+      finish()
+      await expect(run).resolves.toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('rejects a denied initial renewal without processing or completion', async () => {
+    const db = store()
+    vi.mocked(db.heartbeat).mockResolvedValue(false)
+    const process = vi.fn(async () => undefined)
+    await expect(createRecoveryWorker(db, process).runOnce()).rejects.toThrow('OWNERSHIP_LOST')
+    expect(process).not.toHaveBeenCalled()
+    expect(db.succeed).not.toHaveBeenCalled()
+    expect(db.fail).not.toHaveBeenCalled()
+    expect(db.heartbeat).toHaveBeenCalledOnce()
+  })
+  it('preserves a database error from initial renewal without retrying', async () => {
+    const db = store()
+    const error = new Error('database')
+    vi.mocked(db.heartbeat).mockRejectedValue(error)
+    const process = vi.fn(async () => undefined)
+    await expect(createRecoveryWorker(db, process).runOnce()).rejects.toBe(error)
+    expect(process).not.toHaveBeenCalled()
+    expect(db.succeed).not.toHaveBeenCalled()
+    expect(db.fail).not.toHaveBeenCalled()
+    expect(db.heartbeat).toHaveBeenCalledOnce()
+  })
+  it('preserves an indeterminate renewal and its reconciliation data', async () => {
+    const { TransitionIndeterminateError } =
+      await import('@/modules/nuvemshop/server/durability/recovery-store')
+    const db = store()
+    const error = new TransitionIndeterminateError(
+      { receiptId: claim.receiptId, token: claim.token, generation: claim.generation },
+      { state: 'processing' },
+    )
+    vi.mocked(db.heartbeat).mockRejectedValue(error)
+    const process = vi.fn(async () => undefined)
+    const result = await createRecoveryWorker(db, process)
+      .runOnce()
+      .catch((e: unknown) => e)
+    expect(result).toBe(error)
+    expect(result).toMatchObject({
+      identity: { receiptId: 'r', token: 't', generation: '1' },
+      snapshot: { state: 'processing' },
+    })
+    expect(process).not.toHaveBeenCalled()
+    expect(db.succeed).not.toHaveBeenCalled()
+    expect(db.fail).not.toHaveBeenCalled()
+    expect(db.heartbeat).toHaveBeenCalledOnce()
+  })
+  it('does not process when shutdown arrives while the initial renewal is pending', async () => {
+    const db = store()
+    const controller = new AbortController()
+    let confirm!: (value: boolean) => void
+    let started!: () => void
+    const heartbeatStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    vi.mocked(db.heartbeat).mockImplementation(() => {
+      started()
+      return new Promise((resolve) => {
+        confirm = resolve
+      })
+    })
+    const process = vi.fn(async () => undefined)
+    const run = createRecoveryWorker(db, process).runOnce(controller.signal)
+    await heartbeatStarted
+    expect(process).not.toHaveBeenCalled()
+    controller.abort()
+    expect(process).not.toHaveBeenCalled()
+    confirm(true)
+    await expect(run).rejects.toThrow('OWNERSHIP_UNCERTAIN')
+    expect(process).not.toHaveBeenCalled()
+    expect(db.succeed).not.toHaveBeenCalled()
+    expect(db.fail).not.toHaveBeenCalled()
+  })
+})
+
 describe('SQL claim uncertainty', () => {
   it('reconciles the same identity after an unknown claim response', async () => {
     const { createRecoveryStore } =
@@ -148,12 +269,14 @@ describe('ownership and shutdown', () => {
       'OWNERSHIP_UNCERTAIN',
     )
     expect(process).not.toHaveBeenCalled()
+    expect(db.heartbeat).not.toHaveBeenCalled()
+    expect(db.succeed).not.toHaveBeenCalled()
   })
   it('aborts processing and never completes after stale heartbeat', async () => {
     vi.useFakeTimers()
     try {
       const db = store()
-      vi.mocked(db.heartbeat).mockResolvedValue(false)
+      vi.mocked(db.heartbeat).mockResolvedValueOnce(true).mockResolvedValue(false)
       const process = vi.fn(
         (_projection: unknown, signal: AbortSignal) =>
           new Promise<void>((resolve) =>
@@ -164,6 +287,10 @@ describe('ownership and shutdown', () => {
       const assertion = expect(run).rejects.toThrow('OWNERSHIP_UNCERTAIN')
       await vi.advanceTimersByTimeAsync(1000)
       await assertion
+      expect(process).toHaveBeenCalledOnce()
+      expect(process.mock.calls[0]?.[1].aborted).toBe(true)
+      expect(db.heartbeat).toHaveBeenCalledTimes(2)
+      expect(db.heartbeat).toHaveBeenLastCalledWith(claim, 60)
       expect(db.succeed).not.toHaveBeenCalled()
       expect(db.fail).not.toHaveBeenCalled()
     } finally {
@@ -271,7 +398,7 @@ describe('bounded operation and reconciliation', () => {
     vi.useFakeTimers()
     try {
       const db = store()
-      vi.mocked(db.heartbeat).mockResolvedValue(false)
+      vi.mocked(db.heartbeat).mockResolvedValueOnce(true).mockResolvedValue(false)
       const run = createRecoveryWorker(db, () => new Promise<void>(() => {}), {
         heartbeatSeconds: 1,
         abortGraceSeconds: 2,

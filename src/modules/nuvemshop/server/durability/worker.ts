@@ -107,6 +107,9 @@ export function createRecoveryWorker(
     if (signal.aborted) return false
     if (!(await store.start(claim))) throw new RecoveryError('OWNERSHIP_LOST')
     if (signal.aborted) throw new RecoveryError('OWNERSHIP_UNCERTAIN')
+    // start confirms ownership but does not extend the lease consumed while acquiring it.
+    if (!(await store.heartbeat(claim, leaseSeconds))) throw new RecoveryError('OWNERSHIP_LOST')
+    if (signal.aborted) throw new RecoveryError('OWNERSHIP_UNCERTAIN')
     const controller = new AbortController()
     const stop = () => controller.abort()
     signal.addEventListener('abort', stop, { once: true })
