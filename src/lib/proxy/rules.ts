@@ -14,6 +14,17 @@ export function isLivePath(pathname: string): boolean {
   return pathname === '/api/live'
 }
 
+const NUVEMSHOP_WEBHOOK_PATHS = new Set([
+  '/api/webhooks/nuvemshop/events',
+  '/api/webhooks/nuvemshop/store-redact',
+  '/api/webhooks/nuvemshop/customers-redact',
+  '/api/webhooks/nuvemshop/customers-data-request',
+])
+
+export function isNuvemshopWebhookPath(pathname: string): boolean {
+  return NUVEMSHOP_WEBHOOK_PATHS.has(pathname)
+}
+
 export function isProtectedPath(pathname: string): boolean {
   return (
     pathname === '/conta' ||
@@ -28,7 +39,13 @@ export function decideProxyAction({
   maintenanceMode,
   hasVerifiedClaims,
 }: ProxyDecisionInput): ProxyAction {
-  if (maintenanceMode && !isHealthPath(pathname) && !isLivePath(pathname)) return 'maintenance'
+  if (
+    maintenanceMode &&
+    !isHealthPath(pathname) &&
+    !isLivePath(pathname) &&
+    !isNuvemshopWebhookPath(pathname)
+  )
+    return 'maintenance'
   if (isProtectedPath(pathname) && !hasVerifiedClaims) return 'redirect'
   return 'continue'
 }
