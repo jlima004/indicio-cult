@@ -213,11 +213,12 @@ BEGIN
   SELECT * INTO v_consumer FROM nuvemshop_intake.dispatch_consumer c WHERE c.store_id=p_store AND c.consumer_id=p_consumer FOR UPDATE;
   IF NOT FOUND OR v_consumer.reconcile_receipt IS NULL OR v_consumer.reconcile_epoch IS DISTINCT FROM p_epoch OR v_consumer.reconcile_receipt IS DISTINCT FROM p_expected_receipt OR v_consumer.reconcile_token IS DISTINCT FROM p_expected_token OR v_consumer.reconcile_work_generation IS DISTINCT FROM p_expected_work_generation THEN RETURN false; END IF;
   IF EXISTS(SELECT 1 FROM nuvemshop_intake.work w WHERE w.receipt_id=v_consumer.reconcile_receipt AND w.claim_token=v_consumer.reconcile_token AND w.generation=v_consumer.reconcile_work_generation AND w.state='processing' AND w.lease_until>clock_timestamp()) THEN RETURN false; END IF;
-  IF p_outcome='applied' AND (v_operation.epoch IS DISTINCT FROM p_epoch OR NOT v_operation.access_confirmed OR v_operation.status NOT IN ('active','reconciling')) THEN RETURN false; END IF;
-  UPDATE nuvemshop_intake.dispatch_consumer c SET reconciled_epoch=CASE WHEN p_outcome='applied' THEN p_epoch ELSE c.reconciled_epoch END,
+  -- A proven historical effect can release its latch, but cannot reconcile the current epoch.
+  IF p_outcome='applied' AND p_epoch >= v_operation.epoch AND (v_operation.epoch IS DISTINCT FROM p_epoch OR NOT v_operation.access_confirmed OR v_operation.status NOT IN ('active','reconciling')) THEN RETURN false; END IF;
+  UPDATE nuvemshop_intake.dispatch_consumer c SET reconciled_epoch=CASE WHEN p_outcome='applied' AND p_epoch=v_operation.epoch THEN p_epoch ELSE c.reconciled_epoch END,
     reconcile_receipt=NULL,reconcile_token=NULL,reconcile_work_generation=NULL,reconcile_epoch=NULL,reconcile_uncertain=false
     WHERE c.store_id=p_store AND c.consumer_id=p_consumer;
-  IF p_outcome='applied' THEN PERFORM nuvemshop_intake.complete_dispatch_reconciliation(p_store,p_consumer,p_epoch); END IF;
+  IF p_outcome='applied' AND p_epoch=v_operation.epoch THEN PERFORM nuvemshop_intake.complete_dispatch_reconciliation(p_store,p_consumer,p_epoch); END IF;
   RETURN true;
 END $$;
 REVOKE ALL ON FUNCTION nuvemshop_intake.complete_dispatch_reconciliation(text,text,bigint),nuvemshop_intake.begin_dispatch_reconciliation(uuid,uuid,bigint,text,bigint),nuvemshop_intake.finish_dispatch_reconciliation(uuid,uuid,bigint,text,bigint,text),nuvemshop_intake.resolve_dispatch_reconciliation(text,text,bigint,text,uuid,uuid,bigint) FROM PUBLIC;

@@ -635,16 +635,6 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'applied',
         ...old,
       ]),
-      false,
-    )
-    assert.equal(
-      await scalar(operator, 'resolve_dispatch_reconciliation', [
-        '4',
-        'other',
-        op.epoch,
-        'retry_safe',
-        ...old,
-      ]),
       true,
     )
   } finally {
@@ -872,5 +862,158 @@ test('order receipt completion and operator proofs are scoped to the exact execu
     assert.equal(await scalar(a, 'register_dispatch_consumer', ['5', 'new-consumer']), false)
   } finally {
     await Promise.allSettled([admin.end(), a.end(), b.end(), operator.end()])
+  }
+})
+
+test('historical applied proof releases only its exact reconciliation latch across lifecycle changes', async () => {
+  const admin = connect(),
+    runtime = connect(),
+    operator = connect()
+  await Promise.all([admin.connect(), runtime.connect(), operator.connect()])
+  try {
+    assert.deepEqual(
+      (
+        await admin.query(
+          "SELECT inet_server_addr() AS addr,current_setting('listen_addresses') AS listen,current_database() AS db",
+        )
+      ).rows[0],
+      { addr: null, listen: '', db: database },
+    )
+    await runtime.query('SET ROLE nuvemshop_intake_runtime')
+    await operator.query('SET ROLE nuvemshop_intake_operator')
+    const signature =
+      'nuvemshop_intake.resolve_dispatch_reconciliation(text,text,bigint,text,uuid,uuid,bigint)'
+    const privileges = (
+      await admin.query(
+        `SELECT has_function_privilege('nuvemshop_intake_runtime',$1,'EXECUTE') AS runtime, EXISTS (SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a WHERE p.oid=$1::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE') AS public, has_function_privilege('nuvemshop_intake_operator',$1,'EXECUTE') AS operator`,
+        [signature],
+      )
+    ).rows[0]
+    assert.deepEqual(privileges, { runtime: false, public: false, operator: true })
+
+    for (const [store, event] of [
+      ['61', 'app/suspended'],
+      ['62', 'app/uninstalled'],
+    ]) {
+      const resumed = await claim(runtime, await insert(admin, 'app/resumed', store))
+      const initial = (await call(runtime, 'apply_dispatch_lifecycle', resumed))[0]
+      const active = (
+        await call(runtime, 'record_dispatch_probe', [store, initial.epoch, 'ready'])
+      )[0]
+      assert.equal(active.status, 'active')
+      assert.equal(active.access_confirmed, true)
+      await scalar(runtime, 'succeed_work', resumed)
+      await call(runtime, 'register_dispatch_consumer', [store, 'orders'])
+      const old = await claim(runtime, await insert(admin, 'order/paid', store, '1'))
+      assert.equal(
+        await scalar(runtime, 'begin_dispatch_reconciliation', [...old, 'orders', initial.epoch]),
+        'ready',
+      )
+      const change = await claim(runtime, await insert(admin, event, store))
+      const current = (await call(runtime, 'apply_dispatch_lifecycle', change))[0]
+      assert.equal(current.status, event === 'app/suspended' ? 'paused' : 'disconnected')
+      assert.notEqual(current.epoch, initial.epoch)
+      await scalar(runtime, 'succeed_work', change)
+      const proof = [store, 'orders', initial.epoch, 'applied', ...old]
+      const snapshot = async () => ({
+        operation: (
+          await admin.query('SELECT * FROM nuvemshop_intake.dispatch_operation WHERE store_id=$1', [
+            store,
+          ])
+        ).rows,
+        consumer: (
+          await admin.query('SELECT * FROM nuvemshop_intake.dispatch_consumer WHERE store_id=$1', [
+            store,
+          ])
+        ).rows,
+        lifecycle: (
+          await admin.query(
+            'SELECT * FROM nuvemshop_intake.dispatch_lifecycle WHERE receipt_id=ANY($1::uuid[]) ORDER BY receipt_id',
+            [[resumed[0], change[0]]],
+          )
+        ).rows,
+        targets: (
+          await admin.query('SELECT * FROM nuvemshop_intake.dispatch_target WHERE store_id=$1', [
+            store,
+          ])
+        ).rows,
+        signals: (
+          await admin.query('SELECT * FROM nuvemshop_intake.dispatch_signal WHERE store_id=$1', [
+            store,
+          ])
+        ).rows,
+        work: (
+          await admin.query(
+            'SELECT * FROM nuvemshop_intake.work WHERE receipt_id=ANY($1::uuid[]) ORDER BY receipt_id',
+            [[resumed[0], change[0], old[0]]],
+          )
+        ).rows,
+      })
+      const live = await snapshot()
+      await assert.rejects(
+        scalar(runtime, 'resolve_dispatch_reconciliation', proof),
+        /permission denied/,
+      )
+      assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', proof), false)
+      assert.deepEqual(await snapshot(), live)
+      assert.equal(
+        await scalar(runtime, 'finish_dispatch_reconciliation', [
+          ...old,
+          'orders',
+          initial.epoch,
+          'indeterminate',
+        ]),
+        true,
+      )
+      assert.equal(await scalar(runtime, 'fail_work', [...old, false, 'UNCERTAIN', 0]), true)
+      const before = await snapshot()
+      for (const [index, value] of [
+        [2, current.epoch],
+        [4, randomUUID()],
+        [5, randomUUID()],
+        [6, (BigInt(old[2]) + 1n).toString()],
+      ]) {
+        const wrong = [...proof]
+        wrong[index] = value
+        assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', wrong), false)
+        assert.deepEqual(await snapshot(), before)
+      }
+      assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', proof), true)
+      const after = await snapshot()
+      assert.deepEqual(after.operation, before.operation)
+      assert.deepEqual(after.lifecycle, before.lifecycle)
+      assert.deepEqual(after.targets, before.targets)
+      assert.deepEqual(after.signals, before.signals)
+      assert.deepEqual(after.work, before.work)
+      assert.deepEqual(after.consumer, [
+        {
+          ...before.consumer[0],
+          reconcile_receipt: null,
+          reconcile_token: null,
+          reconcile_work_generation: null,
+          reconcile_epoch: null,
+          reconcile_uncertain: false,
+        },
+      ])
+      assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', proof), false)
+      if (event === 'app/uninstalled') {
+        assert.equal(
+          await scalar(operator, 'authorize_dispatch_reinstallation', [store, current.epoch]),
+          true,
+        )
+      } else {
+        const newResume = await claim(runtime, await insert(admin, 'app/resumed', store))
+        await call(runtime, 'apply_dispatch_lifecycle', newResume)
+        await scalar(runtime, 'succeed_work', newResume)
+      }
+      let next = (await call(runtime, 'get_dispatch_operation', [store]))[0]
+      assert.equal(next.status, 'paused')
+      next = (await call(runtime, 'record_dispatch_probe', [store, next.epoch, 'ready']))[0]
+      assert.equal(next.status, 'reconciling')
+      assert.equal(await reconcile(admin, runtime, store, 'orders', next.epoch), true)
+      assert.equal((await call(runtime, 'get_dispatch_operation', [store]))[0].status, 'active')
+    }
+  } finally {
+    await Promise.allSettled([admin.end(), runtime.end(), operator.end()])
   }
 })
