@@ -121,8 +121,16 @@ fixture's certificate. Optional `NUV19_TEST_REPORT` writes sanitized timing data
 only under the local NUV-19 evidence directory. The explicit fixture database is
 `nuv19_test`, port 5432; do not point it at an existing environment.
 
-The opt-in HTTP E2E suite uses the existing two-server Playwright harness,
-`PLAYWRIGHT_INTEGRATION=1`, synthetic store `9` and client secret
+The opt-in HTTP E2E suites use the existing two-server Playwright harness via
+`playwright.nuvemshop.config.ts`. Set `NUV19_HTTP_FIXTURE=unconfigured` for the
+five missing-ledger/failure tests or `NUV19_HTTP_FIXTURE=durable` for the two
+actual PostgreSQL ACK tests, and run
+`npx playwright test --config playwright.nuvemshop.config.ts --project desktop`.
+These mutually exclusive fixtures use `.nuv19.ts` filenames, so neither enters
+the existing default or `PLAYWRIGHT_INTEGRATION=1` selection. Collection is
+validated with `--list` for all four selections. This corrects Codex Review's
+P2 on mixed fixture requirements without changing the existing global config.
+The fixtures use synthetic store `9` and client secret
 `nuv19-local-http-secret`. PostgreSQL intake configuration stays absent for this
 failure-boundary suite. Supabase points only to an unreachable loopback URL,
 so health reports its existing degraded 503 while live remains 200. Unit tests
