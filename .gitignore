@@ -39,3 +39,6 @@ Thumbs.db
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Independent Nuvemshop worker build
+.worker-build/

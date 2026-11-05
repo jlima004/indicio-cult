@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "outDir": ".worker-build",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/lib/server/nuvemshop-intake-pool.ts",
+    "src/modules/nuvemshop/server/durability/worker.ts",
+    "src/modules/nuvemshop/server/durability/recovery-store.ts"
+  ]
+}
