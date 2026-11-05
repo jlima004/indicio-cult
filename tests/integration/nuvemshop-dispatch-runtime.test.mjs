@@ -101,9 +101,10 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
   })
   const received = []
   let reconciliationFails = false
+  let retryPaid = true
   registry.register({
     id: 'synthetic-runtime',
-    topics: ['product/updated'],
+    topics: ['product/updated', 'order/paid', 'order/cancelled'],
     async reconcile(_store, signal) {
       assert.equal(signal.aborted, false)
       return reconciliationFails ? 'indeterminate' : 'applied'
@@ -120,6 +121,10 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
       if (received.length === 1) {
         announceFirst()
         await held
+      }
+      if (event.event === 'order/paid' && retryPaid) {
+        retryPaid = false
+        return 'retry-safe'
       }
       return event.resourceId === '99' ? 'indeterminate' : 'applied'
     },
@@ -167,6 +172,11 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
     const uncertain = await insert('product/updated', '99')
     await assert.rejects(makeWorker().runOnce(), /PROCESSOR_FAILED/)
     assert.equal((await work(uncertain)).state, 'quarantined')
+    const signalProof = (
+      await admin.query(
+        "SELECT active_receipt,active_token,active_work_generation FROM nuvemshop_intake.dispatch_target WHERE store_id='9' AND resource_id='99'",
+      )
+    ).rows[0]
     // Synthetic proof says the effect applied; the operator resolves without repeating it.
     assert.equal(
       await operator('resolve_dispatch_signal', [
@@ -176,6 +186,9 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
         '99',
         '1',
         'applied',
+        signalProof.active_receipt,
+        signalProof.active_token,
+        signalProof.active_work_generation,
       ]),
       true,
     )
@@ -190,6 +203,11 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
     assert.equal((await work(nextResume)).state, 'quarantined')
     const pendingReconciliation = await createDispatchStore(pool).getOperation('9')
     assert.equal(pendingReconciliation.status, 'reconciling')
+    const reconciliationProof = (
+      await admin.query(
+        "SELECT reconcile_receipt,reconcile_token,reconcile_work_generation FROM nuvemshop_intake.dispatch_consumer WHERE store_id='9' AND consumer_id='synthetic-runtime'",
+      )
+    ).rows[0]
     reconciliationFails = false // Explicit operator-approved replay, not automatic uncertain retry.
     assert.equal(
       await operator('resolve_dispatch_reconciliation', [
@@ -197,6 +215,9 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
         'synthetic-runtime',
         pendingReconciliation.epoch,
         'retry_safe',
+        reconciliationProof.reconcile_receipt,
+        reconciliationProof.reconcile_token,
+        reconciliationProof.reconcile_work_generation,
       ]),
       true,
     )
@@ -231,6 +252,22 @@ test('compiled dispatcher, SQL adapter and NUV-17 worker preserve effects and pe
     assert.equal((await store.getOperation('9')).status, 'active')
     assert.equal((await work(pending)).state, 'succeeded')
     assert.equal(received.length, 5)
+    const paid = await insert('order/paid', '70')
+    await assert.rejects(makeWorker().runOnce(), /PROCESSOR_FAILED/)
+    assert.equal((await work(paid)).state, 'retryable')
+    const cancelled = await insert('order/cancelled', '70')
+    await makeWorker().runOnce()
+    assert.equal((await work(cancelled)).state, 'succeeded')
+    await admin.query(
+      "UPDATE nuvemshop_intake.work SET next_attempt_at=clock_timestamp()-interval '1 second' WHERE receipt_id=$1",
+      [paid],
+    )
+    await makeWorker().runOnce()
+    assert.equal((await work(paid)).state, 'succeeded')
+    assert.deepEqual(
+      received.slice(-3).map((event) => event.event),
+      ['order/paid', 'order/cancelled', 'order/paid'],
+    )
   } finally {
     releaseFirst()
     await admin.end()

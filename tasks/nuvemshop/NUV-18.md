@@ -25,6 +25,9 @@ concluída. Todas as entregas distintas conservam seu receipt; payload idêntico
 não é deduplicado globalmente. Eventos de pedido compartilham o recurso, sem
 presumir ordering ou transição de domínio. Geração recebida durante processamento
 permanece pendente após a conclusão anterior.
+Produtos podem coalescer gerações já cobertas. Pedidos exigem confirmação
+individual de cada receipt/consumer: concluir `order/cancelled` não comprova
+o efeito de um `order/paid` anterior que permaneceu pendente ou retry-safe.
 
 Ausência de consumer, pausa e disputa devolvem adiamento durável com backoff,
 sem consumir tentativas de efeito. `succeeded` exige confirmação do resultado
@@ -61,6 +64,9 @@ callbacks; AbortSignal e fencing não desfazem efeitos externos já iniciados.
 Somente a role NOLOGIN de operador pode executar `resolve_dispatch_signal` ou
 `resolve_dispatch_reconciliation`: exigir prova canônica do resultado aplicado
 ou de repetição segura, geração/epoch exatos e claim anterior sem vigência.
+Ambos os resolvers exigem também o receipt, token e geração do work esperados;
+prova de uma tentativa anterior não pode liberar outra após replay, mesmo
+que o receipt, a geração do destino ou o epoch de reconciliação se repitam.
 Replay de work em quarentena é separado, por `replay_work`, dentro dos limites
 NUV-17. `authorize_dispatch_reinstallation(store, expected_epoch)` registra
 autorização de reinstalação já decidida fora deste mecanismo; mantém pausa,
@@ -77,7 +83,7 @@ indeterminação e identidade; o adapter não repete a mutação nem revela sua 
 ## Verificação e revisão
 
 Testes focados: dispatcher (24), adapter SQL (7), worker compatível (34):
-**65 PASS**. PostgreSQL 17.11 local descartável, sem TCP: **3 testes PASS**
+**65 PASS**. PostgreSQL 17.11 local descartável, sem TCP: **4 testes PASS**
 de transições/concorrência/ACL, mais **1 PASS** integrando dispatcher compilado,
 adapter real e worker. A prova inclui conexões independentes, espera por lock
 além da lease, geração posterior, reinício/reconciliação pendente, 401/402,
@@ -91,7 +97,7 @@ Comandos PostgreSQL usam `NUV18_TEST_SOCKET`, `NUV18_TEST_PORT` e
 | Gate                                                      | Resultado real                                                                        |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Testes focados                                            | PASS — 65 testes                                                                      |
-| PostgreSQL 17.11 local                                    | PASS — 3 testes de transições + 1 integrado compilado                                 |
+| PostgreSQL 17.11 local                                    | PASS — 4 testes de transições + 1 integrado compilado                                 |
 | `npm run check`, primeira execução                        | FAIL — 2.991 PASS e seis timeouts em boundary; 43 arquivos                            |
 | `npm run check`, repetição integral sem build concorrente | FAIL — 2.997 PASS e um timeout de 5 s em `TSTYPES-09-ROOT`; 2.998 testes, 43 arquivos |
 | `npm run build`                                           | PASS — Next.js 16.4.1, configuração sintética local, sem credenciais Nuvemshop        |
@@ -115,6 +121,16 @@ novo, reinstalação autorizada e concorrência de reconciliação. As correçõ
 incluem caminhos concretos, latch durável e regressões; revisão dirigida final
 sem P0/P1/P2 materiais abertos. Regressões adicionais cobrem cancelamento antes
 do probe e interrupção do polling quando um callback ignora AbortSignal.
+
+Na [PR Draft #69](https://github.com/jlima004/indicio-cult/pull/69), Codex Review
+detectou dois P2 adicionais em `646eb5b`: cobertura indevida de sinal de pedido
+anterior por watermark e reutilização de prova operacional depois de replay.
+As correções SQL exigem conclusão individual dos pedidos e CAS da identidade
+completa da tentativa em ambos os resolvers, sem assinaturas antigas disponíveis.
+As regressões PostgreSQL e o teste integrado compilado foram reexecutados,
+assim como os 65 testes focados. O TypeScript permaneceu inalterado nessa
+correção; o check integral local acima é o registro do HEAD `646eb5b` e não
+foi convertido em PASS. CI e nova revisão GitHub seguem o HEAD publicado na PR.
 
 Nenhuma migration, role ou dado remoto foi acessado/alterado. Nenhum worker,
 webhook, probe real, consumer de domínio ou privacy foi ativado. A publicação

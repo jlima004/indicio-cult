@@ -189,7 +189,15 @@ test('dispatch transitions: local concurrency, fencing, lifecycle and ACL', asyn
       ]),
       true,
     )
-    const resolution = ['1', 'catalog', 'product', '11', uncertain.generation, 'applied']
+    const resolution = [
+      '1',
+      'catalog',
+      'product',
+      '11',
+      uncertain.generation,
+      'applied',
+      ...uncertainWork,
+    ]
     await assert.rejects(call(a, 'resolve_dispatch_signal', resolution), /permission denied/)
     const operator = connect()
     await operator.connect()
@@ -205,6 +213,7 @@ test('dispatch transitions: local concurrency, fencing, lifecycle and ACL', asyn
           '11',
           '999',
           'applied',
+          ...uncertainWork,
         ]),
         false,
       )
@@ -523,7 +532,13 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
     const winner = r1 === 'ready' ? { c: a, work: w1 } : { c: b, work: w2 }
     const waiter = r1 === 'busy' ? { c: a, work: w1 } : { c: b, work: w2 }
     await assert.rejects(
-      call(waiter.c, 'resolve_dispatch_reconciliation', ['4', 'orders', op.epoch, 'retry_safe']),
+      call(waiter.c, 'resolve_dispatch_reconciliation', [
+        '4',
+        'orders',
+        op.epoch,
+        'retry_safe',
+        ...winner.work,
+      ]),
       /permission denied/,
     )
     assert.equal(
@@ -532,6 +547,7 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'orders',
         op.epoch,
         'retry_safe',
+        ...winner.work,
       ]),
       false,
     )
@@ -554,6 +570,7 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'orders',
         (BigInt(op.epoch) + 1n).toString(),
         'retry_safe',
+        ...winner.work,
       ]),
       false,
     )
@@ -563,6 +580,7 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'orders',
         op.epoch,
         'retry_safe',
+        ...winner.work,
       ]),
       true,
     )
@@ -615,6 +633,7 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'other',
         op.epoch,
         'applied',
+        ...old,
       ]),
       false,
     )
@@ -624,9 +643,233 @@ test('reconciliation latch fences concurrency, crash uncertainty and operator re
         'other',
         op.epoch,
         'retry_safe',
+        ...old,
       ]),
       true,
     )
+  } finally {
+    await Promise.allSettled([admin.end(), a.end(), b.end(), operator.end()])
+  }
+})
+
+test('order receipt completion and operator proofs are scoped to the exact execution', async () => {
+  const admin = connect(),
+    a = connect(),
+    b = connect(),
+    operator = connect()
+  await Promise.all([admin.connect(), a.connect(), b.connect(), operator.connect()])
+  try {
+    const safety = (
+      await admin.query(
+        "SELECT inet_server_addr() AS addr,current_setting('listen_addresses') AS listen,current_database() AS db",
+      )
+    ).rows[0]
+    assert.deepEqual(safety, { addr: null, listen: '', db: database })
+    await Promise.all([
+      a.query('SET ROLE nuvemshop_intake_runtime'),
+      b.query('SET ROLE nuvemshop_intake_runtime'),
+      operator.query('SET ROLE nuvemshop_intake_operator'),
+    ])
+    const overloads = (
+      await admin.query(`SELECT
+      to_regprocedure('nuvemshop_intake.resolve_dispatch_signal(text,text,text,text,bigint,text)') AS old_signal,
+      to_regprocedure('nuvemshop_intake.resolve_dispatch_reconciliation(text,text,bigint,text)') AS old_reconciliation,
+      to_regprocedure('nuvemshop_intake.resolve_dispatch_signal(text,text,text,text,bigint,text,uuid,uuid,bigint)') IS NOT NULL AS new_signal,
+      to_regprocedure('nuvemshop_intake.resolve_dispatch_reconciliation(text,text,bigint,text,uuid,uuid,bigint)') IS NOT NULL AS new_reconciliation`)
+    ).rows[0]
+    assert.deepEqual(overloads, {
+      old_signal: null,
+      old_reconciliation: null,
+      new_signal: true,
+      new_reconciliation: true,
+    })
+    await call(a, 'register_dispatch_consumer', ['5', 'orders'])
+    const lifecycle = await claim(a, await insert(admin, 'app/resumed', '5'))
+    let op = (await call(a, 'apply_dispatch_lifecycle', lifecycle))[0]
+    op = (await call(a, 'record_dispatch_probe', ['5', op.epoch, 'ready']))[0]
+    assert.equal(
+      await scalar(a, 'begin_dispatch_reconciliation', [...lifecycle, 'orders', op.epoch]),
+      'ready',
+    )
+    assert.equal(
+      await scalar(a, 'finish_dispatch_reconciliation', [
+        ...lifecycle,
+        'orders',
+        op.epoch,
+        'applied',
+      ]),
+      true,
+    )
+    await scalar(a, 'succeed_work', lifecycle)
+
+    const paid = await claim(a, await insert(admin, 'order/paid', '5', '501'))
+    const paidStart = (await call(a, 'begin_dispatch_signal', [...paid, 'orders']))[0]
+    assert.equal(paidStart.status, 'ready')
+    assert.equal(
+      await scalar(a, 'finish_dispatch_signal', [
+        ...paid,
+        'orders',
+        paidStart.generation,
+        paidStart.epoch,
+        'retry_safe',
+      ]),
+      true,
+    )
+    const cancelled = await claim(b, await insert(admin, 'order/cancelled', '5', '501'))
+    const cancelStart = (await call(b, 'begin_dispatch_signal', [...cancelled, 'orders']))[0]
+    assert.equal(cancelStart.status, 'ready')
+    assert.equal(BigInt(cancelStart.generation), BigInt(paidStart.generation) + 1n)
+    assert.equal(
+      await scalar(b, 'finish_dispatch_signal', [
+        ...cancelled,
+        'orders',
+        cancelStart.generation,
+        cancelStart.epoch,
+        'applied',
+      ]),
+      true,
+    )
+    assert.equal((await call(a, 'begin_dispatch_signal', [...paid, 'orders']))[0].status, 'ready')
+    assert.equal(
+      await scalar(a, 'finish_dispatch_signal', [
+        ...paid,
+        'orders',
+        paidStart.generation,
+        paidStart.epoch,
+        'applied',
+      ]),
+      true,
+    )
+    assert.equal(
+      (await call(a, 'begin_dispatch_signal', [...paid, 'orders']))[0].status,
+      'completed',
+    )
+    await scalar(a, 'succeed_work', paid)
+    await scalar(b, 'succeed_work', cancelled)
+
+    const signalId = await insert(admin, 'order/paid', '5', '502')
+    const signalA = await claim(a, signalId)
+    const signalStartA = (await call(a, 'begin_dispatch_signal', [...signalA, 'orders']))[0]
+    assert.equal(
+      await scalar(a, 'finish_dispatch_signal', [
+        ...signalA,
+        'orders',
+        signalStartA.generation,
+        signalStartA.epoch,
+        'indeterminate',
+      ]),
+      true,
+    )
+    await scalar(a, 'fail_work', [...signalA, false, 'UNCERTAIN', 0])
+    const oldSignalProof = [
+      '5',
+      'orders',
+      'order',
+      '502',
+      signalStartA.generation,
+      'retry_safe',
+      ...signalA,
+    ]
+    for (const index of [6, 7, 8]) {
+      const missing = [...oldSignalProof]
+      missing[index] = null
+      assert.equal(await scalar(operator, 'resolve_dispatch_signal', missing), false)
+    }
+    assert.equal(await scalar(operator, 'resolve_dispatch_signal', oldSignalProof), true)
+    assert.equal(await scalar(operator, 'replay_work', [signalId]), true)
+    const signalB = await claim(b, signalId)
+    assert.notEqual(signalB[1], signalA[1])
+    assert.notEqual(signalB[2], signalA[2])
+    const signalStartB = (await call(b, 'begin_dispatch_signal', [...signalB, 'orders']))[0]
+    assert.equal(signalStartB.generation, signalStartA.generation)
+    assert.equal(
+      await scalar(b, 'finish_dispatch_signal', [
+        ...signalB,
+        'orders',
+        signalStartB.generation,
+        signalStartB.epoch,
+        'indeterminate',
+      ]),
+      true,
+    )
+    await scalar(b, 'fail_work', [...signalB, false, 'UNCERTAIN', 0])
+    assert.equal(await scalar(operator, 'resolve_dispatch_signal', oldSignalProof), false)
+    assert.equal(
+      await scalar(operator, 'resolve_dispatch_signal', [
+        '5',
+        'orders',
+        'order',
+        '502',
+        signalStartB.generation,
+        'applied',
+        ...signalB,
+      ]),
+      true,
+    )
+    assert.equal(
+      (
+        await admin.query(
+          'SELECT completed FROM nuvemshop_intake.dispatch_signal WHERE receipt_id=$1 AND consumer_id=$2',
+          [signalId, 'orders'],
+        )
+      ).rows[0].completed,
+      true,
+    )
+
+    await call(a, 'register_dispatch_consumer', ['5', 'new-consumer'])
+    const reconId = await insert(admin, 'order/paid', '5', '503')
+    const reconA = await claim(a, reconId)
+    assert.equal(
+      await scalar(a, 'begin_dispatch_reconciliation', [...reconA, 'new-consumer', op.epoch]),
+      'ready',
+    )
+    assert.equal(
+      await scalar(a, 'finish_dispatch_reconciliation', [
+        ...reconA,
+        'new-consumer',
+        op.epoch,
+        'indeterminate',
+      ]),
+      true,
+    )
+    await scalar(a, 'fail_work', [...reconA, false, 'UNCERTAIN', 0])
+    const oldReconProof = ['5', 'new-consumer', op.epoch, 'retry_safe', ...reconA]
+    for (const index of [4, 5, 6]) {
+      const missing = [...oldReconProof]
+      missing[index] = null
+      assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', missing), false)
+    }
+    assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', oldReconProof), true)
+    assert.equal(await scalar(operator, 'replay_work', [reconId]), true)
+    const reconB = await claim(b, reconId)
+    assert.notEqual(reconB[1], reconA[1])
+    assert.notEqual(reconB[2], reconA[2])
+    assert.equal(
+      await scalar(b, 'begin_dispatch_reconciliation', [...reconB, 'new-consumer', op.epoch]),
+      'ready',
+    )
+    assert.equal(
+      await scalar(b, 'finish_dispatch_reconciliation', [
+        ...reconB,
+        'new-consumer',
+        op.epoch,
+        'indeterminate',
+      ]),
+      true,
+    )
+    await scalar(b, 'fail_work', [...reconB, false, 'UNCERTAIN', 0])
+    assert.equal(await scalar(operator, 'resolve_dispatch_reconciliation', oldReconProof), false)
+    assert.equal(
+      await scalar(operator, 'resolve_dispatch_reconciliation', [
+        '5',
+        'new-consumer',
+        op.epoch,
+        'applied',
+        ...reconB,
+      ]),
+      true,
+    )
+    assert.equal(await scalar(a, 'register_dispatch_consumer', ['5', 'new-consumer']), false)
   } finally {
     await Promise.allSettled([admin.end(), a.end(), b.end(), operator.end()])
   }
