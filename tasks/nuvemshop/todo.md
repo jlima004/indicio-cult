@@ -221,6 +221,8 @@ O harness verifica a propriedade limitada de isolamento por grafo e ownership co
 
 ### NUV-17 · Claim, lease e recuperação
 
+**Execução local autorizada — 2026-11-04:** o owner aceitou `NUV16_MVP_SMOKE_R2_PASS` como gate funcional mínimo MVP e autorizou a implementação local NUV-17. O bloqueio abaixo é o snapshot histórico; contratos, decisões e limites do candidato estão em [NUV-17.md](./NUV-17.md). A aceitação mínima não conclui integralmente NUV-16, não reabre H5-B/T10/TEST-BOUNDARY-01 nem autoriza ativação, merge ou deploy.
+
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** registro durável sem worker recuperável não prova processamento.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-16, HR-07. **Escopo/arquivos prováveis:** `src/modules/nuvemshop/server/durability/**` e `tests/unit/modules/nuvemshop/durability-worker.test.ts`; caminho real depende do backend escolhido.
 - **RED:** dois workers, lease expirado, crash pós-ACK com reclaim e despacho do trabalho normalizado persistido, retry limitado, replay e quarentena falham. **GREEN:** claim atômico, `claimed/processing/succeeded/retryable/quarantined`, reclaim e recovery observáveis. **REFACTOR:** reduzir transições duplicadas.
