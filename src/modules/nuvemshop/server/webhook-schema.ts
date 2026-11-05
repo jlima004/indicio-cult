@@ -8,6 +8,7 @@ import { NuvemshopWebhookError } from './errors'
 import { readDecimalId } from './schemas/ids'
 import { decodeObject } from './schemas/lossless-json'
 import { verifyNuvemshopWebhook } from './webhook-auth'
+import { assertWebhookJsonBounds } from './webhook-bounds'
 
 export type BusinessTopic = 'product/updated' | 'order/paid' | 'order/fulfilled' | 'order/cancelled'
 
@@ -64,7 +65,9 @@ export async function classifyNuvemshopWebhook(
   const bytes = await verifyNuvemshopWebhook(request, signatureValues)
   let envelope: Record<string, unknown>
   try {
-    envelope = decodeObject(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+    const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    assertWebhookJsonBounds(raw)
+    envelope = decodeObject(raw)
   } catch {
     throw new NuvemshopWebhookError()
   }

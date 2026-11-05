@@ -25,11 +25,14 @@ async function readBody(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   signal: AbortSignal,
 ): Promise<Uint8Array> {
-  // Fixed storage also bounds metadata when producers send tiny or empty chunks.
-  const bytes = new Uint8Array(MAX_BODY_BYTES)
+  // One growing buffer bounds metadata without preallocating 1 MiB for stalled requests.
+  let bytes = new Uint8Array(0)
   let length = 0
+  let chunks = 0
   try {
     while (true) {
+      // Ready/empty chunks otherwise monopolize microtasks and starve ingress timers.
+      if (++chunks % 1024 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0))
       if (signal.aborted) throw new NuvemshopWebhookError()
       const { done, value } = await reader.read()
       if (signal.aborted) throw new NuvemshopWebhookError()
@@ -39,6 +42,15 @@ async function readBody(
       const chunkLength = Reflect.get(Uint8Array.prototype, 'byteLength', value) as number
       if (chunkLength > MAX_BODY_BYTES - length) {
         throw new NuvemshopWebhookError()
+      }
+      if (length + chunkLength > bytes.length) {
+        const capacity = Math.min(
+          MAX_BODY_BYTES,
+          Math.max(1024, length + chunkLength, bytes.length * 2),
+        )
+        const grown = new Uint8Array(capacity)
+        grown.set(bytes)
+        bytes = grown
       }
       // Copy the view before the next read can reuse its backing memory.
       bytes.set(value, length)
