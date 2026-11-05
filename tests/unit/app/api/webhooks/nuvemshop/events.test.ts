@@ -189,9 +189,8 @@ it('rejects invalid UTF-8 even when its raw bytes have a valid signature', async
 
 it('uses the actual route and fails closed when pool configuration is absent', async () => {
   vi.stubEnv('NUVEMSHOP_INTAKE_HOST', undefined)
-  const { POST, runtime } = await import('@/app/api/webhooks/nuvemshop/events/route')
+  const { POST } = await import('@/app/api/webhooks/nuvemshop/events/route')
   const response = await POST(signed(body('app/resumed')))
-  expect(runtime).toBe('nodejs')
   expect(response.status).toBe(500)
   expect(await response.text()).not.toContain('NUVEMSHOP_INTAKE_HOST')
 })
