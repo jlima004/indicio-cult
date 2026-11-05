@@ -232,6 +232,14 @@ O harness verifica a propriedade limitada de isolamento por grafo e ownership co
 
 ### NUV-18 · Dispatcher e sinais reconciliáveis
 
+**Registro posterior — 2026-11-05:** implementação local autorizada sobre
+NUV-17 integrada em `c1dafee`, com o gate funcional mínimo MVP de NUV-16 aceito
+pelo owner. Dispatcher, estado operacional PostgreSQL, gerações e reconciliação
+durável implementados; resultado `NUV18_LOCAL_PARTIAL` (check global com
+timeout reproduzido no baseline), validação e revisão em
+[NUV-18.md](NUV-18.md). O snapshot BLOCKED abaixo é histórico; nenhum gate
+operacional, merge ou deploy é liberado por este registro.
+
 - **Estado/tamanho:** BLOCKED_BY_NUV_HR_07 · M. **Racional:** sinais devem chegar a consumers sem assumir ordem ou exactly-once.
 - **Dependências/gates:** AUTH + HR-01 CLOSED, NUV-04/05/15/17; HR-07. HR-02/06 real depois, sem ciclo. **Escopo/arquivos prováveis:** dispatcher.ts e unidade dispatcher; estado operacional durável no backend HR-07, não domínio de pedido.
 - **RED:** Duplicata/geração posterior/pedido fora de ordem/handler falhando; lifecycle duplicado/tardio, suspend/uninstall seguido de resume atrasado, crash e probe402/401 falham se retomarem cegamente. **GREEN:** registry/coalescing com geração pendente; consumer orders reconcilia canonically/quarentena. Persistir estado operacional pausado/desconectado: suspend interrompe normal,uninstall desconecta e sinaliza owner sem executar redact. Resumed solicita probe canônico bounded04/05 e reconciliação de consumers **já registrados e operacionais**, sem liberar sua retomada enquanto acesso/config/reconciliação aplicáveis não comprovados; ordering não prova estado atual. 402 converge diagnóstico de suspensão; free-days/silêncio não detector exclusivo. Reinstalação manual segue runbook humano. NUV-24 prova coordenação/estado durável/probe do adapter, sem exigir consumers futuros; estes fazem sync inicial antes de operar e produzem evidência efetiva25. Pendência de consumer não integrado fica recuperável e explícita, sem marcar efeitos concluídos. **REFACTOR:** separar recibo/estado operacional/efeitos de consumer.

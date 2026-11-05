@@ -30,7 +30,7 @@ describe('recovery worker', () => {
     const process = vi.fn(async () => undefined)
     const worker = createRecoveryWorker(db, process)
     await worker.runOnce()
-    expect(process).toHaveBeenCalledWith(claim.projection, expect.any(AbortSignal))
+    expect(process).toHaveBeenCalledWith(claim.projection, expect.any(AbortSignal), claim)
     expect(db.succeed).toHaveBeenCalledWith(claim)
   })
   it('never invokes effects if ownership is rejected', async () => {
@@ -56,6 +56,44 @@ describe('recovery worker', () => {
       createRecoveryWorker(db, async () => undefined).run(new AbortController().signal),
     ).rejects.toThrow()
     expect(db.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('recoverable dispatch deferral', () => {
+  it('defers paused work without recording consumer success or failure', async () => {
+    const db = { ...store(), defer: vi.fn(async () => true) }
+    const processor = async () => ({
+      disposition: 'deferred' as const,
+      reason: 'OPERATION_PAUSED' as const,
+    })
+    expect(await createRecoveryWorker(db, processor).runOnce()).toBe(true)
+    expect(db.defer).toHaveBeenCalledWith(claim, 'OPERATION_PAUSED', 30)
+    expect(db.succeed).not.toHaveBeenCalled()
+    expect(db.fail).not.toHaveBeenCalled()
+  })
+  it('does not acknowledge a deferral when the store has no support', async () => {
+    const db = store()
+    const processor = async () => ({
+      disposition: 'deferred' as const,
+      reason: 'NO_CONSUMER' as const,
+    })
+    await expect(createRecoveryWorker(db, processor).runOnce()).rejects.toThrow(
+      'DEFERRAL_UNSUPPORTED',
+    )
+    expect(db.succeed).not.toHaveBeenCalled()
+  })
+  it('rejects a stale deferral and preserves its database uncertainty', async () => {
+    const db = { ...store(), defer: vi.fn(async () => false) }
+    const processor = async () => ({
+      disposition: 'deferred' as const,
+      reason: 'DISPATCH_BUSY' as const,
+    })
+    await expect(createRecoveryWorker(db, processor).runOnce()).rejects.toThrow('OWNERSHIP_LOST')
+    db.defer.mockRejectedValueOnce(new Error('TRANSITION_INDETERMINATE'))
+    await expect(createRecoveryWorker(db, processor).runOnce()).rejects.toThrow(
+      'TRANSITION_INDETERMINATE',
+    )
+    expect(db.succeed).not.toHaveBeenCalled()
   })
 })
 
@@ -466,7 +504,10 @@ it.each([
   vi.mocked(db.claim).mockResolvedValue({ ...claim, projection })
   const process = vi.fn(async () => undefined)
   await createRecoveryWorker(db, process).runOnce()
-  expect(process).toHaveBeenCalledWith(projection, expect.any(AbortSignal))
+  expect(process).toHaveBeenCalledWith(projection, expect.any(AbortSignal), {
+    ...claim,
+    projection,
+  })
 })
 
 it('preserves transition identity and snapshot when resource close also fails', async () => {

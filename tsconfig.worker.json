@@ -6,12 +6,16 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "outDir": ".worker-build",
     "rootDir": "src"
   },
   "include": [
     "src/lib/server/nuvemshop-intake-pool.ts",
     "src/modules/nuvemshop/server/durability/worker.ts",
-    "src/modules/nuvemshop/server/durability/recovery-store.ts"
+    "src/modules/nuvemshop/server/durability/recovery-store.ts",
+    "src/modules/nuvemshop/server/durability/dispatch-store.ts"
   ]
 }
