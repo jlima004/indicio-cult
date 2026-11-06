@@ -116,12 +116,14 @@ describe('.env.example', () => {
   it('tem exatamente as chaves dos schemas mais as de tooling', async () => {
     const { serverSchema, publicSchema } = await loadEnv()
     const { nuvemshopApiSchema, nuvemshopHmacSchema } = await import('@/lib/env/nuvemshop')
+    const { nuvemshopIntakeSchema } = await import('@/lib/server/nuvemshop-intake-runtime')
 
     const expectedKeys = [
       ...Object.keys(serverSchema.shape),
       ...Object.keys(publicSchema.shape),
       ...Object.keys(nuvemshopApiSchema.shape),
       ...Object.keys(nuvemshopHmacSchema.shape),
+      ...Object.keys(nuvemshopIntakeSchema.shape),
       ...toolingOnlyKeys,
     ].filter((key) => !runtimeProvidedKeys.includes(key))
 

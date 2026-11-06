@@ -1,0 +1,4 @@
+# Public synthetic HMAC fixture in an immutable historical test-only commit.
+# No provider credential. Scope is this exact commit/file/rule/line fingerprint.
+# Current tests generate their own random key; future findings remain enabled.
+dc8b54ee3a852c5056fa0af5a386592241817452:tests/unit/modules/nuvemshop/webhook-bounds.test.ts:generic-api-key:11

@@ -10,6 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { config, proxy, RETRY_AFTER_SECONDS } from '@/proxy'
 import { decideProxyAction, isHealthPath, isProtectedPath } from '@/lib/proxy/rules'
 
+const nuvemshopPaths = [
+  '/api/webhooks/nuvemshop/events',
+  '/api/webhooks/nuvemshop/store-redact',
+  '/api/webhooks/nuvemshop/customers-redact',
+  '/api/webhooks/nuvemshop/customers-data-request',
+]
+
 type CookieAdapter = {
   getAll: () => { name: string; value: string }[]
   setAll?: (
@@ -127,6 +134,7 @@ describe('matcher do Proxy', () => {
     '/admin/pedidos',
     '/api/health',
     '/api/live',
+    ...nuvemshopPaths,
     '/_next/staticity',
     '/_next/imagery',
     '/favicon.ico-extra',
@@ -205,6 +213,36 @@ describe('fluxo request/response do Proxy', () => {
       expect(mocks.getClaims).not.toHaveBeenCalled()
     },
   )
+
+  it.each(nuvemshopPaths.flatMap((path) => [false, true].map((mode) => [path, mode] as const)))(
+    'encaminha %s sem sessão com maintenance=%s',
+    async (path, mode) => {
+      mocks.env.MAINTENANCE_MODE = mode
+
+      const response = await proxy(request(path))
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('x-middleware-next')).toBe('1')
+      expect(getRedirectUrl(response)).toBeNull()
+      expect(createServerClient).not.toHaveBeenCalled()
+      expect(mocks.getClaims).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    '/api/webhooks',
+    '/api/webhooks/nuvemshop',
+    '/api/webhooks/nuvemshop/future',
+    ...nuvemshopPaths.flatMap((path) => [`${path}/`, `${path}/extra`, `${path}-extra`]),
+  ])('bloqueia variante não allowlisted %s durante maintenance', async (path) => {
+    mocks.env.MAINTENANCE_MODE = true
+
+    const response = await proxy(request(path))
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get('retry-after')).toBe(String(RETRY_AFTER_SECONDS))
+    expect(createServerClient).not.toHaveBeenCalled()
+  })
 
   it('usa getClaims e deixa rota pública sem sessão continuar', async () => {
     const response = await proxy(request('/'))
