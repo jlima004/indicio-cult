@@ -432,3 +432,73 @@ Menor decisão para o próximo passo: o PO pode **manter A** (sem nova autoriza�
 Estado-alvo **HR04_MVP_SCOPE_PROPOSAL_READY_FOR_HUMAN_ADJUDICATION** somente após validação, revisão sem findings materiais, publicação e gates do novo HEAD comprovados em recibo externo, evitando hash/status autorreferente no documento. Se algum gate permanecer pendente/falhar, registrar a limitação e não declarar o estado-alvo completo.
 
 Estados obrigatoriamente preservados: **HR04_OPEN / NUV10_BLOCKED_BY_HR04 / HR04_PROVIDER_EVIDENCE_REQUIRED / NUV10_FULL_NOT_SATISFIED / NO_PROVIDER_SUPPORT_FOR_MVP / NO_REMOTE_OPERATIONS_AUTHORIZED / MERGE_NOT_AUTHORIZED / DEPLOY_NOT_AUTHORIZED**. Nenhum código, teste, migration, SPEC, PLAN, TODO ou DAG é alterado; nenhuma promoção Ready, merge, deploy ou operação de loja é autorizada por este suplemento.
+
+## P. Human Ratification — Alternative A and MVP Scope
+
+### P.1 Data, proveniência e alcance
+
+**2026-11-06, America/Sao_Paulo — decisão humana vinculante do Product Owner**, comunicada no pedido `CODEX — HR04-DECISION-A / Fechamento documental` desta sessão, dirigido à [PR #72](https://github.com/jlima004/indicio-cult/pull/72), com HEAD de referência `feb76b4cd78e343cb075a2b189f66a67373c9245`. A proveniência é a instrução humana recebida; não se inventa ata, comentário público anterior, evidência de conta ou ratificação por terceiros.
+
+O PO ratificou **a alternativa A de O.6/O.10**, selecionou C somente como investigação futura e não autorizou B. As letras A/B/C deste suplemento identificam as alternativas de escopo do MVP em O; não são uma seleção conjunta das opções homônimas de HR04-D1–D5 em I/M. A ratificação **não fecha HR04-D1–D5 integralmente**, não aprova em bloco suas interpretações propostas nem confirma fatos desconhecidos da conta.
+
+A–O, suas fontes, pareceres e propostas permanecem íntegros como histórico. Este suplemento atualiza somente a pendência da escolha de escopo MVP e registra seus limites; as recomendações/opções históricas de suporte, B ou execução C não concedem autorização atual. Não altera SPEC, PLAN, TODO, ADRs ou DAG.
+
+### P.2 Alternativa A ratificada
+
+- Manter **NUV-10 integralmente bloqueada**, sem implementar disponibilidade nem reduzir os critérios existentes.
+- Preservar **Simple e Multiple Locations como famílias obrigatórias**, mesmo que futuramente se comprove um único modo na loja.
+- Manter GET multilocal ilimitado/misto e agregado correspondente como **PROVIDER_EVIDENCE_REQUIRED / GET_SHAPE_UNPROVEN** nos casos INV-07–10, até prova suficiente e adjudicação próprias. Sentinels de escrita não são prova de leitura.
+- Não considerar POD/Reserva INK, preço, visibility, presença de produto ou disponibilidade aparente como prova do modo real, dos campos GET ou da capacidade de atendimento.
+- Não acionar suporte Nuvemshop para o MVP. Falta de suporte ou de outra prova suficiente conserva o bloqueio; não reduz a obrigação integral.
+
+### P.3 B não autorizada; C somente para investigação futura
+
+**NUV10_MVP_PARTIAL_NOT_AUTHORIZED.** A alternativa B e o contrato candidato `NUV10-MVP-PARTIAL` de O continuam propostas históricas sem eficácia normativa. Não estão autorizadas redação/materialização de emenda B nesta execução, implementação parcial, aceite parcial, liberação de consumers ou vendas. Os positivos candidatos de O.3 não são uma capacidade nova entregue por esta PR.
+
+**ALTERNATIVE_C_RESEARCH_ONLY.** C foi selecionada somente como direção para investigar posteriormente componentes independentes, mediante **escopo e autorização próprios**. Esta PR não inicia essa pesquisa, desenho ou implementação. A futura delimitação deve demonstrar independência da semântica de disponibilidade pendente e respeitar os gates dos componentes; não autoriza mapper de estoque sob outro nome, mudança de schemas ou integração de consumer para contornar NUV-10.
+
+### P.4 Suporte, acesso e publicação
+
+**NO_PROVIDER_SUPPORT_FOR_MVP / NO_REMOTE_OPERATIONS_AUTHORIZED.** Não há autorização para contato com suporte, acesso à loja/painel/credenciais, GET autenticado, instalação/OAuth, ampliação de scopes, alteração de produtos/estoque/locais, configuração INK ou qualquer operação de provider. O protocolo H continua **PROPOSED / NOT_AUTHORIZED / NOT_EXECUTED**; sua descrição e a escolha A não concedem permissão de execução. Nenhuma coleta de dados reais da loja é realizada nesta finalização documental.
+
+A autorização atual cobre somente acrescentar P neste arquivo, validar e revisar o resultado, criar commit na mesma branch, atualizar a PR #72 existente, solicitar novo Codex Review, acompanhar CI e publicar recibo. A PR permanece Draft, aberta e sem merge; Ready, merge e deploy não estão autorizados. Publicações GitHub e seus gates documentais não são operações autorizadas de loja/provider.
+
+### P.5 Evidências ainda necessárias
+
+Permanecem as **dez lacunas de G como UNVERIFIED**, incluindo modo real/configuração/features corroborados, ativação/localizações/canal, campos efetivos das variantes, GET multilocal ilimitado/misto/agregado e relação técnica INK/inventário/atendimento. Nenhum ID, quantidade, produto ou comportamento real é inferido da decisão do PO.
+
+Para futura adjudicação de HR-04/NUV-10, continuam necessários: prova aplicável de leitura para ambas as famílias e INV-07–10; reconciliação das ambiguidades de configuração e fontes; matriz/provenance e tratamento fail-closed aprovados; deliberações pendentes de HR04-D1–D5 e fechamento explícito de NUV-OPEN-INVENTORY-MODE conforme o contrato vigente. Fonte oficial pública aplicável ou evidência corroborada de configuração obtida em fluxo separadamente autorizado podem contribuir; suporte não será acionado para o MVP e ensaio H não está autorizado. Ausência de via suficiente mantém A.
+
+As futuras fixtures e verificações de implementação permanecem trabalho de NUV-10 após seus gates e autorização próprios. Desconhecido continua distinto de zero e de ilimitado; recusar positivos não satisfaz a cobertura positiva integral. Utilidade/cobertura comercial, preço/visibility, fulfillment e HR-05/cart mantêm seus requisitos independentes; não são provados por estoque positivo ou ilimitado.
+
+### P.6 Efeitos sobre os gates vigentes
+
+| Item   | Efeito desta ratificação documental                                                                                                                                                      |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HR-04  | **HR04_OPEN**; decisão de escopo A ratificada, com HR04-D1–D5 ainda pendentes no que não foi expressamente decidido e fatos da conta não verificados. Não há fechamento integral do gate |
+| NUV-10 | **NUV10_BLOCKED_BY_HR04 / NUV10_FULL_NOT_SATISFIED**; `{NUV-08, HR-04} → NUV-10` preservado, ambas as famílias e critérios integrais intactos; nenhum subset autorizado                  |
+| NUV-23 | Dependência de NUV-10 preservada, portanto sem desbloqueio por esta decisão; demais predecessores, testes de integração/segurança e gates continuam exigidos                             |
+| NUV-24 | Mantém NUV-23 e também as entradas diretas HR-04/NUV-10 no conjunto aplicável, além dos demais gates operacionais/humanos. Nenhuma elegibilidade ou saída operacional concedida          |
+| NUV-25 | Mantém `NUV10_FULL` e os **18/18 critérios** de fechamento; nenhum aceite documental/parcial ou direção C satisfaz disponibilidade integral                                              |
+
+Valem as fontes canônicas já vinculadas em B/O.2: [SPEC](../../docs/specs/SPEC-nuvemshop.md), [PLAN](./plan.md) e [TODO](./todo.md). A substituição específica de NUV-12-FULL por PARTIAL nas entradas 22/23/24 não se estende a HR-04/NUV-10. Nenhuma aresta, critério ou autorização operacional é alterado aqui.
+
+### P.7 Estado documental e operacional separados
+
+**HR04_DECISION_A_RATIFIED** registra a decisão humana recebida. O estado **HR04_DOCUMENTATION_READY_FOR_HUMAN_MERGE** só poderá ser declarado no recibo externo após validação documental, revisão independente sem findings materiais P0/P1/P2, publicação e CI/Codex Review do novo HEAD comprovados. Gate pendente ou falho deve ser explicitado no recibo, sem afirmar prontidão completa nem reaproveitar sucesso de outro SHA.
+
+Coexistem e são preservados: **HR04_OPEN / NUV10_BLOCKED_BY_HR04 / NUV10_FULL_NOT_SATISFIED / HR04_PROVIDER_EVIDENCE_REQUIRED / NO_PROVIDER_SUPPORT_FOR_MVP / NUV10_MVP_PARTIAL_NOT_AUTHORIZED / ALTERNATIVE_C_RESEARCH_ONLY / NO_REMOTE_OPERATIONS_AUTHORIZED / MERGE_NOT_EXECUTED / DEPLOY_NOT_AUTHORIZED**. A restrição histórica **MERGE_NOT_AUTHORIZED** continua vigente nesta execução: preparar para aprovação humana não equivale a concedê-la.
+
+**Efeito potencial de merge:** o [CI](../../.github/workflows/ci.yml) roda em PR e em push para `main`; [Deploy Production](../../.github/workflows/deploy.yml) reage à conclusão do CI e seu job exige sucesso, evento `push` e branch `main`. Assim, um merge documental em `main` pode acionar deploy automático após CI bem-sucedido, sujeito aos demais guards/configuração. CI de PR não satisfaz esse predicado. A leitura dos workflows não atesta configuração/saúde atuais do provider. Qualquer efeito de release decorrente do merge exige **adjudicação humana específica antes do merge**; não há mudança de workflow, merge ou deploy nesta PR.
+
+### P.8 Condições de reabertura futura
+
+Reabrir a decisão exige nova adjudicação humana explícita, vinculada ao escopo/texto/HEAD próprios, com indicação das novas provas aplicáveis, lacunas remanescentes e responsáveis. Nova evidência não muda o estado automaticamente; conflito material com a SPEC exige adjudicação antes de código. Prazo do MVP, preferência comercial, loja Simple ou ausência de suporte não dispensam prova nem critérios.
+
+Eventual reconsideração de B requer prova de utilidade/cobertura segura e emenda normativa específica aprovada/materializada, com todos os impactos diretos e transitivos de O.7; esta ratificação não autoriza prepará-la ou executá-la. Investigar C requer delimitação e autorização separadas; implementar qualquer resultado também depende dos gates e autorização pertinentes. Acesso/ensaio remoto e release/merge/deploy requerem decisões próprias; nenhuma reabertura reativa H ou suporte para o MVP implicitamente.
+
+### P.9 Harness e recibo desta finalização
+
+A autoria de P é exclusiva do agente primário desta sessão. Foram acionados subagents separados em leitura para **rastreabilidade da decisão** (`decision_traceability`) e **auditoria normativa** (`normative_audit`); uma revisão adversarial independente, sem autoria, será vinculada aos bytes finais no recibo da PR. As chamadas de análise usam configuração herdada da sessão, sem override explícito de modelo; não se atribui identidade de backend não atestada nem se reaproveita como execução atual o harness histórico de A–O.
+
+O recibo externo registrará somente execuções efetivas: identidade/configuração disponível dos agentes, resultado da revisão independente, hash/blob e novo HEAD, diff de arquivo único e integridade byte a byte de A–O, Prettier, diff-check, links/referências, inspeção de credenciais/dados comerciais, consistência de estados, Codex Review/CI do SHA publicado e pendências. Essa separação evita resultado ou hash autorreferente neste documento. Nenhum teste/build local de aplicação ou operação remota de loja é afirmado por esta validação documental.
