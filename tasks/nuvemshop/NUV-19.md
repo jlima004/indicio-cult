@@ -142,3 +142,37 @@ HR-02/03/06/08, NUV-20/21/24 and provider SLA remain open. Local synthetic timin
 cannot prove remote delivery latency or operational readiness. No remote SQL,
 migrations, provider calls, subscriptions, worker activation, merge, deployment,
 workflow activation or Coolify configuration changes are authorized or executed.
+
+## Supplemental validation receipt
+
+The complete repeat after the default-Node correction also returned FAIL:
+3,062 PASS and one timeout in 46 files (780.24 s). This time the failing case was
+`resolves adapter server-to-root reference paths without module extension
+substitution`, 5,304 ms against 5 s. Bounded isolated comparison reproduced the
+same timeout on baseline (8,344 ms) and candidate (7,926 ms). Together with the
+initial TSTYPES-09-ROOT result, this preserves `NUV19_LOCAL_PARTIAL`; neither
+comparison is a waiver or proof of a complete local PASS.
+
+The final dedicated Playwright modes were executed with automatically started
+production Next servers, without reuse: unconfigured **5/5 PASS**, durable
+PostgreSQL **2/2 PASS**. Their builds/typechecking passed. Final HTTP ACK samples
+were 15.79–163.01 ms, including distinct receipts for identical bodies and
+independent receipt/work reads after each accepted sequence. The disposable
+PostgreSQL and both HTTP servers were stopped afterwards.
+
+Codex Review's fixture-selection P2 was fixed by the dedicated modes, verified
+independently, replied to and resolved. Follow-up review on `b720f33` found no
+major issue. That HEAD's CI passed the complete Check, Build and existing E2E,
+but stopped at Gitleaks on a public synthetic HMAC fixture in the first commit.
+No provider credential was present. The current test now generates a 32-byte
+random key, and `.gitleaksignore` acknowledges only the immutable historical
+commit/file/rule/line fingerprint. It does not exclude a path, rule or commit.
+The narrow mechanism is documented by [Gitleaks 8.24.3](https://github.com/gitleaks/gitleaks/blob/v8.24.3/README.md#gitleaksignore).
+
+The official 8.24.3 binary was checksum-verified. Removing the new ignore entry
+reproduced exactly the historical finding; restoring it produced zero findings
+for the PR range and `git --all` (202 commits). A separate temporary repository
+with an unrelated synthetic generic API key was still detected using the same
+ignore file. The generated-key bounds suite passed 10/10. No scan rule, entropy
+threshold, workflow or exit condition changed, and no history was rewritten.
+Final commit, CI and Codex Review results remain exact-HEAD receipts in the PR.

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { createHmac } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { NuvemshopWebhookError } from '@/modules/nuvemshop/server/errors'
 import * as lossless from '@/modules/nuvemshop/server/schemas/lossless-json'
 import { classifyNuvemshopWebhook } from '@/modules/nuvemshop/server/webhook-schema'
 
-const secret = 'synthetic-nuv19-bounds'
+const secret = randomBytes(32).toString('hex')
 const base = '{"event":"order/paid","store_id":9,"id":9007199254740993'
 function classify(extra: string) {
   const body = base + extra + '}'
